@@ -1,0 +1,6 @@
+# Parameters the caller must supply for an L2TP dial switch.
+mode: l2tp
+required_fields:
+  - vpn_server   # L2TP server address / 服务器地址
+  - vpn_user     # username / 用户名
+  - vpn_pass     # password / 密码

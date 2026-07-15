@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Mock Router UI (Tenda-style role-less v-select)</title>
+<style>
+  body { font-family: sans-serif; margin: 0; }
+  .hidden { display: none; }
+  #topnav a { display:inline-block; padding:12px 20px; color:#0066cc; text-decoration:none; }
+  #content { padding: 20px; }
+  .v-form-item { margin: 12px 0; }
+  .v-form-item__label { display:inline-block; width: 220px; vertical-align: middle; }
+  .v-form-item__content { display:inline-block; vertical-align: middle; }
+  /* Tenda's Vue widget: a plain <div>, NO <select>, NO role, NO id/name, and
+     the SAME class on every field (connection type, ISP type, MTU, DNS...). */
+  .v-select { position: relative; display:inline-block; width: 240px;
+    border:1px solid #ccc; border-radius:4px; padding:8px; cursor:pointer;
+    background:#fff; }
+  .v-select__label { display:inline-block; }
+  .v-select__icon { float:right; color:#888; }
+  .v-select__options { position:absolute; border:1px solid #ccc; background:#fff;
+    z-index:20; box-shadow:0 2px 6px rgba(0,0,0,.15); min-width:200px; }
+  .v-select__option { padding:8px; cursor:pointer; }
+  .v-select__option:hover { background:#f2f2f2; }
+  #toast { color: green; font-weight: bold; }
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login-view">
+  <h2>Tenda Wi-Fi</h2>
+  <div><input type="password"></div>   <!-- bare password box, no id/name (as on the real device) -->
+  <button>Log In</button>
+</div>
+
+<!-- APP -->
+<div id="app-view" class="hidden">
+  <div id="topnav">
+    <a href="#" id="nav-status">Network Status</a>
+    <a href="#" id="nav-wan">Internet Settings</a>
+    <a href="#" id="nav-wifi">WiFi Settings</a>
+  </div>
+  <div id="content">
+    <div id="status-panel"><h3>Network Status</h3><p>Go to Internet Settings.</p></div>
+
+    <div id="wan-panel" class="hidden">
+      <h3>Internet Settings</h3>
+
+      <!-- decoy #1: ISP Type -- same class, value is NOT a dial mode -->
+      <div class="v-form-item">
+        <div class="v-form-item__label">ISP Type</div>
+        <div class="v-form-item__content">
+          <div class="v-select v-select--medium">
+            <div class="v-select__label"><div>Normal</div></div>
+            <span class="v-select__icon">v</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- THE dial control: role-less, no id/name, value reads as a mode -->
+      <div class="v-form-item">
+        <div class="v-form-item__label">Internet Connection Type</div>
+        <div class="v-form-item__content">
+          <div class="v-select v-select--medium">
+            <div class="v-select__label"><div class="v-select__label--text">Dynamic IP</div></div>
+            <span class="v-select__icon">v</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- decoy #2: MTU -- same class, numeric value -->
+      <div class="v-form-item">
+        <div class="v-form-item__label">MTU</div>
+        <div class="v-form-item__content">
+          <div class="v-select v-select--medium">
+            <div class="v-select__label"><div>1480</div></div>
+            <span class="v-select__icon">v</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- decoy #3: DNS -- same class, value "Auto" -->
+      <div class="v-form-item">
+        <div class="v-form-item__label">DNS Settings</div>
+        <div class="v-form-item__content">
+          <div class="v-select v-select--medium">
+            <div class="v-select__label"><div>Auto</div></div>
+            <span class="v-select__icon">v</span>
+          </div>
+        </div>
+      </div>
+
+      <div id="pppoe-fields" class="hidden">
+        <div class="v-form-item"><div class="v-form-item__label">Username</div>
+          <div class="v-form-item__content"><input type="text" id="pppoeUser"></div></div>
+        <div class="v-form-item"><div class="v-form-item__label">Password</div>
+          <div class="v-form-item__content"><input type="password" id="pppoePass"></div></div>
+      </div>
+
+      <div id="vpn-fields" class="hidden">
+        <div class="v-form-item"><div class="v-form-item__label">Username</div>
+          <div class="v-form-item__content"><input type="text" id="vpnUser"></div></div>
+        <div class="v-form-item"><div class="v-form-item__label">Password</div>
+          <div class="v-form-item__content"><input type="password" id="vpnPass"></div></div>
+        <div class="v-form-item"><div class="v-form-item__label">VPN Server IP/Domain Name</div>
+          <div class="v-form-item__content"><input type="text" id="vpnServer"></div></div>
+      </div>
+
+      <!-- Tenda labels the apply button "Connect" (not Save/Apply). A
+           "Disconnect" button sits alongside: the tool must NOT click that. -->
+      <div class="v-form-item">
+        <button id="disconnectBtn">Disconnect</button>
+        <button id="connectBtn">Connect</button>
+        <span id="toast"></span></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  var $ = function (id) { return document.getElementById(id); };
+  // login: any password logs in
+  document.querySelector('#login-view button').onclick = function () {
+    $('login-view').classList.add('hidden');
+    $('app-view').classList.remove('hidden');
+  };
+  $('nav-wan').onclick = function (e) {
+    e.preventDefault();
+    $('status-panel').classList.add('hidden');
+    $('wan-panel').classList.remove('hidden');
+  };
+
+  var MODES = [
+    { mode: 'dynamic', label: 'Dynamic IP' },
+    { mode: 'static',  label: 'Static IP' },
+    { mode: 'pppoe',   label: 'PPPoE' },
+    { mode: 'l2tp',    label: 'L2TP' },
+    { mode: 'pptp',    label: 'PPTP' },
+  ];
+  // find the connection-type widget by its label (it has no id/name -- as on
+  // the real device); the tool locates it heuristically, not by this.
+  var connItem = [].slice.call(document.querySelectorAll('.v-form-item'))
+    .filter(function (it) {
+      var l = it.querySelector('.v-form-item__label');
+      return l && /Internet Connection Type/.test(l.textContent);
+    })[0];
+  var widget = connItem.querySelector('.v-select');
+  var labelText = widget.querySelector('.v-select__label--text');
+
+  function closePopup() {
+    var p = document.querySelector('.v-select__options');
+    if (p) p.parentNode.removeChild(p);
+  }
+  function pick(m) {
+    labelText.textContent = m.label;                 // <-- read-back source
+    closePopup();
+    $('pppoe-fields').classList.toggle('hidden', m.mode !== 'pppoe');
+    $('vpn-fields').classList.toggle('hidden', m.mode !== 'l2tp' && m.mode !== 'pptp');
+  }
+  // Handler on the widget ROOT; a click on any descendant (e.g. the inner text
+  // node the tool targets) bubbles up to here -- exactly like Vue's @click.
+  widget.addEventListener('click', function () {
+    if (document.querySelector('.v-select__options')) { closePopup(); return; }
+    // options are rendered into <body> on open (portal/teleport), NOT as a child
+    var list = document.createElement('div');
+    list.className = 'v-select__options';
+    var box = widget.getBoundingClientRect();
+    list.style.left = box.left + 'px';
+    list.style.top = (box.bottom + window.scrollY) + 'px';
+    MODES.forEach(function (m) {
+      var o = document.createElement('div');
+      o.className = 'v-select__option';
+      o.textContent = m.label;
+      o.onclick = function (e) { e.stopPropagation(); pick(m); };
+      list.appendChild(o);
+    });
+    document.body.appendChild(list);
+  });
+
+  $('connectBtn').onclick = function () {
+    $('toast').textContent = 'Connected: ' + labelText.textContent;
+  };
+  $('disconnectBtn').onclick = function () {
+    $('toast').textContent = 'Disconnected';   // wrong button -> test must fail
+  };
+</script>
+</body>
+</html>

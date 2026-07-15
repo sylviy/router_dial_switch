@@ -1,0 +1,27 @@
+# Xiaomi MiWiFi -- 小米路由器4A千兆版 (ROM: MiWiFi 稳定版 2.30.500)
+# LuCI-based UI, stok-token session. Top nav: 路由状态 | 常用设置 | 高级设置.
+# The dial control lives two levels deep: 常用设置 -> 上网设置, so heuristic nav
+# (which only knows top-level WAN/上网设置 terms) never reached it and the engine
+# scanned the 路由状态 home page instead.
+brand: "Xiaomi"
+model: "ac1200"
+firmware: "2.30.500"
+
+# Ordered menu labels to reach the 上网设置 (WAN) page.
+wan_path: ["常用设置", "上网设置"]
+
+# The 上网方式 control is a "beautified" native <select id="wantypeselect">:
+# the real <select> (options PPPoE / DHCP / 静态IP) is display:none and a pretty
+# jQuery widget is drawn over it. The engine drives the hidden real <select>
+# directly (force select_option, which fires change -> the widget + router JS
+# sync). match_mode maps PPPoE->pppoe, DHCP->dynamic, 静态IP->static, so no
+# mode_labels are needed.
+selectors:
+  dial_mode_select: "#wantypeselect"
+  # PPPoE account/password fields, if the heuristics miss them, live in the same
+  # form; add their selectors here once confirmed:
+  # pppoe_user: "<CSS>"
+  # pppoe_pass: "<CSS>"
+  # NOTE: the 上网设置 page has several "应用" buttons (MAC clone, IPv6, ...).
+  # If apply() ever clicks the wrong one, pin the connection-type Save button:
+  # save_button: "<CSS for the 上网方式 form's 应用>"

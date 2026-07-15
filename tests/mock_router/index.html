@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>Mock Router UI</title>
+<style>
+  body { font-family: sans-serif; margin: 0; }
+  .hidden { display: none; }
+  #sidebar { float: left; width: 160px; background:#f0f0f0; height:100vh; padding:10px; }
+  #sidebar a { display:block; padding:8px; color:#0066cc; text-decoration:none; }
+  #content { margin-left: 190px; padding: 20px; }
+  .row { margin: 8px 0; }
+  label { display:inline-block; width: 130px; }
+  #toast { color: green; font-weight: bold; }
+</style>
+</head>
+<body>
+
+<!-- ============ LOGIN VIEW ============ -->
+<div id="login-view">
+  <h2>路由器管理 / Router Login</h2>
+  <div class="row"><label>用户名 Username</label>
+    <input type="text" name="username" id="username"></div>
+  <div class="row"><label>密码 Password</label>
+    <input type="password" name="password" id="password"></div>
+  <button id="loginBtn">登录</button>
+</div>
+
+<!-- ============ APP VIEW ============ -->
+<div id="app-view" class="hidden">
+  <div id="sidebar">
+    <a href="#" id="nav-status">状态 Status</a>
+    <a href="#" id="nav-wan">上网设置 Internet</a>
+    <a href="#" id="nav-wifi">无线设置 Wireless</a>
+  </div>
+  <div id="content">
+    <div id="status-panel">
+      <h3>状态</h3><p>Welcome. 点击左侧“上网设置”。</p>
+    </div>
+
+    <!-- ============ WAN PANEL ============ -->
+    <div id="wan-panel" class="hidden">
+      <h3>上网设置 / WAN</h3>
+      <div class="row">
+        <label>上网方式 WAN Type</label>
+        <select id="wanType" name="wanType">
+          <option value="dhcp">动态IP (DHCP)</option>
+          <option value="pppoe">PPPoE (宽带拨号)</option>
+          <option value="l2tp">L2TP</option>
+          <option value="pptp">PPTP</option>
+          <option value="ipv6">IPv6</option>
+          <option value="static">静态IP (Static)</option>
+        </select>
+      </div>
+
+      <div id="pppoe-fields" class="hidden">
+        <div class="row"><label>宽带账号 Account</label>
+          <input type="text" name="pppoeUser" id="pppoeUser"></div>
+        <div class="row"><label>宽带密码 Password</label>
+          <input type="password" name="pppoePass" id="pppoePass"></div>
+      </div>
+
+      <div id="vpn-fields" class="hidden">
+        <div class="row"><label>服务器地址 Server</label>
+          <input type="text" name="vpnServer" id="vpnServer"></div>
+        <div class="row"><label>用户名 Username</label>
+          <input type="text" name="vpnUser" id="vpnUser"></div>
+        <div class="row"><label>密码 Password</label>
+          <input type="password" name="vpnPass" id="vpnPass"></div>
+      </div>
+
+      <div class="row"><button id="saveBtn">保存</button>
+        <span id="toast"></span></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.getElementById('loginBtn').onclick = function () {
+    document.getElementById('login-view').classList.add('hidden');
+    document.getElementById('app-view').classList.remove('hidden');
+  };
+  document.getElementById('nav-wan').onclick = function (e) {
+    e.preventDefault();
+    document.getElementById('status-panel').classList.add('hidden');
+    document.getElementById('wan-panel').classList.remove('hidden');
+  };
+  function refreshFields() {
+    var v = document.getElementById('wanType').value;
+    document.getElementById('pppoe-fields').classList.toggle('hidden', v !== 'pppoe');
+    document.getElementById('vpn-fields').classList.toggle('hidden',
+      v !== 'l2tp' && v !== 'pptp');
+  }
+  document.getElementById('wanType').onchange = refreshFields;
+  document.getElementById('saveBtn').onclick = function () {
+    document.getElementById('toast').textContent =
+      '保存成功 Saved: ' + document.getElementById('wanType').value;
+  };
+  refreshFields();
+</script>
+</body>
+</html>

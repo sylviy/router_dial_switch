@@ -1,0 +1,3 @@
+# Dynamic IP (DHCP) needs no parameters.
+mode: dynamic
+required_fields: []

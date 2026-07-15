@@ -1,0 +1,51 @@
+# ============================================================================
+# profile 带注释模板(文件名以 _ 开头 = 加载器忽略,仅作文档参考)
+#
+# 核心观念:profile 是"补丁/提示",不是必需品。
+#   引擎默认先用 heuristics.py 的启发式去认控件;profile 只在启发式认错或认不到
+#   时,才用来"纠偏/指路"。下面每一个键都是可选的 —— 用得上才写,一个 profile
+#   可以只有 3 行(brand/model),也可以补一堆选择器。一台路由器只需要一个 profile,
+#   它覆盖该型号的全部拨号方式(不是每个拨号一个 profile)。
+# ============================================================================
+
+# --- 1) 匹配用(必填 brand,越具体越容易被 --brand/--model 命中)---------------
+brand: "AcmeNet"          # 品牌;宽松子串匹配,大小写无所谓
+model: "AC1200"           # 型号;可留空
+firmware: "1.0"           # 固件版本;可留空,用于同品牌不同固件区分
+
+# --- 2) 进 WAN 设置页的菜单路径(仅当启发式导航走错/走不到时才需要)-----------
+# 按顺序点这些文字。典型用途:IPv6 藏在 Advanced 下,需要指路。
+# wan_path: ["Advanced", "Network", "WAN"]
+
+# --- 3) 选择器覆盖(仅当某个控件启发式认错/认不到时才写)-----------------------
+# 键 = 概念,值 = 选择器。引擎会“profile 选择器优先,找不到再回落启发式”,
+# 且已跨 frame + 等待渲染。可覆盖的概念(与 adapter 一致):
+#   login_user / login_pass / login_button /
+#   dial_mode_select(原生 <select> 或自定义 <div> 皆可,引擎按 tag 自动区分)/
+#   pppoe_user / pppoe_pass / vpn_server / vpn_user / vpn_pass / save_button /
+#   enable_toggle(「使能开关」:整个设置区块要等某个开关打开才渲染时 pin 它,
+#     如 Tenda IPv6 页的 IPv6 总开关。引擎只在找不到拨号控件时才去拨,绝不会把
+#     已开启的开关点关)
+# 适配小米这类“布局完全不同”的异构 UI 时,这一块是主要抓手。
+#
+# 重要:值不是普通 CSS,而是 **Playwright 选择器**(引擎用 frame.locator() 定位)。
+# 除了 #id / [name] / .class,还支持 :has-text()、>> 等 —— 这一点能救「没有唯一
+# 纯 CSS 选择器」的控件(例如 Tenda 的 <div class="v-select">,同一 class 重复 5 次,
+# 纯 .v-select 命中 5 个没法用)。用 **label 锚定**就唯一了:
+#   dial_mode_select: 'div.v-form-item:has-text("Internet Connection Type") div.v-select'
+# 这条既唯一又稳(字段顺序变了也不受影响,比 nth-of-type 结构路径可靠)。
+# 想知道该填什么?跑 `python cli.py --diagnose ...`,产物 dial_candidates[].pin 会
+# 直接给出**已验证命中数==1**的推荐选择器;失败运行也会自动生成同一份产物。
+# selectors:
+#   dial_mode_select: "#wanType"        # 拨号方式那个下拉/combobox/裸 div
+#   login_pass:       "#password"
+#   login_button:     "#loginBtn"
+#   pppoe_user:       "input[name='pppoeAcc']"
+#   pppoe_pass:       "input[name='pppoePwd']"
+#   save_button:      "#applyBtn"
+
+# --- 4) 模式选项的精确措辞(仅当该机把某模式叫得很怪、字典没匹配到时)----------
+# 键 = 规范模式名,值 = 界面上那一项的确切文字。
+# mode_labels:
+#   pppoe: "PPPoE(ADSL 虚拟拨号)"
+#   dynamic: "自动获得 IP 地址(推荐)"

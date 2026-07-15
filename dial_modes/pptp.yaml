@@ -1,0 +1,6 @@
+# Parameters the caller must supply for a PPTP dial switch.
+mode: pptp
+required_fields:
+  - vpn_server   # PPTP server address / 服务器地址
+  - vpn_user     # username / 用户名
+  - vpn_pass     # password / 密码

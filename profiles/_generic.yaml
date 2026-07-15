@@ -1,0 +1,4 @@
+# Marker only. When no brand profile matches, the engine runs on pure
+# heuristics (engine/heuristics.py). Files starting with "_" are ignored by the
+# profile loader. Real per-brand profiles are normally produced by
+# `python cli.py --record ...` and then lightly edited.

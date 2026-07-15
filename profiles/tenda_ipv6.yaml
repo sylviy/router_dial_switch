@@ -1,0 +1,42 @@
+# Tenda -- IPv6 page (More -> IPv6), drafted 2026-07-15 from live screenshots.
+#
+# Why a separate profile: on Tenda, IPv6 is NOT an option in the main
+# "Internet Settings" connection-type list; it lives on its own page under
+# More -> IPv6, with its own "Internet Connection Type" (v6 flavors:
+# PPPoEv6 / DHCPv6 / ...), PPPoE user/pass fields, and a "Save" button.
+# wan_path below steers navigation there (confirmed working live 2026-07-15).
+#
+# The page is GATED: everything below the IPv6 switch only renders once that
+# switch is ON (live screenshot showed the bare toggle and nothing else).
+# selectors.enable_toggle pins it; the engine flips it on -- but ONLY when no
+# dial control is visible yet, so it can never switch an enabled page off.
+#
+# HOW TO USE: pass BOTH hints so only IPv6 runs pick this up --
+#   python cli.py --router-ip 192.168.0.1 --pass <pw> --brand tenda --model ipv6 \
+#       --mode ipv6 --no-apply
+# For IPv4 modes (dynamic/pppoe/l2tp/pptp) on this Tenda, pass NO --brand at all:
+# pure heuristics are live-validated there, and profile matching is loose
+# substring -- a bare `--brand tenda` would match this file and wrongly navigate
+# an IPv4 run to the IPv6 page.
+brand: "tenda"
+model: "ipv6"
+firmware: ""
+
+# Menu labels clicked in order to reach the IPv6 page (confirmed live).
+wan_path: ["More", "IPv6"]
+
+selectors:
+  # The IPv6 enable switch. "div.v-switch" is the expected Vue wording -- if the
+  # run still can't find the dial control, check the diagnose artifact's
+  # `toggles` section for the real selector and replace this.
+  enable_toggle: "div.v-switch"
+
+# The v6 flavor that canonical mode "ipv6" should select on this page.
+# Without this, any option whose text reads as v6 (PPPoEv6/DHCPv6/...) counts as
+# "already ipv6" -- fine for "is IPv6 on", wrong if you need a specific flavor.
+# Put the EXACT option wording (a failing run's message lists what it saw:
+# "saw options: ...").  For PPPoEv6 also pass the credentials:
+#   --param pppoe_user=<acc> --param pppoe_pass=<pw>
+# (explicit --param values are filled even though mode "ipv6" requires none).
+# mode_labels:
+#   ipv6: "DHCPv6"

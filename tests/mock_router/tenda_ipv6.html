@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Mock Router UI (Tenda-style IPv6 page: gated by an enable switch)</title>
+<style>
+  body { font-family: sans-serif; margin: 0; }
+  .hidden { display: none; }
+  #topnav a { display:inline-block; padding:12px 20px; color:#0066cc; text-decoration:none; }
+  #sidenav a { display:block; padding:8px 16px; color:#333; text-decoration:none; }
+  #content { padding: 20px; }
+  .v-form-item { margin: 12px 0; }
+  .v-form-item__label { display:inline-block; width: 220px; vertical-align: middle; }
+  .v-form-item__content { display:inline-block; vertical-align: middle; }
+  /* Vue-style switch: a plain div, NO <input type=checkbox>, no role.  State is
+     just a modifier class -- like the real Tenda IPv6 toggle. */
+  .v-switch { display:inline-block; width:44px; height:24px; border-radius:12px;
+    background:#ccc; cursor:pointer; position:relative; }
+  .v-switch--checked { background:#ff7a2f; }
+  .v-select { position: relative; display:inline-block; width: 240px;
+    border:1px solid #ccc; border-radius:4px; padding:8px; cursor:pointer;
+    background:#fff; }
+  .v-select__options { position:absolute; border:1px solid #ccc; background:#fff;
+    z-index:20; min-width:200px; }
+  .v-select__option { padding:8px; cursor:pointer; }
+  #toast { color: green; font-weight: bold; }
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login-view">
+  <h2>Tenda Wi-Fi</h2>
+  <div><input type="password"></div>
+  <button>Log In</button>
+</div>
+
+<!-- APP -->
+<div id="app-view" class="hidden">
+  <div id="topnav">
+    <a href="#" id="nav-status">Network Status</a>
+    <a href="#" id="nav-wan">Internet Settings</a>
+    <a href="#" id="nav-more">More</a>
+  </div>
+  <div id="main" class="hidden" style="display:flex">
+    <div id="sidenav">
+      <a href="#">Router Info</a>
+      <a href="#" id="nav-ipv6">IPv6</a>
+      <a href="#">Network Diagnosis</a>
+    </div>
+    <div id="content">
+      <div id="ipv6-panel" class="hidden">
+        <h3>IPv6</h3>
+        <p>This device supports IPv6 and can access IPv6 network.</p>
+
+        <!-- the gate: WAN section below only renders when this is on -->
+        <div class="v-form-item">
+          <div class="v-form-item__label">IPv6</div>
+          <div class="v-form-item__content"><div class="v-switch"></div></div>
+        </div>
+
+        <div id="wan-section" class="hidden">
+          <h4>IPv6 WAN</h4>
+          <div class="v-form-item">
+            <div class="v-form-item__label">Internet Connection Type</div>
+            <div class="v-form-item__content">
+              <div class="v-select">
+                <div class="v-select__label"><div class="v-select__label--text">PPPoEv6</div></div>
+              </div>
+            </div>
+          </div>
+
+          <div id="pppoe-fields">
+            <div class="v-form-item"><div class="v-form-item__label">PPPoE Username</div>
+              <div class="v-form-item__content"><input type="text" id="p6user"></div></div>
+            <div class="v-form-item"><div class="v-form-item__label">PPPoE Password</div>
+              <div class="v-form-item__content"><input type="password" id="p6pass"></div></div>
+          </div>
+
+          <h4>IPv6 LAN</h4>
+          <!-- decoy: a radio LABEL with the same text as a popup option.  The
+               pinned-option locator must click the popup option, NOT this. -->
+          <div class="v-form-item">
+            <div class="v-form-item__label">Assignment Method</div>
+            <div class="v-form-item__content">
+              <label><input type="radio" name="assign" checked> Auto</label>
+              <label><input type="radio" name="assign"> SLAAC</label>
+              <label><input type="radio" name="assign"> DHCPv6</label>
+            </div>
+          </div>
+
+          <div class="v-form-item">
+            <button id="saveBtn">Save</button>
+            <span id="toast"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  var $ = function (id) { return document.getElementById(id); };
+  document.querySelector('#login-view button').onclick = function () {
+    $('login-view').classList.add('hidden');
+    $('app-view').classList.remove('hidden');
+  };
+  $('nav-more').onclick = function (e) {
+    e.preventDefault();
+    $('main').classList.remove('hidden');
+  };
+  $('nav-ipv6').onclick = function (e) {
+    e.preventDefault();
+    $('ipv6-panel').classList.remove('hidden');
+  };
+
+  var sw = document.querySelector('.v-switch');
+  sw.onclick = function () {
+    sw.classList.toggle('v-switch--checked');
+    $('wan-section').classList.toggle('hidden',
+        !sw.classList.contains('v-switch--checked'));
+  };
+
+  var MODES = ['PPPoEv6', 'DHCPv6', 'Static IPv6'];
+  var widget = document.querySelector('.v-select');
+  var labelText = widget.querySelector('.v-select__label--text');
+  function closePopup() {
+    var p = document.querySelector('.v-select__options');
+    if (p) p.parentNode.removeChild(p);
+  }
+  widget.addEventListener('click', function () {
+    if (document.querySelector('.v-select__options')) { closePopup(); return; }
+    var list = document.createElement('div');
+    list.className = 'v-select__options';
+    var box = widget.getBoundingClientRect();
+    list.style.left = box.left + 'px';
+    list.style.top = (box.bottom + window.scrollY) + 'px';
+    MODES.forEach(function (m) {
+      var o = document.createElement('div');
+      o.className = 'v-select__option';
+      o.textContent = m;
+      o.onclick = function (e) {
+        e.stopPropagation();
+        labelText.textContent = m;
+        $('pppoe-fields').classList.toggle('hidden', m !== 'PPPoEv6');
+        closePopup();
+      };
+      list.appendChild(o);
+    });
+    document.body.appendChild(list);
+  });
+
+  $('saveBtn').onclick = function () {
+    $('toast').textContent = 'Saved: ' + labelText.textContent;
+  };
+</script>
+</body>
+</html>

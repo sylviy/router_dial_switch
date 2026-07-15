@@ -1,0 +1,4 @@
+# IPv6 WAN. Sub-mode (DHCPv6 / SLAAC / PPPoEv6) varies by vendor; pin via a
+# per-brand profile's mode_labels when the generic "IPv6" option isn't enough.
+mode: ipv6
+required_fields: []

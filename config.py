@@ -1,0 +1,41 @@
+"""Runtime configuration for the router dial-switch tool.
+
+All OS / environment specific knobs live here so the same engine code runs
+unchanged on macOS (development / logic verification) and Windows (the real
+offline test bench).  See README.md for the offline packaging story.
+"""
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass, field
+from typing import Optional
+
+
+@dataclass
+class Config:
+    # --- browser ------------------------------------------------------------
+    # Prefer driving the already-installed, version-locked Chrome (offline,
+    # no extra download).  Set to None to use Playwright's bundled chromium.
+    channel: Optional[str] = "chrome"
+    headless: bool = False
+    # Optional explicit path to a Chrome/Chromium binary (overrides `channel`).
+    executable_path: Optional[str] = None
+    # Folder holding a pre-staged Playwright browser bundle for fully-offline
+    # installs.  When set, exported as PLAYWRIGHT_BROWSERS_PATH before launch.
+    browsers_path: Optional[str] = None
+
+    # --- timing (milliseconds) ---------------------------------------------
+    default_timeout_ms: int = 15000     # per-action auto-wait ceiling
+    nav_timeout_ms: int = 30000         # page.goto ceiling
+    settle_ms: int = 1200               # small pause after "apply" before read-back
+
+    # --- artefacts ----------------------------------------------------------
+    screenshot_dir: str = "artifacts"
+
+    def apply_env(self) -> None:
+        """Export env vars Playwright reads at launch time."""
+        if self.browsers_path:
+            os.environ["PLAYWRIGHT_BROWSERS_PATH"] = self.browsers_path
+
+
+DEFAULT = Config()

@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Mock Router UI (custom combobox)</title>
+<style>
+  body { font-family: sans-serif; margin: 0; }
+  .hidden { display: none; }
+  #topnav a { display:inline-block; padding:12px 20px; color:#0066cc; text-decoration:none; }
+  #content { padding: 20px; }
+  .row { margin: 10px 0; }
+  label { display:inline-block; width: 200px; vertical-align: top; }
+  /* custom combobox */
+  .combo { position: relative; display:inline-block; width: 260px; }
+  .combo-trigger { border:1px solid #ccc; padding:8px; border-radius:4px;
+    cursor:pointer; background:#fff; }
+  .combo-list { position:absolute; left:0; right:0; top:38px; border:1px solid #ccc;
+    background:#fff; z-index:10; box-shadow:0 2px 6px rgba(0,0,0,.15); }
+  .opt { padding:8px; cursor:pointer; }
+  .opt:hover { background:#f2f2f2; }
+  #toast { color: green; font-weight: bold; }
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login-view">
+  <h2>Router Login</h2>
+  <div class="row"><label>Local Password</label>
+    <input type="password" id="password"></div>
+  <button id="loginBtn">Log In</button>
+</div>
+
+<!-- APP -->
+<div id="app-view" class="hidden">
+  <div id="topnav">
+    <a href="#" id="nav-status">Network Map</a>
+    <a href="#" id="nav-wan">Internet</a>
+    <a href="#" id="nav-wifi">Wireless</a>
+  </div>
+  <div id="content">
+    <div id="status-panel"><h3>Network Map</h3><p>Click “Internet”.</p></div>
+
+    <div id="wan-panel" class="hidden">
+      <h3>Internet</h3>
+      <div class="row">
+        <label>Internet Connection Type:</label>
+        <!-- custom React-style combobox: a <div>, NOT a <select> -->
+        <div class="combo">
+          <div class="combo-trigger" id="ctype" role="combobox"
+               aria-label="Internet Connection Type" tabindex="0">Dynamic IP</div>
+          <div class="combo-list hidden" id="ctypeList">
+            <div class="opt" data-mode="static">Static IP</div>
+            <div class="opt" data-mode="dynamic">Dynamic IP</div>
+            <div class="opt" data-mode="pppoe">PPPoE</div>
+            <div class="opt" data-mode="l2tp">L2TP</div>
+            <div class="opt" data-mode="pptp">PPTP</div>
+          </div>
+        </div>
+      </div>
+
+      <div id="pppoe-fields" class="hidden">
+        <div class="row"><label>Username:</label>
+          <input type="text" id="pppoeUser"></div>
+        <div class="row"><label>Password:</label>
+          <input type="password" id="pppoePass"></div>
+      </div>
+
+      <div id="vpn-fields" class="hidden">
+        <div class="row"><label>Username:</label>
+          <input type="text" id="vpnUser"></div>
+        <div class="row"><label>Password:</label>
+          <input type="password" id="vpnPass"></div>
+        <div class="row"><label>VPN Server IP/Domain Name:</label>
+          <input type="text" id="vpnServer"></div>
+      </div>
+
+      <div class="row"><button id="saveBtn">Save</button>
+        <span id="toast"></span></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  var $ = function (id) { return document.getElementById(id); };
+  $('loginBtn').onclick = function () {
+    $('login-view').classList.add('hidden');
+    $('app-view').classList.remove('hidden');
+  };
+  $('nav-wan').onclick = function (e) {
+    e.preventDefault();
+    $('status-panel').classList.add('hidden');
+    $('wan-panel').classList.remove('hidden');
+  };
+  // custom combobox behaviour
+  $('ctype').onclick = function () { $('ctypeList').classList.toggle('hidden'); };
+  Array.prototype.forEach.call(document.querySelectorAll('#ctypeList .opt'),
+    function (opt) {
+      opt.onclick = function () {
+        var mode = opt.getAttribute('data-mode');
+        $('ctype').textContent = opt.textContent;      // <-- read-back source
+        $('ctypeList').classList.add('hidden');
+        $('pppoe-fields').classList.toggle('hidden', mode !== 'pppoe');
+        $('vpn-fields').classList.toggle('hidden', mode !== 'l2tp' && mode !== 'pptp');
+      };
+    });
+  $('saveBtn').onclick = function () {
+    $('toast').textContent = 'Saved: ' + $('ctype').textContent;
+  };
+</script>
+</body>
+</html>

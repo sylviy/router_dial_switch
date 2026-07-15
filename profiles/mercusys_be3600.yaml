@@ -1,0 +1,24 @@
+# Mercusys BE3600 (Wi-Fi 7) -- validated live on 2026-07-11.
+#
+# Findings from the real device:
+#  * English web UI, top nav: Network Map | Internet | Wireless | Advanced.
+#  * Dial control lives under "Internet" -> "Internet Connection Type".
+#  * That control is a CUSTOM <div role="combobox">, NOT a native <select>
+#    (form_input reported: Element type "DIV" is not a supported form input).
+#    Options: Static IP / Dynamic IP / PPPoE / L2TP / PPTP.
+#  * L2TP/PPTP fields: Username, Password, "VPN Server IP/Domain Name",
+#    plus inner Dynamic/Static IP radios. Apply button label: "Save".
+#
+# The engine handles all of the above via pure heuristics (custom-combobox path
+# + WAN-menu tier that skips "Network Map"), so no selector overrides are
+# needed. This profile mainly documents the model and pins the one structural
+# quirk below.
+brand: "Mercusys"
+model: "BE3600"
+firmware: ""
+
+# IPv6 is NOT in the main "Internet Connection Type" list on this model; it is a
+# separate section under Advanced -> IPv6. Handle IPv6 as its own nav target
+# rather than a connection-type option here.
+# wan_path: ["Internet"]           # heuristic nav already finds this
+# selectors: {}                    # none needed; heuristics suffice

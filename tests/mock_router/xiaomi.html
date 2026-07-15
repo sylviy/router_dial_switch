@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>Mi Router (mock, heuristics-hostile)</title>
+  <style>.hidden{display:none}</style>
+</head>
+<body>
+  <!--
+    A deliberately heuristics-HOSTILE mock, standing in for a divergent UI like
+    Xiaomi's:
+      * the dial control is a bare <div> -- NO role="combobox", NO
+        "connection type" label -- so find_dial_mode_select / _combobox can't
+        see it;
+      * the PPPoE fields have ids/placeholders with no user/pass keywords;
+      * the Save button text ("下一步") isn't in BUTTON_SAVE_SYNONYMS.
+    Pure heuristics therefore fail here; only a profile's `selectors:` overrides
+    (dial_mode_select / pppoe_user / pppoe_pass / save_button) make it work.
+    Login + WAN nav stay heuristic-findable (password field + "上网设置" menu),
+    so this isolates the selector-override wiring.
+  -->
+  <div id="login">
+    <p>路由器管理</p>
+    <input type="password" id="pw" placeholder="密码">
+    <button id="loginBtn">登录</button>
+  </div>
+
+  <div id="app" class="hidden">
+    <div id="nav"><span id="wanNav">上网设置</span></div>
+    <div id="wanPage" class="hidden">
+      <!-- dial control: bare div, no role, no recognizable label -->
+      <div id="xmWan" data-val="dynamic">动态IP</div>
+      <div id="xmList" class="hidden">
+        <div class="xmOpt" data-m="dynamic">动态IP</div>
+        <div class="xmOpt" data-m="pppoe">PPPoE</div>
+        <div class="xmOpt" data-m="l2tp">L2TP</div>
+        <div class="xmOpt" data-m="pptp">PPTP</div>
+      </div>
+      <!-- param fields: ids/placeholders carry no user/pass keywords -->
+      <input id="xmField1" placeholder="第一项">
+      <input id="xmField2" type="password" placeholder="第二项">
+      <button id="xmSave">下一步</button>
+    </div>
+  </div>
+
+  <script>
+    document.getElementById('loginBtn').onclick = function () {
+      document.getElementById('login').classList.add('hidden');
+      document.getElementById('app').classList.remove('hidden');
+    };
+    document.getElementById('wanNav').onclick = function () {
+      document.getElementById('wanPage').classList.remove('hidden');
+    };
+    document.getElementById('xmWan').onclick = function () {
+      document.getElementById('xmList').classList.remove('hidden');
+    };
+    Array.prototype.forEach.call(document.querySelectorAll('.xmOpt'), function (el) {
+      el.onclick = function () {
+        var w = document.getElementById('xmWan');
+        w.textContent = el.textContent;
+        w.setAttribute('data-val', el.getAttribute('data-m'));
+        document.getElementById('xmList').classList.add('hidden');
+      };
+    });
+  </script>
+</body>
+</html>
