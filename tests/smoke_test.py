@@ -348,6 +348,79 @@ def main():
         passed += ok
         failed += not ok
 
+    # --- models/ 层:FACTS + _driver(2026-07-16 起的交付形态) ----------------
+    # 每台型号一个脚本、事实全显式、运行期零猜测。这里用真实脚本里的 FACTS
+    # 驱动对应的 mock,证明"照 diagnose 填 FACTS -> 直接能跑"这条交付路成立。
+    print("\n=== models/ (FACTS + _driver, per-model delivery layer) ===")
+    from models import _driver as model_driver
+    from models.Tenda_AX3000 import FACTS as TENDA_FACTS
+    from models.Mercusys_BE3600 import FACTS as MERCUSYS_FACTS
+
+    def read_toast(page, _res):
+        try:
+            return page.locator("#toast").inner_text().strip()
+        except Exception:
+            return ""
+
+    model_cases = [
+        # (name, facts, page, mode, params, apply, expected)
+        ("tenda pppoe+Connect", TENDA_FACTS, "tenda.html", "pppoe",
+         {"pppoe_user": "acc", "pppoe_pass": "s3"}, True,
+         dict(read_back="PPPoE", filled={"pppoe_user", "pppoe_pass"},
+              applied=True, verify="Connected: PPPoE")),
+        # 触发器初始就是 Dynamic IP:走"已是目标"的可信短路;默认不点保存。
+        ("tenda dynamic no-apply", TENDA_FACTS, "tenda.html", "dynamic",
+         {}, False,
+         dict(read_back="Dynamic IP", filled=set(), applied=False, verify="")),
+        ("tenda l2tp fields", TENDA_FACTS, "tenda.html", "l2tp",
+         {"vpn_server": "10.0.0.1", "vpn_user": "u", "vpn_pass": "p"}, True,
+         dict(read_back="L2TP",
+              filled={"vpn_server", "vpn_user", "vpn_pass"},
+              applied=True, verify="Connected: L2TP")),
+        # IPv6 独立页:mode_overrides 换页 + enable_toggle 开门 + v6 flavor;
+        # LAN 区的同名 "DHCPv6" radio 诱饵绝不能被点到(点到 = read_back 错)。
+        ("tenda ipv6 gated page", TENDA_FACTS, "tenda_ipv6.html", "ipv6",
+         {}, True,
+         dict(read_back="DHCPv6", filled=set(), applied=True,
+              verify="Saved: DHCPv6")),
+        ("mercusys pppoe+Save", MERCUSYS_FACTS, "custom.html", "pppoe",
+         {"pppoe_user": "acc", "pppoe_pass": "s3"}, True,
+         dict(read_back="PPPoE", filled={"pppoe_user", "pppoe_pass"},
+              applied=True, verify="Saved: PPPoE")),
+    ]
+    for name, facts, page_file, mode, params, do_apply, want in model_cases:
+        res = model_driver.run(
+            facts, mode, params=params, apply=do_apply,
+            admin_pass="admin123",
+            url="http://127.0.0.1:%d/%s" % (port, page_file),
+            config=cfg, verify_hook=read_toast)
+        ok = (res["success"]
+              and res["read_back"].strip() == want["read_back"]
+              and want["filled"] <= set(res["filled"])
+              and res["applied"] == want["applied"]
+              and (res.get("verify") or "") == want["verify"])
+        status = "PASS" if ok else "FAIL"
+        print("[%s] %-24s read_back=%-12r filled=%s applied=%s verify=%r"
+              % (status, name, res["read_back"], res["filled"],
+                 res["applied"], res.get("verify")))
+        if not ok:
+            print("        message: %s warnings: %s"
+                  % (res["message"], res["warnings"]))
+        passed += ok
+        failed += not ok
+
+    # 事实对不上的页面必须诚实失败(而不是零交互的假成功):拿 Mercusys 的
+    # FACTS 去跑 Tenda 页,菜单/控件都对不上 -> success=False + 明确 message。
+    res = model_driver.run(MERCUSYS_FACTS, "dynamic", apply=False,
+                           admin_pass="admin123",
+                           url="http://127.0.0.1:%d/tenda.html" % port,
+                           config=cfg)
+    ok = (not res["success"]) and not res["applied"] and bool(res["message"])
+    print("[%s] wrong-page guard: success=%s message=%r"
+          % ("PASS" if ok else "FAIL", res["success"], res["message"]))
+    passed += ok
+    failed += not ok
+
     httpd.shutdown()
     print("\n%d passed, %d failed" % (passed, failed))
     return 1 if failed else 0

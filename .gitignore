@@ -6,6 +6,9 @@ vendor/
 # local run defaults incl. admin/broadband passwords (cli.py setup)
 router.yaml
 
+# models/ 层运行截图(engine 的 dial_*.png 样例仍保留在仓库里)
+artifacts/model_*.png
+
 __pycache__/
 *.pyc
 .DS_Store

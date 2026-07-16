@@ -4,12 +4,21 @@ Context for any Claude session (terminal Claude Code, VS Code, or app) opening
 this repo. Read this first, then `README.md`.
 
 ## What this is
-Generic, brand-agnostic automation to **switch a router's WAN dial mode**
-(dynamic / PPPoE / L2TP / PPTP / IPv6) via its web UI, so we can compare our DUT
-against competitor routers we can't drive by HTTP API. Built with **Playwright
-(Python)**. Driven by **heuristics** (recognise controls by multilingual
-text/label, not hardcoded per-brand selectors) + optional per-brand **profiles**
-+ a **record** mode to onboard new models in minutes.
+Automation to **switch a router's WAN dial mode** (dynamic / PPPoE / L2TP /
+PPTP / IPv6) via its web UI, so we can compare our DUT against competitor
+routers we can't drive by HTTP API. Built with **Playwright (Python)**.
+
+**Delivery shape (pivoted 2026-07-16, mentor's direction — outcome over
+generality):** one self-contained script per model, `models/<Brand>_<Model>.py`
+(all of that device's FACTS: login, nav path, control selector, per-mode
+wording, apply button) + a tiny shared runtime `models/_driver.py`. Colleagues
+run `python models/Tenda_AX3000.py pppoe` — no engine knowledge needed. Target
+brands are just the group's bench: **Cudy / Tenda / Buffalo / Huawei** (done:
+Tenda, Mercusys). The heuristics engine + `cli.py diagnose` are demoted to the
+**adaptation toolbox**, and the adaptation methodology is codified as a skill
+(`.claude/skills/adapt-router-model/SKILL.md`) so ANY Claude session can
+produce a new model script from a diagnose artifact. Don't build further
+"universal tool" surface; invest in per-model scripts + the skill.
 
 **Current scope:** confirm the dial control is *located and changed* (read-back
 == target). It does NOT verify WAN actually dials up — the existing
@@ -23,7 +32,25 @@ is the existing single-machine scripts. See `examples/run_test_matrix.py` for
 the orchestrator skeleton (switch = this tool, perf = placeholder to wire up).
 
 ## Architecture (how the files work together)
-- `engine/heuristics.py` — **core.** Multilingual keyword dicts + semantic
+- `models/` — **the delivery layer.** `<Brand>_<Model>.py` = a FACTS dict
+  (explicit selectors/wordings, zero runtime guessing) + `run_cli(FACTS)`.
+  `_driver.py` is the only click logic (login → nav → enable_toggle guard →
+  set mode → read-back → fill → apply); it inherits the hard-won rules:
+  success ONLY on real read-back == target wording (whole-text or exact
+  per-line match — never substring, "PPPoEv6" must not pass for "pppoe"),
+  enable_toggle never touched while a dial control is visible, popup options
+  matched via option-shaped containers first (`[role='option'], [class*='opt']`)
+  so a same-text decoy elsewhere on the page can't be clicked, apply only with
+  `--apply`. `dial.kind`: select | dropdown | radio; `dial.value` optional
+  read-back sub-selector; `mode_overrides` swaps whole keys per mode (Tenda
+  ipv6 page). Facts lines not yet re-verified on the physical device are
+  commented `[待真机复核]`. `verify_hook(page, result)` is the future WAN-up
+  integration point. Creds come from router.yaml via `cli.merge_params`.
+- `.claude/skills/adapt-router-model/SKILL.md` — the onboarding methodology as
+  a skill: diagnose artifact → FACTS mapping table, selector cookbook, the
+  four iron rules, verification checklist. New models go through this, never
+  through guessed DOM.
+- `engine/heuristics.py` — **core of the adaptation toolbox.** Multilingual keyword dicts + semantic
   locators. Finds the dial control three ways: native `<select>`; a custom
   `<div role="combobox">` (Mercusys/TP-Link); or a **role-less** custom widget
   with no id/name/role whose class repeats across fields (Tenda's Vue
@@ -77,11 +104,14 @@ the orchestrator skeleton (switch = this tool, perf = placeholder to wire up).
 ## Run / verify
 ```bash
 # offline logic test (no router needed) — must stay green:
-python tests/smoke_test.py            # 29/29 pass expected
+python tests/smoke_test.py            # 35/35 pass expected
 
-# drive a real router (run on a machine ON the router's LAN):
+# daily use on an adapted model (run on a machine ON the router's LAN):
 python cli.py setup                   # one time -> router.yaml (git-ignored)
-python cli.py pppoe                   # daily use; add --apply to really save
+python models/Tenda_AX3000.py pppoe   # add --apply to really save
+# adaptation phase (new/unscripted device): heuristics + evidence dump
+python cli.py pppoe                   # heuristic attempt
+python cli.py diagnose                # -> artifacts/diagnose_*.json
 # long form (no router.yaml needed):
 python cli.py --router-ip 192.168.1.1 --pass <pw> --mode pppoe \
     --param pppoe_user=x --param pppoe_pass=y --no-apply   # --no-apply = don't click Save
@@ -214,8 +244,13 @@ was always available. `_example.yaml` documents it.
   can (open shadow roots, readonly-input mode values) so the gap is visible.
 
 ## Next steps
+- Re-verify on the bench the `[待真机复核]` lines in `models/Tenda_AX3000.py`
+  and `models/Mercusys_BE3600.py` (field selectors, apply click, login button).
+- Produce `models/` scripts for the remaining group brands — Cudy, Buffalo,
+  Huawei — via the adapt-router-model skill (needs one `cli.py diagnose` run
+  per device; never guess their DOM).
 - Wire `examples/run_test_matrix.py` `run_perf_tests()`/`wait_wan_up()` to the
-  real single-machine scripts.
-- Add Mercusys IPv6 nav (Advanced→IPv6) via a `wan_path`.
-- Onboard more competitor models (`--record` → profile).
-- Later: `verify_hook.py` for real WAN-up verification; WLAN 2.4G/5G switching.
+  real single-machine scripts (or plug them into `_driver.run(verify_hook=...)`).
+- Mercusys IPv6 (Advanced→IPv6): diagnose first, then add a `mode_overrides`
+  block to its model script.
+- WLAN 2.4G/5G switching later.

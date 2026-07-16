@@ -1,13 +1,22 @@
-# router_dial_switch（路由器拨号方式通用切换工具）
+# router_dial_switch（路由器拨号方式切换)
 
-通用、跨品牌的自动化工具,用于**通过路由器 Web 界面切换 WAN 拨号方式**
-(动态IP / PPPoE / L2TP / PPTP / IPv6)——用于把我们的 DUT 与那些无法用
-HTTP API 驱动的众多竞品路由器做对比测试。
+自动化**通过路由器 Web 界面切换 WAN 拨号方式**(动态IP / PPPoE / L2TP / PPTP /
+IPv6)——用于把我们的 DUT 与那些无法用 HTTP API 驱动的竞品路由器做对比测试。
 
-核心目标**不是**"支持固定的 N 个品牌",而是"**能持续、低成本地适配越来越多的
-品牌**"。因此引擎由**启发式**驱动(靠多语言文本/标签识别控件,而不是写死每个
-品牌的选择器),辅以可选的**每品牌 profile**,以及一个**录制模式**,几分钟即可
-接入难缠的型号。
+**交付形态(2026-07-16 起):每台型号一个脚本。**
+
+```bash
+python models/Tenda_AX3000.py pppoe          # 就这一条,切完看回读
+```
+
+- `models/<品牌>_<型号>.py` —— **交付物**。一个文件 = 这台机的全部"事实"
+  (登录、菜单路径、控件选择器、各模式措辞、保存按钮),同事直接运行即可,
+  不需要理解引擎。组内目标品牌:Cudy / Tenda / Buffalo / Huawei。
+- `models/_driver.py` —— 所有型号共用的点击逻辑(约 500 行,修一处全体受益)。
+- `engine/` + `cli.py` —— **适配期工具箱**:面对新型号先 `python cli.py diagnose`
+  取证,再照 `.claude/skills/adapt-router-model` 的方法论产出新的型号脚本
+  (任何 Claude 会话都能按这个 skill 干活)。启发式引擎不再追求"通吃所有品牌",
+  它的职责是把适配一台新机的成本压到"跑一次诊断 + 抄几个选择器"。
 
 当前范围(按方案约定):只确认拨号控件被**定位并成功改动**(回读值 == 目标)。
 **不验证 WAN 是否真正拨通**——连通性/性能由已有的单机脚本负责。
@@ -64,7 +73,7 @@ HTTP API 驱动的众多竞品路由器做对比测试。
 
 ## 使用方法
 
-### 快速上手(推荐)
+### 日常使用(已适配的型号)
 
 第一次,把 IP / 管理密码 / 宽带账号交互式写进本机的 `router.yaml`
 (该文件已被 `.gitignore` 忽略,不会进仓库):
@@ -73,7 +82,27 @@ HTTP API 驱动的众多竞品路由器做对比测试。
 python cli.py setup
 ```
 
-之后日常切换只需一个词(凭据按模式自动取用,PPPoE 账号不会带进 dynamic 运行):
+之后切换一台**已适配**的机器只要一条命令(凭据按模式自动取用,PPPoE 账号
+不会带进 dynamic 运行;默认只切换不点保存,加 `--apply` 才真正下发):
+
+```bash
+python models/Tenda_AX3000.py dynamic
+python models/Tenda_AX3000.py pppoe --apply
+python models/Mercusys_BE3600.py l2tp
+```
+
+整个测试矩阵(切模式 → 等 WAN → 跑性能)见 `examples/run_test_matrix.py`。
+
+### 适配一台新型号
+
+照 `.claude/skills/adapt-router-model/SKILL.md` 的流程:`python cli.py diagnose`
+取证 → 复制 `models/_template.py` 填 FACTS → 每模式验证回读 → `--apply` 验收。
+Claude 会话里说"适配新型号"即可触发该 skill。下面的 cli.py 用法都属于这个
+适配阶段。
+
+### 适配期:cli.py(启发式引擎)
+
+启发式引擎也可以直接驱动一台没写过脚本的机器(碰运气,常见 UI 能直接成):
 
 ```bash
 python cli.py pppoe
@@ -156,7 +185,7 @@ python tests/smoke_test.py --show   # 观看它点完所有模式
 ```
 
 它在 localhost 起模拟路由器页并跑真实引擎:登录 → 进 WAN 设置 → 识别控件 →
-选中 → 填参数 → 回读 → 保存。当前共 **29 个用例**,覆盖:
+选中 → 填参数 → 回读 → 保存。当前共 **35 个用例**,覆盖:
 - `index.html` 原生 `<select>` / `custom.html` 自定义 `<div role="combobox">`
   (复刻真机 Mercusys)/ `tenda.html` 无 role 的 Vue widget(含 "Connect" 保存键);
 - `xiaomi.html` **故意做成启发式认不出**,用带 `selectors:` 的 profile 驱动,
@@ -164,24 +193,35 @@ python tests/smoke_test.py --show   # 观看它点完所有模式
 - `tenda_ipv6.html` IPv6 使能开关(enable_toggle)+ v6 flavor(mode_labels),
   以及"开关还关着时诊断必须能看见它"+ auto-pin 自动写 enable_toggle;
 - `noctrl.html` / `cardstrip.html` 两个**假阳性守卫**(绝不允许零交互的 success);
-- CLI 便利层:`router.yaml` 读写、按模式过滤凭据、auto-pin 生成 profile 且不覆盖已有文件。
+- CLI 便利层:`router.yaml` 读写、按模式过滤凭据、auto-pin 生成 profile 且不覆盖已有文件;
+- **models/ 交付层**:用 `Tenda_AX3000.py` / `Mercusys_BE3600.py` 里的真实 FACTS
+  驱动对应 mock(含 IPv6 门控页、"Connect" 保存键、按模式填参、默认不点保存),
+  以及"事实对不上的页面必须诚实失败"守卫。
 
 ## 项目结构
 
 ```
 router_dial_switch/
-  cli.py                 入口(短命令 + setup 向导 + 失败时 auto-pin)
+  models/                **交付层:每台型号一个脚本**
+    Tenda_AX3000.py      事实(FACTS)+ 入口;直接运行
+    Mercusys_BE3600.py
+    _template.py         新型号照抄的注释模板
+    _driver.py           所有型号共用的点击逻辑(零猜测,只吃显式事实)
+  .claude/skills/
+    adapt-router-model/  适配方法论 skill:diagnose 取证 -> 填 FACTS -> 验证
+  cli.py                 适配期入口(diagnose / setup 向导 / 失败时 auto-pin)
   settings.py            router.yaml 本机默认值(IP/密码/凭据;git 忽略)
   config.py              浏览器 / 超时 / 路径 等开关(处理 OS 差异)
-  engine/
+  engine/                适配期工具箱(启发式引擎)
     browser.py           Playwright 启动(channel=chrome / 离线)
-    heuristics.py        多语言关键词字典 + 语义定位器  <-- 核心
+    heuristics.py        多语言关键词字典 + 语义定位器
     adapter.py           登录 -> 进 WAN 设置 -> 设模式 -> 回读
+    diagnose.py          一键取证:已验证选择器 / 控件形态 / 保存键
     profile.py           可选的每品牌提示加载器(宽松匹配)
     recorder.py          录制模式:抓 HAR + 生成 profile 草稿
-  profiles/              每品牌 yaml(随时间增长)
+  profiles/              适配期的每品牌 yaml 提示
   dial_modes/            每模式所需字段模板
-  tests/                 模拟路由器页 + 离线冒烟测试
+  tests/                 模拟路由器页 + 离线冒烟测试(35 用例)
 ```
 
 ## 已知限制 / 后续

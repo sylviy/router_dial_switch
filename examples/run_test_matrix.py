@@ -1,7 +1,8 @@
-"""编排示例:按 拨号方式 循环 —— 切模式(本工具) → 等WAN → 跑性能(你们的脚本)。
+"""编排示例:按 拨号方式 循环 —— 切模式(型号脚本) → 等WAN → 跑性能(你们的脚本)。
 
-这就是"整套自动化"的主循环。本工具只负责"切拨号方式"这一步;真正的性能/WLAN
-测试用你们已有的单机脚本,替换下面 run_perf_tests() 里的占位命令即可。
+这就是"整套自动化"的主循环。切拨号方式由 models/<品牌>_<型号>.py 的 FACTS +
+共用驱动完成;真正的性能/WLAN 测试用你们已有的单机脚本,替换下面
+run_perf_tests() 里的占位命令即可。
 
 运行(在隔离的 3.8 + 已装依赖环境下):
     python examples/run_test_matrix.py
@@ -16,18 +17,15 @@ import time
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from config import Config
-from engine.browser import Browser
-from engine.adapter import RouterAdapter
-from engine import profile as profile_mod
+from models import _driver as model_driver
 
 # ---------------------------------------------------------------------------
-# 1) 被测路由器 + 登录信息(每台陌生路由器改这里)
+# 1) 被测路由器:换台机 = 换这一行 import(新型号先按 skill 流程产出脚本)
 # ---------------------------------------------------------------------------
-ROUTER_URL = "http://192.168.1.1"
+from models.Tenda_AX3000 import FACTS
+
 ADMIN_USER = ""            # 若只需密码就留空
 ADMIN_PASS = "admin123"
-BRAND, MODEL = "", ""      # 有 profile 时填,用于匹配;没有就留空走纯启发式
 
 # ---------------------------------------------------------------------------
 # 2) 测试矩阵:拨号方式 + 各自参数(账密/服务器)——按你的例子填好了
@@ -43,18 +41,13 @@ DIAL_MATRIX = [
 
 
 # ---------------------------------------------------------------------------
-# 3) 切拨号方式(本工具):返回是否切换成功
+# 3) 切拨号方式(型号脚本):返回是否切换成功
 # ---------------------------------------------------------------------------
 def switch_dial_mode(mode: str, params: dict) -> dict:
-    cfg = Config()
-    cfg.channel = "chrome"          # 复用系统 Chrome(离线);测试台 Windows 用 114
-    prof = profile_mod.match(BRAND, MODEL)
-    with Browser(cfg) as br:
-        br.goto(ROUTER_URL)
-        adapter = RouterAdapter(br.page, config=cfg, profile=prof)
-        res = adapter.run(mode, params,
-                          admin_user=ADMIN_USER, admin_pass=ADMIN_PASS)
-    return res.as_dict()
+    # 编排循环里是真跑,所以 apply=True(单独调试某台机时先别带 apply,
+    # 用 python models/<型号>.py <mode> 看回读)。
+    return model_driver.run(FACTS, mode, params=params, apply=True,
+                            admin_user=ADMIN_USER, admin_pass=ADMIN_PASS)
 
 
 # ---------------------------------------------------------------------------
@@ -87,9 +80,8 @@ def main():
     for mode, params in DIAL_MATRIX:
         print("\n=== 切到 %s ===" % mode)
         sw = switch_dial_mode(mode, params)
-        print("    切换: success=%s via=%s read_back=%r needs_recording=%s"
-              % (sw["success"], sw["detected_via"], sw["read_back"],
-                 sw["needs_recording"]))
+        print("    切换: success=%s read_back=%r applied=%s"
+              % (sw["success"], sw["read_back"], sw["applied"]))
         if not sw["success"]:
             print("    ✗ 切换失败,跳过该模式测试。message=%s" % sw["message"])
             results.append({"mode": mode, "switched": False, "perf": None})
