@@ -121,10 +121,56 @@ def run_setup() -> int:
 
 # ---------------------------------------------------------------------------
 # auto-pin: turn a failing run's diagnose evidence into a profile file,
-# so nobody has to read the JSON artifact and hand-write YAML.
+# so nobody has to read the JSON artifact and hand-write YAML.  Two concepts
+# are pinnable: dial_mode_select (control seen but not driveable) and
+# enable_toggle (nothing seen -- an OFF switch may gate the whole section,
+# e.g. TP-Link/Tenda IPv6 pages).
 # ---------------------------------------------------------------------------
+def _ask_choice(n: int, concept: str, assume_yes: bool) -> int:
+    """Return the 1-based candidate index, or 0 to skip."""
+    if sys.stdin.isatty() and not assume_yes:
+        raw = input("[pin] 写入哪一个?回车=1,数字选择,n=跳过: ").strip().lower()
+        if raw in ("n", "no"):
+            print("[pin] 跳过;推荐选择器已在上方,可手动填入 "
+                  "profiles/*.yaml 的 selectors.%s。" % concept)
+            return 0
+        if raw.isdigit() and 1 <= int(raw) <= n:
+            return int(raw)
+        return 1
+    if n > 1 and not assume_yes:
+        print("[pin] 非交互环境且候选不止一个,不自动写入。重跑时加 --pin 采用第 1 个,"
+              "或手动挑选上面的选择器。")
+        return 0
+    return 1
+
+
+def _write_pin(concept: str, sel: str, brand: str, model: str, host: str,
+               evidence: str, profile_dir: str, settings_path: str) -> None:
+    brand = brand or "auto_" + profile_mod._slug(host)
+    path = profile_mod.write_pin(brand, model, {concept: sel},
+                                 profile_dir=profile_dir, evidence=evidence)
+    if path is None:
+        print("[pin] profiles/ 下已有同名文件,不覆盖。把下面一段合并进去即可:\n"
+              "selectors:\n  %s: '%s'" % (concept, sel.replace("'", "''")))
+        return
+    print("[pin] 已生成 %s" % path)
+
+    # remember the brand hint so the next bare run picks the profile up
+    saved = settings_mod.load(settings_path)
+    if not saved.get("brand"):
+        saved["brand"] = brand
+        saved.setdefault("router_ip", host)
+        settings_mod.save(saved, settings_path)
+        print("[pin] 已把 brand: %s 记入 router.yaml —— 直接重跑同一条命令即可。"
+              % brand)
+    else:
+        print("[pin] 重跑时加 --brand %s 以启用该 profile。" % brand)
+
+
 def offer_pin(data: dict, brand: str, model: str, host: str,
-              assume_yes: bool = False) -> None:
+              assume_yes: bool = False,
+              profile_dir: str = profile_mod.PROFILE_DIR,
+              settings_path: str = settings_mod.SETTINGS_PATH) -> None:
     from urllib.parse import urlsplit
     host = urlsplit(host if "://" in host else "//" + host).hostname or host
     verdict = data.get("verdict", {})
@@ -132,6 +178,9 @@ def offer_pin(data: dict, brand: str, model: str, host: str,
         return  # a strategy found the control; the failure is elsewhere
     if "card-strip" in str(verdict.get("dial_control", "")):
         return  # a single pin can't drive a card strip; diagnose already said so
+    evidence = data.get("artifact", "")
+
+    # 1) a dial control was seen and has a verified-unique selector
     cands, seen = [], set()
     for c in data.get("dial_candidates", []):
         pin = c.get("pin") or {}
@@ -139,50 +188,41 @@ def offer_pin(data: dict, brand: str, model: str, host: str,
         if pin.get("available") and sel and sel not in seen:
             seen.add(sel)
             cands.append(c)
-    if not cands:
-        return
-
-    print("\n[pin] 识别失败,但诊断已验证出唯一选择器 —— 可自动生成 profile:")
-    for i, c in enumerate(cands, 1):
-        print("[pin] %d. %s text=%r label=%r\n        -> %s"
-              % (i, c.get("kind"), c.get("text"), c.get("nearby_label"),
-                 c["pin"]["recommended"]))
-
-    choice = 1
-    if sys.stdin.isatty() and not assume_yes:
-        raw = input("[pin] 写入哪一个?回车=1,数字选择,n=跳过: ").strip().lower()
-        if raw in ("n", "no"):
-            print("[pin] 跳过;推荐选择器已在上方,可手动填入 "
-                  "profiles/*.yaml 的 selectors.dial_mode_select。")
+    if cands:
+        print("\n[pin] 识别失败,但诊断已验证出唯一选择器 —— 可自动生成 profile:")
+        for i, c in enumerate(cands, 1):
+            print("[pin] %d. %s text=%r label=%r\n        -> %s"
+                  % (i, c.get("kind"), c.get("text"), c.get("nearby_label"),
+                     c["pin"]["recommended"]))
+        choice = _ask_choice(len(cands), "dial_mode_select", assume_yes)
+        if choice:
+            _write_pin("dial_mode_select", cands[choice - 1]["pin"]["recommended"],
+                       brand, model, host, evidence, profile_dir, settings_path)
             return
-        if raw.isdigit() and 1 <= int(raw) <= len(cands):
-            choice = int(raw)
-    elif len(cands) > 1 and not assume_yes:
-        print("[pin] 非交互环境且候选不止一个,不自动写入。重跑时加 --pin 采用第 1 个,"
-              "或手动挑选上面的选择器。")
-        return
+        # skipped (e.g. every candidate is just a nav link whose text happens to
+        # read as a mode) -- fall through and offer the enable-toggle pin too
 
-    sel = cands[choice - 1]["pin"]["recommended"]
-    brand = brand or "auto_" + profile_mod._slug(host)
-    path = profile_mod.write_pin(brand, model,
-                                 {"dial_mode_select": sel},
-                                 evidence=data.get("artifact", ""))
-    if path is None:
-        print("[pin] profiles/ 下已有同名文件,不覆盖。把下面一段合并进去即可:\n"
-              "selectors:\n  dial_mode_select: '%s'" % sel.replace("'", "''"))
+    # 2) nothing dial-like on the page, but an OFF switch might gate the whole
+    #    section (IPv6 pages often render only after their enable switch is ON)
+    toggles = [t for t in data.get("toggles", [])
+               if t.get("selector") and t.get("state") is not True]
+    if not toggles:
         return
-    print("[pin] 已生成 %s" % path)
-
-    # remember the brand hint so the next bare run picks the profile up
-    saved = settings_mod.load()
-    if not saved.get("brand"):
-        saved["brand"] = brand
-        saved.setdefault("router_ip", host)
-        settings_mod.save(saved)
-        print("[pin] 已把 brand: %s 记入 router.yaml —— 直接重跑同一条命令即可。"
-              % brand)
-    else:
-        print("[pin] 重跑时加 --brand %s 以启用该 profile。" % brand)
+    import re as _re
+    enable_rx = _re.compile(r"ipv6|enable|启用|开启|使能", _re.I)
+    toggles.sort(key=lambda t: 0 if enable_rx.search(t.get("label") or "") else 1)
+    print("\n[pin] 页面上没看到拨号控件,但发现了未打开的开关 —— 整个设置区块"
+          "可能要等某个开关打开才渲染(如 IPv6 总开关)。可自动 pin 为 "
+          "selectors.enable_toggle:")
+    for i, t in enumerate(toggles, 1):
+        print("[pin] %d. label=%r state=%s\n        -> %s"
+              % (i, t.get("label"), t.get("state"), t["selector"]))
+    print("[pin] 说明:引擎只在找不到拨号控件时才去拨该开关,绝不会把已开启的"
+          "开关点关;写入后重跑,若区块渲染出来即生效。")
+    choice = _ask_choice(len(toggles), "enable_toggle", assume_yes)
+    if choice:
+        _write_pin("enable_toggle", toggles[choice - 1]["selector"],
+                   brand, model, host, evidence, profile_dir, settings_path)
 
 
 def main(argv=None):

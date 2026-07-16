@@ -156,12 +156,13 @@ python tests/smoke_test.py --show   # 观看它点完所有模式
 ```
 
 它在 localhost 起模拟路由器页并跑真实引擎:登录 → 进 WAN 设置 → 识别控件 →
-选中 → 填参数 → 回读 → 保存。当前共 **27 个用例**,覆盖:
+选中 → 填参数 → 回读 → 保存。当前共 **29 个用例**,覆盖:
 - `index.html` 原生 `<select>` / `custom.html` 自定义 `<div role="combobox">`
   (复刻真机 Mercusys)/ `tenda.html` 无 role 的 Vue widget(含 "Connect" 保存键);
 - `xiaomi.html` **故意做成启发式认不出**,用带 `selectors:` 的 profile 驱动,
   验证选择器覆盖已接入;`beautify.html` 美化隐藏的原生 select;
-- `tenda_ipv6.html` IPv6 使能开关(enable_toggle)+ v6 flavor(mode_labels);
+- `tenda_ipv6.html` IPv6 使能开关(enable_toggle)+ v6 flavor(mode_labels),
+  以及"开关还关着时诊断必须能看见它"+ auto-pin 自动写 enable_toggle;
 - `noctrl.html` / `cardstrip.html` 两个**假阳性守卫**(绝不允许零交互的 success);
 - CLI 便利层:`router.yaml` 读写、按模式过滤凭据、auto-pin 生成 profile 且不覆盖已有文件。
 

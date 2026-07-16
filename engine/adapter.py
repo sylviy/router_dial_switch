@@ -360,6 +360,8 @@ class RouterAdapter:
         except Exception:
             try:
                 ac = el.get_attribute("aria-checked")
+                if ac is None:
+                    ac = el.get_attribute("aria-pressed")
                 if ac is not None:
                     state = (ac == "true")
                 else:

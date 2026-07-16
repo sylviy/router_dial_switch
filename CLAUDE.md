@@ -58,8 +58,16 @@ the orchestrator skeleton (switch = this tool, perf = placeholder to wire up).
   unique selector, the CLI offers (TTY prompt; `--pin` = non-interactive yes)
   to write `profiles/auto_<ip>.yaml` + remember `brand:` in router.yaml, so
   nobody hand-writes YAML for the common "control not recognised" case.
-  `write_pin` (profile.py) never overwrites an existing profile. Card strips
-  are excluded (a single pin can't drive them).
+  Two concepts are offered: `dial_mode_select` (control seen, pinnable), and —
+  when NOTHING dial-like is on the page but diagnose saw OFF switches —
+  `enable_toggle` (the TP-Link/Tenda IPv6 shape: section renders only after
+  its switch is ON; candidates sorted so ipv6/enable-labeled ones come first).
+  Skipping the dial offer falls through to the toggle offer (nav links whose
+  text reads as a mode can pollute the dial candidates). `write_pin`
+  (profile.py) never overwrites an existing profile. Card strips are excluded
+  (a single pin can't drive them). `tools/find_enable_toggle.js` is the
+  console-paste equivalent for finding the switch by hand (verifies plain-CSS
+  counts in-page; defers Playwright-syntax cases to `cli.py diagnose`).
 - `settings.py` — `router.yaml` local defaults (IP/passwords/per-mode creds;
   git-ignored). CLI flags override; saved creds are filtered per mode
   (`cli.merge_params`) so PPPoE creds never leak into a dynamic run. Wizard
@@ -69,7 +77,7 @@ the orchestrator skeleton (switch = this tool, perf = placeholder to wire up).
 ## Run / verify
 ```bash
 # offline logic test (no router needed) — must stay green:
-python tests/smoke_test.py            # 27/27 pass expected
+python tests/smoke_test.py            # 29/29 pass expected
 
 # drive a real router (run on a machine ON the router's LAN):
 python cli.py setup                   # one time -> router.yaml (git-ignored)

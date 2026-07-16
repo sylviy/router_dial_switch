@@ -165,14 +165,16 @@ _SCAN_JS = r"""
   const toggles = [];
   const seenT = new Set();
   document.querySelectorAll(
-    "input[type=checkbox], [role=switch], [class*='switch'], [class*='toggle']"
+    "input[type=checkbox], [role=switch], [role=checkbox], [aria-checked], " +
+    "[aria-pressed], [class*='switch'], [class*='toggle'], [class*='slider'], " +
+    "[class*='onoff'], [class*='enable']"
   ).forEach(el => {
     if (!visible(el) || seenT.has(el)) return;
     seenT.add(el);
     let state = null;
     if (el.tagName.toLowerCase() === 'input') state = !!el.checked;
     else {
-      const ac = el.getAttribute('aria-checked');
+      const ac = el.getAttribute('aria-checked') ?? el.getAttribute('aria-pressed');
       if (ac !== null) state = (ac === 'true');
       else {
         const toks = ((el.className || '') + '').toLowerCase().split(/[^a-z0-9]+/);

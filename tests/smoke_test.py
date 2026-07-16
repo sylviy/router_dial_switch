@@ -243,6 +243,31 @@ def main():
     passed += ok
     failed += not ok
 
+    # --- diagnose must SEE a gating enable switch while it's still OFF --------
+    # The TP-Link/Tenda IPv6 shape: the WAN block is absent until the IPv6
+    # switch is on.  Onboarding a new brand hinges on diagnose reporting that
+    # switch (state + verified selector) so auto-pin / find_enable_toggle.js
+    # have something to offer.  No enable_toggle profile here on purpose.
+    print("\n=== tenda_ipv6.html (diagnose reports the OFF enable switch) ===")
+    from engine import diagnose as diagnose_mod
+    nav_only = Profile(brand="tenda", model="navonly", wan_path=["More", "IPv6"])
+    with Browser(cfg) as br:
+        br.goto("http://127.0.0.1:%d/tenda_ipv6.html" % port)
+        adapter = RouterAdapter(br.page, config=cfg, profile=nav_only)
+        adapter.login("", "admin123")
+        adapter.goto_wan_settings()
+        diag = diagnose_mod.collect(br.page)
+    hits = [t for t in diag.get("toggles", [])
+            if t.get("selector") and "v-switch" in t["selector"]
+            and t.get("state") is not True]
+    ok = bool(hits) and not any(s["fired"] for s in diag["strategies"])
+    print("[%s] off-switch reported: %s"
+          % ("PASS" if ok else "FAIL",
+             [(t["label"], t["state"], t["selector"]) for t in hits] or
+             diag.get("toggles")))
+    passed += ok
+    failed += not ok
+
     # --- CLI conveniences (offline, no browser) -------------------------------
     # router.yaml settings, per-mode param filtering, and the auto-pin profile
     # writer that replaces hand-editing profiles/*.yaml after a failed run.
@@ -294,6 +319,32 @@ def main():
         still = profile_lib.match(brand="auto_192_168_0_1", profile_dir=td)
         ok = again is None and still.selector("dial_mode_select") == sel
         print("[%s] write_pin refuses overwrite" % ("PASS" if ok else "FAIL"))
+        passed += ok
+        failed += not ok
+
+        # auto-pin's enable_toggle branch: nothing dial-like on the page, one
+        # OFF switch reported by diagnose -> --pin writes the toggle profile
+        # and records the brand, closing the loop with zero hand-written YAML.
+        from cli import offer_pin
+        fake = {"verdict": {"dial_control": "NOT-FOUND"},
+                "strategies": [{"name": "select", "fired": False}],
+                "dial_candidates": [],
+                "toggles": [
+                    {"label": "MAC Clone", "state": False, "selector": "#mac"},
+                    {"label": "IPv6", "state": False, "selector": "div.v-switch"},
+                ],
+                "artifact": "fake.json"}
+        spath2 = os.path.join(td, "router2.yaml")
+        offer_pin(fake, "", "", "192.168.9.9", assume_yes=True,
+                  profile_dir=td, settings_path=spath2)
+        prof2 = profile_lib.match(brand="auto_192_168_9_9", profile_dir=td)
+        saved2 = settings_mod.load(spath2)
+        ok = (prof2 is not None
+              and prof2.selector("enable_toggle") == "div.v-switch"  # IPv6 sorted first
+              and saved2.get("brand") == "auto_192_168_9_9")
+        print("[%s] offer_pin -> enable_toggle: %s / router.yaml brand=%s"
+              % ("PASS" if ok else "FAIL",
+                 prof2.selectors if prof2 else None, saved2.get("brand")))
         passed += ok
         failed += not ok
 

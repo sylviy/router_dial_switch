@@ -49,6 +49,7 @@ python cli.py --router-ip 192.168.x.1 --pass <管理密码> --mode dynamic --no-
 | URL 停在**首页/状态页**,`0 <select>, 0 role=combobox` | **导航**没走到 WAN 页 | `wan_path: [...]`(按顺序要点的菜单文字) |
 | URL 已到 WAN 页,但 `0 <select>, 0 role=combobox` | 控件是**自造 widget**,认不出 | `selectors.dial_mode_select`(看产物 `pin.recommended`) |
 | 产物 `verdict.dial_control: card-strip (unsupported)` | 控件是**卡片条/分段选择器**,现有策略都吃不下 | 暂无低成本修法(单个 pin 无效)→ 记为功能需求;详见 CLAUDE.md「Known gaps」 |
+| 功能页(常见于 IPv6)**空空如也**,产物 `toggles` 里有 state=False 的开关 | 整个区块要等**使能开关**打开才渲染 | `selectors.enable_toggle`(失败运行会自动列出开关候选、一键写入;手动排查用 `tools/find_enable_toggle.js` 贴进控制台) |
 | `dropdown found but has no 'pppoe' option` | 认出控件了,但**模式措辞**没匹配上 | `mode_labels:`(把规范名映射到界面原文) |
 | `success:true` 但 `filled: []`(本该填账密) | **参数字段**认不出 | `selectors.pppoe_user` / `pppoe_pass` / `vpn_server` 等 |
 | 选对了但 `applied:false`;产物 `save_button: NO-MATCH` | **保存按钮**认不出(如 Tenda 的 "Connect") | 把该按钮措辞加进 `heuristics.BUTTON_SAVE_SYNONYMS`,或 `selectors.save_button` |
@@ -63,8 +64,10 @@ python cli.py --router-ip 192.168.x.1 --pass <管理密码> --mode dynamic --no-
 
 **先看自动的路:失败的那次运行,若诊断验证出了唯一选择器,终端会直接列出候选并
 问一句「写入哪一个?」——回车即生成 `profiles/auto_<IP>.yaml` 并把 brand 记入
-router.yaml,重跑同一条命令就能用上。** 非交互环境(脚本/中继)加 `--pin` 采用
-第 1 个候选。多数「控件认不出」的机型到这里就结束了,无需手写任何 YAML。
+router.yaml,重跑同一条命令就能用上。** 页面上什么拨号控件都没有、但有**关着的
+开关**时(IPv6 页常见),同一流程会改为提供 `enable_toggle` 候选(ipv6/启用类
+label 排最前)。非交互环境(脚本/中继)加 `--pin` 采用第 1 个候选。多数
+「控件认不出」的机型到这里就结束了,无需手写任何 YAML。
 自动路走不通时(要补的是 wan_path / mode_labels / 保存按钮等),再手动建,两种方式任选:
 
 - **手写**:在 `profiles/` 下新建 `<品牌>_<型号>.yaml`,照 `profiles/_example.yaml`(带
