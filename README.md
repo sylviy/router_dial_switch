@@ -64,6 +64,32 @@ HTTP API 驱动的众多竞品路由器做对比测试。
 
 ## 使用方法
 
+### 快速上手(推荐)
+
+第一次,把 IP / 管理密码 / 宽带账号交互式写进本机的 `router.yaml`
+(该文件已被 `.gitignore` 忽略,不会进仓库):
+
+```bash
+python cli.py setup
+```
+
+之后日常切换只需一个词(凭据按模式自动取用,PPPoE 账号不会带进 dynamic 运行):
+
+```bash
+python cli.py pppoe
+python cli.py dynamic
+python cli.py l2tp
+```
+
+识别失败时会自动跑诊断;若诊断验证出了唯一选择器,终端会直接问一句
+「写入哪一个?」——**回车即自动生成 profile 并记住品牌**,重跑同一条命令即可,
+不需要手写 YAML。非交互脚本加 `--pin` 自动采用第 1 个候选。
+
+> setup 向导默认 `no_apply: true`(只切换、不点保存,试跑更安全);确认无误后
+> 用 `python cli.py pppoe --apply` 真正下发,或重跑 setup 关掉该默认。
+
+### 完整命令(不想用 router.yaml 时)
+
 切到 PPPoE(纯启发式,无需 profile):
 
 ```bash
@@ -97,7 +123,8 @@ python cli.py --router-ip 192.168.1.1 --pass admin123 --mode dynamic
 > 建 profile → 取 CSS 选择器 → 带 profile 迭代 → 提交。下面是其中的录制模式。
 
 ```bash
-python cli.py --record --router-ip 192.168.1.1 --brand acme --model r1
+python cli.py record --brand acme --model r1        # 已 setup 时
+python cli.py record --router-ip 192.168.1.1 --brand acme --model r1
 ```
 
 会弹出一个 Chrome 窗口;你手动把拨号方式切一遍,然后关闭窗口。得到:
@@ -129,19 +156,21 @@ python tests/smoke_test.py --show   # 观看它点完所有模式
 ```
 
 它在 localhost 起模拟路由器页并跑真实引擎:登录 → 进 WAN 设置 → 识别控件 →
-选中 → 填参数 → 回读 → 保存。会跑三个页面(共 11 个用例):
-- `index.html` —— 原生 `<select>`(全部 5 种模式),
-- `custom.html` —— 自定义 `<div role="combobox">`,复刻真机 Mercusys 控件
-  (动态 / PPPoE / L2TP / PPTP),
-- `xiaomi.html` —— **故意做成启发式认不出**(裸 `<div>` 控件、无关键词字段、
-  非常规保存按钮),用一个带 `selectors:` 的 profile 驱动,验证**选择器覆盖已接入**
-  (异构 UI 如小米的主要抓手)。
+选中 → 填参数 → 回读 → 保存。当前共 **27 个用例**,覆盖:
+- `index.html` 原生 `<select>` / `custom.html` 自定义 `<div role="combobox">`
+  (复刻真机 Mercusys)/ `tenda.html` 无 role 的 Vue widget(含 "Connect" 保存键);
+- `xiaomi.html` **故意做成启发式认不出**,用带 `selectors:` 的 profile 驱动,
+  验证选择器覆盖已接入;`beautify.html` 美化隐藏的原生 select;
+- `tenda_ipv6.html` IPv6 使能开关(enable_toggle)+ v6 flavor(mode_labels);
+- `noctrl.html` / `cardstrip.html` 两个**假阳性守卫**(绝不允许零交互的 success);
+- CLI 便利层:`router.yaml` 读写、按模式过滤凭据、auto-pin 生成 profile 且不覆盖已有文件。
 
 ## 项目结构
 
 ```
 router_dial_switch/
-  cli.py                 入口
+  cli.py                 入口(短命令 + setup 向导 + 失败时 auto-pin)
+  settings.py            router.yaml 本机默认值(IP/密码/凭据;git 忽略)
   config.py              浏览器 / 超时 / 路径 等开关(处理 OS 差异)
   engine/
     browser.py           Playwright 启动(channel=chrome / 离线)

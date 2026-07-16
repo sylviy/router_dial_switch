@@ -3,6 +3,9 @@
 #   vendor/wheels/  = pip download -r requirements.txt -d vendor/wheels
 vendor/
 
+# local run defaults incl. admin/broadband passwords (cli.py setup)
+router.yaml
+
 __pycache__/
 *.pyc
 .DS_Store

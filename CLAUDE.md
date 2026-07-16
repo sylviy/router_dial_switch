@@ -53,14 +53,28 @@ the orchestrator skeleton (switch = this tool, perf = placeholder to wire up).
   `run()` writes the same artifact automatically. `adapter._diag()` delegates to
   its `summarize()` (all-frames, incl. a save-button-seen flag).
 - `dial_modes/*.yaml` — which params each mode needs.
-- `cli.py` — entry point. `tests/smoke_test.py` — offline e2e vs mock pages.
+- `cli.py` — entry point. Short UX: positional mode (`python cli.py pppoe`),
+  `setup` wizard, and **auto-pin** — on a failed run, if diagnose verified a
+  unique selector, the CLI offers (TTY prompt; `--pin` = non-interactive yes)
+  to write `profiles/auto_<ip>.yaml` + remember `brand:` in router.yaml, so
+  nobody hand-writes YAML for the common "control not recognised" case.
+  `write_pin` (profile.py) never overwrites an existing profile. Card strips
+  are excluded (a single pin can't drive them).
+- `settings.py` — `router.yaml` local defaults (IP/passwords/per-mode creds;
+  git-ignored). CLI flags override; saved creds are filtered per mode
+  (`cli.merge_params`) so PPPoE creds never leak into a dynamic run. Wizard
+  defaults `no_apply: true`; `--apply` overrides.
+- `tests/smoke_test.py` — offline e2e vs mock pages.
 
 ## Run / verify
 ```bash
 # offline logic test (no router needed) — must stay green:
-python tests/smoke_test.py            # 23/23 pass expected
+python tests/smoke_test.py            # 27/27 pass expected
 
 # drive a real router (run on a machine ON the router's LAN):
+python cli.py setup                   # one time -> router.yaml (git-ignored)
+python cli.py pppoe                   # daily use; add --apply to really save
+# long form (no router.yaml needed):
 python cli.py --router-ip 192.168.1.1 --pass <pw> --mode pppoe \
     --param pppoe_user=x --param pppoe_pass=y --no-apply   # --no-apply = don't click Save
 ```

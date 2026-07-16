@@ -8,9 +8,20 @@
 
 ---
 
+## 第 0 步:一次性配置(可选但推荐)
+
+```bash
+python cli.py setup      # 交互式问 IP/密码/宽带账号,写入 router.yaml(git 已忽略)
+```
+
+之后所有命令都缩成一个词:`python cli.py dynamic` / `python cli.py pppoe`。
+下文长命令均可用短形式替代。
+
 ## 第 1 步:先裸跑一次(不带 profile)
 
 ```bash
+python cli.py dynamic          # 已 setup;向导默认 no_apply=true,不会点保存
+# 或长形式:
 python cli.py --router-ip 192.168.x.1 --pass <管理密码> --mode dynamic --no-apply
 ```
 
@@ -50,7 +61,11 @@ python cli.py --router-ip 192.168.x.1 --pass <管理密码> --mode dynamic --no-
 
 ## 第 3 步:建 profile 文件
 
-两种方式任选:
+**先看自动的路:失败的那次运行,若诊断验证出了唯一选择器,终端会直接列出候选并
+问一句「写入哪一个?」——回车即生成 `profiles/auto_<IP>.yaml` 并把 brand 记入
+router.yaml,重跑同一条命令就能用上。** 非交互环境(脚本/中继)加 `--pin` 采用
+第 1 个候选。多数「控件认不出」的机型到这里就结束了,无需手写任何 YAML。
+自动路走不通时(要补的是 wan_path / mode_labels / 保存按钮等),再手动建,两种方式任选:
 
 - **手写**:在 `profiles/` 下新建 `<品牌>_<型号>.yaml`,照 `profiles/_example.yaml`(带
   完整中文注释的模板)填。

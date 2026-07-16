@@ -98,3 +98,41 @@ def match(brand: str = "", model: str = "", firmware: str = "",
         if sc > best_score:
             best, best_score = p, sc
     return best
+
+
+def _slug(text: str) -> str:
+    return "".join(c if c.isalnum() else "_" for c in text).strip("_") or "auto"
+
+
+def write_pin(brand: str, model: str, selectors: Dict[str, str],
+              profile_dir: str = PROFILE_DIR,
+              evidence: str = "") -> Optional[str]:
+    """Write a minimal pin profile from verified diagnose selectors.
+
+    This is the automated replacement for hand-editing profiles/*.yaml: the
+    failing run's diagnose pass already produced selectors verified to match
+    exactly one element, so the file can be generated instead of authored.
+
+    Refuses to overwrite an existing file (it may be hand-tuned, with comments
+    this dump would destroy) -- returns None in that case and the caller should
+    show the snippet instead.
+    """
+    if yaml is None or not selectors:
+        return None
+    name = _slug(brand) + (("_" + _slug(model)) if model else "")
+    path = os.path.join(profile_dir, name + ".yaml")
+    if os.path.exists(path):
+        return None
+    os.makedirs(profile_dir, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write("# Auto-generated pin profile (cli.py) -- selectors were "
+                 "verified count==1 by diagnose\n")
+        if evidence:
+            fh.write("# evidence: %s\n" % evidence)
+        fh.write("# The next run still read-backs the real control state; a "
+                 "wrong pin fails honestly.\n")
+        yaml.safe_dump({"brand": brand, "model": model,
+                        "selectors": dict(selectors)},
+                       fh, allow_unicode=True, sort_keys=False,
+                       default_flow_style=False)
+    return path

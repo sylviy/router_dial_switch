@@ -1,7 +1,11 @@
 @echo off
 REM ==========================================================================
 REM  run.bat  --  run the dial-switch tool via the isolated .venv.
-REM  Forwards all arguments straight to cli.py.  Example:
+REM  Forwards all arguments straight to cli.py.  Examples:
+REM    run.bat setup            (one time: writes router.yaml with IP/passwords)
+REM    run.bat pppoe            (daily use: mode is the only argument)
+REM    run.bat dynamic
+REM  Long form still works:
 REM    run.bat --router-ip 192.168.1.1 --pass PW --mode pppoe ^
 REM            --param pppoe_user=x --param pppoe_pass=y --no-apply
 REM ==========================================================================

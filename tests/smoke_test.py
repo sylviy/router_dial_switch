@@ -243,6 +243,60 @@ def main():
     passed += ok
     failed += not ok
 
+    # --- CLI conveniences (offline, no browser) -------------------------------
+    # router.yaml settings, per-mode param filtering, and the auto-pin profile
+    # writer that replaces hand-editing profiles/*.yaml after a failed run.
+    print("\n=== cli conveniences (router.yaml / merge_params / auto-pin) ===")
+    import tempfile
+    import settings as settings_mod
+    from cli import merge_params
+    from engine import profile as profile_lib
+
+    with tempfile.TemporaryDirectory() as td:
+        spath = os.path.join(td, "router.yaml")
+        settings_mod.save({"router_ip": "192.168.0.1", "pass": "pw",
+                           "no_apply": True,
+                           "params": {"pppoe_user": "acc", "pppoe_pass": "s3"}},
+                          path=spath)
+        loaded = settings_mod.load(spath)
+        ok = (loaded.get("router_ip") == "192.168.0.1"
+              and loaded.get("no_apply") is True
+              and loaded.get("params", {}).get("pppoe_user") == "acc")
+        print("[%s] settings round-trip: %s" % ("PASS" if ok else "FAIL", loaded))
+        passed += ok
+        failed += not ok
+
+        # saved creds must reach their own mode only; explicit params always pass
+        p_pppoe = merge_params("pppoe", loaded["params"], {})
+        p_dyn = merge_params("dynamic", loaded["params"], {"mtu": "1480"})
+        ok = (p_pppoe == {"pppoe_user": "acc", "pppoe_pass": "s3"}
+              and "pppoe_user" not in p_dyn and p_dyn.get("mtu") == "1480")
+        print("[%s] merge_params: pppoe=%s dynamic=%s"
+              % ("PASS" if ok else "FAIL", p_pppoe, p_dyn))
+        passed += ok
+        failed += not ok
+
+        # auto-pin writes a profile that load/match actually picks up
+        sel = 'div.v-form-item:has-text("Internet Connection Type") div.v-select'
+        ppath = profile_lib.write_pin("auto_192_168_0_1", "",
+                                      {"dial_mode_select": sel}, profile_dir=td)
+        prof = profile_lib.match(brand="auto_192_168_0_1", profile_dir=td)
+        ok = (ppath is not None and prof is not None
+              and prof.selector("dial_mode_select") == sel)
+        print("[%s] write_pin -> match: %s" % ("PASS" if ok else "FAIL", ppath))
+        passed += ok
+        failed += not ok
+
+        # never clobber an existing (possibly hand-tuned) profile
+        again = profile_lib.write_pin("auto_192_168_0_1", "",
+                                      {"dial_mode_select": "#other"},
+                                      profile_dir=td)
+        still = profile_lib.match(brand="auto_192_168_0_1", profile_dir=td)
+        ok = again is None and still.selector("dial_mode_select") == sel
+        print("[%s] write_pin refuses overwrite" % ("PASS" if ok else "FAIL"))
+        passed += ok
+        failed += not ok
+
     httpd.shutdown()
     print("\n%d passed, %d failed" % (passed, failed))
     return 1 if failed else 0
