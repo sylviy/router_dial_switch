@@ -30,17 +30,33 @@ description: 为一台新路由器型号产出专属拨号切换脚本 models/<�
 
 ### 第 1 步:取证(唯一的信息来源)
 
-能访问路由器时,在测试台上:
+三种途径,精度递增,能用靠后的就用靠后的:
+
+**直连模式(最精确,优先)** —— 用户机器与路由器同一局域网、且连上了
+Claude in Chrome 扩展时,agent 直接在真机页面上取证:
+
+- **登录让用户自己点**(agent 不代输管理密码;真实宽带账密同理,交付脚本
+  会从 router.yaml 读,不经 agent 之手);
+- 登录后 agent 读 DOM 定位控件,候选选择器当场用
+  `document.querySelectorAll(sel).length === 1` 验证唯一性;
+- 点开下拉,**逐字**抄选项原文进 `modes:`;确认保存键措辞(`:text-is`);
+  IPv6 类门控页可以点开关观察哪块区域渲染出来;
+- 取证期间**绝不点保存/应用/Connect 类按钮**(要点先问用户)。
+
+**测试台模式** —— 在能访问路由器的机器上:
 
 ```bash
 python cli.py setup        # 一次性:IP/密码写进 router.yaml
 python cli.py diagnose     # -> artifacts/diagnose_*.json
 ```
 
-**中继模式**(你拿不到路由器):请用户跑上面两条并回传
+**中继模式**(两者都没有):请用户跑上面两条并回传
 `artifacts/diagnose_*.json`(提醒脱敏);用户连 Python 都没有时,让其把
 `tools/find_dial_selector.js` / `tools/find_enable_toggle.js` 贴进浏览器控制台,
-回传输出。在此之前**不要动笔写 FACTS**。
+回传输出。
+
+无论哪种途径,在拿到证据之前**不要动笔写 FACTS**。取证只是看清页面;
+最终验证(第 4 步)必须由型号脚本自己跑出来 —— 交付物要自己证明自己。
 
 ### 第 2 步:读产物,对号入座
 
