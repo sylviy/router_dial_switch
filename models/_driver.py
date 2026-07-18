@@ -461,6 +461,13 @@ def run_cli(facts: dict, argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--headless", action="store_true", help="无窗口运行")
     args = parser.parse_args(argv)
 
+    # FACTS 声明了登录页 => 必须有管理密码,否则开跑前就报错,
+    # 不要开着浏览器白跑一趟再"卡在登录页"。
+    if facts.get("login") and not args.password:
+        parser.error(
+            "没有管理密码:先跑一次 `python cli.py setup` 把路由器 IP/密码存进 "
+            "router.yaml(git 已忽略,不会进仓库),或本次直接加 --pass <管理密码>。")
+
     explicit: Dict[str, str] = {}
     for item in args.param:
         if "=" in item:
