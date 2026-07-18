@@ -37,10 +37,17 @@ Claude in Chrome 扩展时,agent 直接在真机页面上取证:
 
 - **登录让用户自己点**(agent 不代输管理密码;真实宽带账密同理,交付脚本
   会从 router.yaml 读,不经 agent 之手);
-- 登录后 agent 读 DOM 定位控件,候选选择器当场用
-  `document.querySelectorAll(sel).length === 1` 验证唯一性;
-- 点开下拉,**逐字**抄选项原文进 `modes:`;确认保存键措辞(`:text-is`);
-  IPv6 类门控页可以点开关观察哪块区域渲染出来;
+- 登录后 agent 读 DOM 定位控件;**纯 CSS 选择器**当场用
+  `document.querySelectorAll(sel).length === 1` 验证唯一性,并**优先选
+  属性锚点**(id / name / data-*)而非文字锚点;
+- **凡是 Playwright 专有写法(`:has-text` / `:text-is` / `:has`),浏览器
+  控制台验不了 —— 必须再用 Playwright 引擎 `locator(sel).count()` 数一遍**
+  (写个只读探针脚本,或直接进第 4 步)。血的教训(2026-07-18 Tenda):
+  亲眼看到按钮文字是 "Connect",但真机文字在里层 `<span>` 上,
+  `button:text-is("Connect")` 命中 0 —— "看到了事实"≠"验证了选择器语义",
+  抄 outerHTML,别只抄文字;
+- 点开下拉,**逐字**抄选项原文进 `modes:`;IPv6 类门控页可以点开关观察
+  哪块区域渲染出来;
 - 取证期间**绝不点保存/应用/Connect 类按钮**(要点先问用户)。
 
 **测试台模式** —— 在能访问路由器的机器上:
@@ -87,6 +94,11 @@ cp models/_template.py models/<品牌>_<型号>.py
 `[待真机复核]`(参考 Tenda_AX3000.py 的写法)。
 
 ### 第 4 步:验证(默认不点保存)
+
+**agent 能连到路由器时(先 `curl -m 4 http://<ip>` 探一下,别轻信"沙盒
+不通局域网"的旧结论),这一步由 agent 自己跑完再交付**,不要把第一次
+运行留给用户 —— 这是唯一会用运行时引擎逐个吃 FACTS 选择器的环节,
+Playwright 专有写法的错只有它能兜底。
 
 ```bash
 python models/<品牌>_<型号>.py dynamic          # 看 JSON:success + read_back
