@@ -110,6 +110,20 @@ python models/<品牌>_<型号>.py pppoe            # 账密来自 router.yaml
 措辞不对 / 输入框没出现);回到产物修正对应 FACTS 项再跑。全部回读正确后,带
 `--apply` 验收一次。
 
+### 判定"这台机没有某功能"(如 IPv6)—— 别只看菜单
+
+用户问"真的没有?"时,可见菜单里没有链接**不算证据**。穷尽核查三步:
+
+1. **枚举固件实际引用的所有页面**:正则抓各 frame HTML 里的 `*.htm`,逐个
+   GET 全文搜关键词(Cudy 这样翻出了 49 个页面);
+2. **直接访问候选页面**(`ipv6.htm` / `sub_menu_ipv6.htm` …):404 = 没打包;
+3. **翻导航 JS**:很多 SDK 型 UI 是 `if(flag){ 画这个菜单 }`,而 flag 由服务端
+   注入(Cudy 的 `top_menu.htm` 写死 `var ipv6 = 0`)—— 这能区分
+   "固件没做"和"这台机的构建关掉了",结论完全不同。
+
+顺带留意 `display:none` 行里的死控件(Cudy 的 `ipv6_passthru_enabled`):
+存在 ≠ 可用,别写进 FACTS。
+
 ### 第 5 步:固化(可选但推荐)
 
 把 diagnose 产物里的页面结构做成 `tests/mock_router/<品牌>.html`,在

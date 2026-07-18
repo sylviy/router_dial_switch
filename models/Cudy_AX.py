@@ -11,7 +11,19 @@
 所有选择器命中数已用运行时引擎验证)。
 UI 形态:老式 **frameset** —— 登录在主文档,菜单和 WAN 表单在各自子 frame 里
 (_driver 全 frame 查找),控件是带 id/name 的原生 HTML,非常好伺候。
-本固件 **没有 IPv6 设置页**(菜单里无入口);v6 需求等固件/型号确认后再说。
+
+**IPv6:本固件构建里被关掉了,不是我没找到**(2026-07-18 穷尽核查):
+  * 枚举固件引用的全部 49 个页面,逐个 GET 全文搜 ipv6 —— 没有任何 IPv6 配置页;
+    `sub_menu_ipv6.htm` / `ipv6.htm` 等直接访问全部 404(页面根本没打包进来);
+  * `navigation.js` 里**有完整的 IPv6 菜单代码**:
+    `if(ipv6){ ... add_topMenuItem("sub_menu_ipv6.htm","ipv6"); }`;
+  * 但服务端生成的 `top_menu.htm` 里写的是 `var ipv6 = 0;`(同批变量如
+    `wlan_num = 2` 是按本机实际情况注入的),所以那段菜单永远不画;
+  * WAN 页有个 `input[name='ipv6_passthru_enabled']`,但它所在的 `<tr>` 是
+    `display:none`,五种拨号方式下都不显形 —— 死代码。
+=> 这台机当前固件(1.0.1-20240321)**无法通过 Web UI 配置 IPv6**。若测试需要
+v6,只能先升级/更换固件(升级后重跑 `python cli.py diagnose` 复核),届时照
+Tenda_AX3000.py 的 mode_overrides 补一个 ipv6 模式即可。
 """
 import os
 import sys

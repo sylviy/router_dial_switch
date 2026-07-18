@@ -264,9 +264,23 @@ name-anchored fields (`pppUserName/pppPassword`, `pptp*`, `l2tp*` — vpn_server
 maps to `*ServerIpAddr`, DomainName variant exists).  Apply is
 `input[name='save_apply']` ("Save & Apply", visible+unique); the frame also
 hides EIGHT `*Connect`/`*Disconnect` submits — never match apply by the text
-"Connect" on this brand.  No IPv6 page in this firmware's menus.  All four
-modes validated live via the script itself (read_back + fills, no-apply);
-`--apply` acceptance still pending.  Mock: `cudy*.htm` frameset set.
+"Connect" on this brand.  All four modes validated live via the script itself
+(read_back + fills, no-apply); `--apply` acceptance still pending.  Mock:
+`cudy*.htm` frameset set.
+
+**IPv6 is compiled OFF on this Cudy build — proven, not assumed** (the first
+pass only checked visible menu links, which was under-evidenced; the user
+pushed back and the exhaustive re-check confirmed the conclusion but found the
+real reason).  Method worth reusing on any Realtek-SDK-style UI: harvest every
+`*.htm` referenced by the loaded frames (49 pages here), GET each and grep for
+the feature.  Findings: no IPv6 config page exists and `sub_menu_ipv6.htm` /
+`ipv6.htm` 404 (not shipped); `navigation.js` DOES contain the menu code
+(`if(ipv6){ ... add_topMenuItem("sub_menu_ipv6.htm","ipv6"); }`), but the
+server-generated `top_menu.htm` emits `var ipv6 = 0;` (sibling vars like
+`wlan_num = 2` are injected per-device), so it never draws; the WAN page's
+`input[name='ipv6_passthru_enabled']` sits in a `display:none` row in all five
+modes (dead code).  => v6 needs a firmware upgrade/replacement on this unit;
+re-run `cli.py diagnose` afterwards before adding an ipv6 mode_override.
 
 **Tenda was always pinnable (we got this wrong at the time).** We concluded "no
 unique selector exists → the profile escape hatch is unusable" because plain CSS
