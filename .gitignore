@@ -14,3 +14,6 @@ __pycache__/
 .DS_Store
 venv/
 .venv/
+
+# diagnose evidence dumps may contain session tokens / form values -- never commit
+artifacts/diagnose_*.json
