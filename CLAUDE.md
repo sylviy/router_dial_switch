@@ -104,7 +104,7 @@ the orchestrator skeleton (switch = this tool, perf = placeholder to wire up).
 ## Run / verify
 ```bash
 # offline logic test (no router needed) — must stay green:
-python tests/smoke_test.py            # 35/35 pass expected
+python tests/smoke_test.py            # 34/34 pass expected
 
 # daily use on an adapted model (run on a machine ON the router's LAN):
 python cli.py setup                   # one time -> router.yaml (git-ignored)
@@ -221,6 +221,26 @@ chars) — otherwise the sidebar "IPv6" nav link and the "IPv6" switch label
 masquerade as the control (both exist on the real page), hijacking detection
 and defeating the enable_toggle safety check.
 
+**Tenda direct-observation pass (2026-07-18, Claude in Chrome on the live
+device at 192.168.1.1** — LAN IP moved off the 192.168.0.1 default to avoid
+clashing with the user's home router; firmware V16.03.68.15, HW V3.0).  Every
+FACTS line in `models/Tenda_AX3000.py` was verified in-page (querySelectorAll
+count==1): login button `button.login-form__submit` (text "Login" on
+login.html), dial value node `[data-name='wanType']` (present on BOTH #/wan and
+#/advance/ipv6, unique per page), PPPoE inputs
+`input[data-name='wanPPPoEUser'/'wanPPPoEPwd']` (labels are "PPPoE Username" /
+"PPPoE Password", NOT bare Username/Password), apply = "Connect" on #/wan and
+"Save" on the IPv6 page (both also carry `[data-name='submit']`, but text-is
+is used because the connected-state Disconnect button was not observed), IPv6
+enable switch state lives on the inner icon `[data-name='ipv6En']`
+(ON = `v-switch__icon--active`; the OUTER div.v-switch has no state token, so
+pin the icon).  The v4 list is ONLY PPPoE / Dynamic IP / Static IP — no
+L2TP/PPTP on this model (removed from FACTS and mock); v6 flavors are
+DHCPv6 / PPPoEv6 / "Static IPv6 Address"; the same-text "DHCPv6" LAN radio
+decoy is real.  Mocks (tenda.html / tenda_ipv6.html) were updated to mirror
+all of this.  Still pending: actually clicking Connect/Save — the user's
+`--apply` acceptance round (dynamic → pppoe → ipv6/DHCPv6 → pppoev6).
+
 **Tenda was always pinnable (we got this wrong at the time).** We concluded "no
 unique selector exists → the profile escape hatch is unusable" because plain CSS
 `div.v-select` matches 5 fields. But `_locate_by_selector` uses `frame.locator()`
@@ -244,8 +264,12 @@ was always available. `_example.yaml` documents it.
   can (open shadow roots, readonly-input mode values) so the gap is visible.
 
 ## Next steps
-- Re-verify on the bench the `[待真机复核]` lines in `models/Tenda_AX3000.py`
-  and `models/Mercusys_BE3600.py` (field selectors, apply click, login button).
+- Tenda acceptance on the bench (user runs; single web session — log out of
+  the browser tab first): `python models/Tenda_AX3000.py dynamic` → `pppoe` →
+  `ipv6` → `pppoev6`, first without `--apply` (check read_back), then the real
+  round with `--apply`.
+- Re-verify on the bench the `[待真机复核]` lines in
+  `models/Mercusys_BE3600.py` (field selectors, apply click, login button).
 - Produce `models/` scripts for the remaining group brands — Cudy, Buffalo,
   Huawei — via the adapt-router-model skill (needs one `cli.py diagnose` run
   per device; never guess their DOM).

@@ -31,7 +31,8 @@
 <div id="login-view">
   <h2>Tenda Wi-Fi</h2>
   <div><input type="password"></div>   <!-- bare password box, no id/name (as on the real device) -->
-  <button>Log In</button>
+  <!-- real device (2026-07-18): <button class="v-button login-form__submit ...">Login</button> -->
+  <button class="v-button login-form__submit">Login</button>
 </div>
 
 <!-- APP -->
@@ -58,12 +59,13 @@
         </div>
       </div>
 
-      <!-- THE dial control: role-less, no id/name, value reads as a mode -->
+      <!-- THE dial control: role-less, no id/name, value reads as a mode.
+           Real device (2026-07-18): the label div carries data-name="wanType". -->
       <div class="v-form-item">
         <div class="v-form-item__label">Internet Connection Type</div>
         <div class="v-form-item__content">
           <div class="v-select v-select--medium">
-            <div class="v-select__label"><div class="v-select__label--text">Dynamic IP</div></div>
+            <div class="v-select__label" data-name="wanType"><div class="v-select__label--text">Dynamic IP</div></div>
             <span class="v-select__icon">v</span>
           </div>
         </div>
@@ -91,20 +93,13 @@
         </div>
       </div>
 
+      <!-- real device (2026-07-18): labels are "PPPoE Username"/"PPPoE Password",
+           data-name sits directly on the <input>. No L2TP/PPTP on this model. -->
       <div id="pppoe-fields" class="hidden">
-        <div class="v-form-item"><div class="v-form-item__label">Username</div>
-          <div class="v-form-item__content"><input type="text" id="pppoeUser"></div></div>
-        <div class="v-form-item"><div class="v-form-item__label">Password</div>
-          <div class="v-form-item__content"><input type="password" id="pppoePass"></div></div>
-      </div>
-
-      <div id="vpn-fields" class="hidden">
-        <div class="v-form-item"><div class="v-form-item__label">Username</div>
-          <div class="v-form-item__content"><input type="text" id="vpnUser"></div></div>
-        <div class="v-form-item"><div class="v-form-item__label">Password</div>
-          <div class="v-form-item__content"><input type="password" id="vpnPass"></div></div>
-        <div class="v-form-item"><div class="v-form-item__label">VPN Server IP/Domain Name</div>
-          <div class="v-form-item__content"><input type="text" id="vpnServer"></div></div>
+        <div class="v-form-item"><div class="v-form-item__label">PPPoE Username</div>
+          <div class="v-form-item__content"><input type="text" id="pppoeUser" data-name="wanPPPoEUser"></div></div>
+        <div class="v-form-item"><div class="v-form-item__label">PPPoE Password</div>
+          <div class="v-form-item__content"><input type="password" id="pppoePass" data-name="wanPPPoEPwd"></div></div>
       </div>
 
       <!-- Tenda labels the apply button "Connect" (not Save/Apply). A
@@ -130,12 +125,11 @@
     $('wan-panel').classList.remove('hidden');
   };
 
+  // real device option order (2026-07-18): PPPoE / Dynamic IP / Static IP
   var MODES = [
+    { mode: 'pppoe',   label: 'PPPoE' },
     { mode: 'dynamic', label: 'Dynamic IP' },
     { mode: 'static',  label: 'Static IP' },
-    { mode: 'pppoe',   label: 'PPPoE' },
-    { mode: 'l2tp',    label: 'L2TP' },
-    { mode: 'pptp',    label: 'PPTP' },
   ];
   // find the connection-type widget by its label (it has no id/name -- as on
   // the real device); the tool locates it heuristically, not by this.
@@ -155,7 +149,6 @@
     labelText.textContent = m.label;                 // <-- read-back source
     closePopup();
     $('pppoe-fields').classList.toggle('hidden', m.mode !== 'pppoe');
-    $('vpn-fields').classList.toggle('hidden', m.mode !== 'l2tp' && m.mode !== 'pptp');
   }
   // Handler on the widget ROOT; a click on any descendant (e.g. the inner text
   // node the tool targets) bubbles up to here -- exactly like Vue's @click.

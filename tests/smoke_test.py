@@ -53,7 +53,8 @@ PAGES = [
     ("custom.html", "combobox", ["dynamic", "pppoe", "l2tp", "pptp"]),
     # Tenda-style: role-less <div class="v-select"> (no <select>, no
     # role=combobox, no unique selector; class shared with ISP/MTU/DNS decoys).
-    ("tenda.html", "widget", ["dynamic", "pppoe", "l2tp", "pptp"]),
+    # Real device (2026-07-18) has NO L2TP/PPTP -- mock mirrors that.
+    ("tenda.html", "widget", ["dynamic", "pppoe"]),
 ]
 
 
@@ -148,19 +149,19 @@ def main():
 
     # --- profile mode_labels on the combobox/widget path -----------------------
     # A pinned exact label must beat the synonym tables (parity with the native
-    # <select> path).  "ipv6 -> L2TP" is semantically odd on purpose: it proves
-    # the MECHANISM (the pin decides which option is clicked and the read-back
-    # accepts the pinned wording), which is what Tenda's IPv6 page needs
-    # (options are PPPoEv6/DHCPv6 flavors, not a literal "IPv6").
+    # <select> path).  "ipv6 -> Static IP" is semantically odd on purpose: it
+    # proves the MECHANISM (the pin decides which option is clicked and the
+    # read-back accepts the pinned wording), which is what Tenda's IPv6 page
+    # needs (options are PPPoEv6/DHCPv6 flavors, not a literal "IPv6").
     print("\n=== tenda.html (mode_labels pin drives the widget path) ===")
     pin_profile = Profile(brand="tenda", model="pin",
-                          mode_labels={"ipv6": "L2TP"})
+                          mode_labels={"ipv6": "Static IP"})
     with Browser(cfg) as br:
         br.goto("http://127.0.0.1:%d/tenda.html" % port)
         adapter = RouterAdapter(br.page, config=cfg, profile=pin_profile)
         res = adapter.run("ipv6", {}, admin_pass="admin123")
     ok = (res.success and res.detected_via == "widget"
-          and res.read_back.strip() == "L2TP")
+          and res.read_back.strip() == "Static IP")
     status = "PASS" if ok else "FAIL"
     print("[%s] mode=ipv6 via=%-8s read_back=%r applied=%s"
           % (status, res.detected_via, res.read_back, res.applied))
@@ -372,17 +373,24 @@ def main():
         ("tenda dynamic no-apply", TENDA_FACTS, "tenda.html", "dynamic",
          {}, False,
          dict(read_back="Dynamic IP", filled=set(), applied=False, verify="")),
-        ("tenda l2tp fields", TENDA_FACTS, "tenda.html", "l2tp",
+        # vpn 字段填写换 Mercusys 盖(台架那台 Tenda 的 v4 列表没有 L2TP/PPTP,
+        # 2026-07-18 确认后已从其 FACTS 移除)。
+        ("mercusys l2tp fields", MERCUSYS_FACTS, "custom.html", "l2tp",
          {"vpn_server": "10.0.0.1", "vpn_user": "u", "vpn_pass": "p"}, True,
          dict(read_back="L2TP",
               filled={"vpn_server", "vpn_user", "vpn_pass"},
-              applied=True, verify="Connected: L2TP")),
+              applied=True, verify="Saved: L2TP")),
         # IPv6 独立页:mode_overrides 换页 + enable_toggle 开门 + v6 flavor;
         # LAN 区的同名 "DHCPv6" radio 诱饵绝不能被点到(点到 = read_back 错)。
         ("tenda ipv6 gated page", TENDA_FACTS, "tenda_ipv6.html", "ipv6",
          {}, True,
          dict(read_back="DHCPv6", filled=set(), applied=True,
               verify="Saved: DHCPv6")),
+        # 测试轮次要遍历两个 v6 flavor:pppoev6 是独立可运行模式,带宽带账密。
+        ("tenda pppoev6 flavor", TENDA_FACTS, "tenda_ipv6.html", "pppoev6",
+         {"pppoe_user": "u6", "pppoe_pass": "p6"}, True,
+         dict(read_back="PPPoEv6", filled={"pppoe_user", "pppoe_pass"},
+              applied=True, verify="Saved: PPPoEv6")),
         ("mercusys pppoe+Save", MERCUSYS_FACTS, "custom.html", "pppoe",
          {"pppoe_user": "acc", "pppoe_pass": "s3"}, True,
          dict(read_back="PPPoE", filled={"pppoe_user", "pppoe_pass"},

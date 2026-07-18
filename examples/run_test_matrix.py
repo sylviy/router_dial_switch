@@ -30,13 +30,15 @@ ADMIN_PASS = "admin123"
 # ---------------------------------------------------------------------------
 # 2) 测试矩阵:拨号方式 + 各自参数(账密/服务器)——按你的例子填好了
 # ---------------------------------------------------------------------------
-VPN_SERVER = "192.168.202.254"
+# Tenda 台架轮次(2026-07-18 约定):复位后默认 dynamic,先确认 → pppoe →
+# IPv6 页遍历 DHCPv6 / PPPoEv6。这台机的 v4 列表没有 L2TP/PPTP;换被测机时
+# 连同上面的 import 一起改(Mercusys 有 l2tp/pptp,参数形如
+# {"vpn_server": ..., "vpn_user": ..., "vpn_pass": ...})。
 DIAL_MATRIX = [
     ("dynamic", {}),
-    ("pppoe", {"pppoe_user": "pppoe", "pppoe_pass": "pppoe"}),
-    ("l2tp",  {"vpn_server": VPN_SERVER, "vpn_user": "l2tp", "vpn_pass": "l2tp"}),
-    ("pptp",  {"vpn_server": VPN_SERVER, "vpn_user": "pptp", "vpn_pass": "pptp"}),
-    # IPv6 通常在另一个页面(如 Mercusys 的 Advanced→IPv6),等确认后再加进来
+    ("pppoe",   {"pppoe_user": "pppoe", "pppoe_pass": "pppoe"}),
+    ("ipv6",    {}),                                            # DHCPv6
+    ("pppoev6", {"pppoe_user": "pppoe", "pppoe_pass": "pppoe"}),
 ]
 
 

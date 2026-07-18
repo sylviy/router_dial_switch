@@ -1,16 +1,20 @@
-"""Tenda(测试台那台,192.168.0.1,Vue UI)—— WAN 拨号方式切换脚本。
+"""Tenda(测试台那台;固件 V16.03.68.15 / 硬件 V3.0)—— WAN 拨号方式切换脚本。
 
 用法(默认只切换不保存;确认回读无误后加 --apply 才真正下发):
     python models/Tenda_AX3000.py dynamic
     python models/Tenda_AX3000.py pppoe --param pppoe_user=x --param pppoe_pass=y
-    python models/Tenda_AX3000.py ipv6 --apply
+    python models/Tenda_AX3000.py ipv6 --apply          # IPv6 页,选 DHCPv6
+    python models/Tenda_AX3000.py pppoev6 --apply       # IPv6 页,选 PPPoEv6
 
+测试轮次(2026-07-18 与台架约定):复位后默认即 dynamic,先确认 → pppoe
+→ IPv6 页遍历 DHCPv6 / PPPoEv6(带 --apply 保存)。
 管理密码/宽带账密可先 `python cli.py setup` 写进 router.yaml,之后不用带参数。
-实际型号若不是 AX3000,把文件名和下面的 model 改掉即可。
+注意:这台机同一时间只允许一个 Web 会话 —— 跑脚本前先退出浏览器里登录着的页签。
 
-事实来源:2026-07-15 真机验证(CLAUDE.md「Validated」)+ profiles/tenda_ipv6.yaml。
-标注 [待真机复核] 的行按真机截图/同源 UI 结构建模,还没在物理设备上二次确认 ——
-运行失败先怀疑这些行:跑 `python cli.py diagnose` 取证,照产物修正选择器。
+事实来源:2026-07-18 真机直连逐项核验(Claude in Chrome,192.168.1.1;
+选择器命中数均已在页内验证 ==1)。此前的 [待真机复核] 已全部清除;唯一
+未实测的是"真的点下保存"(Connect/Save 的按钮本身已确认,点击留给
+--apply 验收跑)。
 """
 import os
 import sys
@@ -21,63 +25,77 @@ from models._driver import run_cli
 FACTS = {
     "brand": "Tenda",
     "model": "AX3000",
-    "url": "http://192.168.0.1",
+    # 出厂默认是 192.168.0.1;台架上为避免与在线路由器网段冲突,LAN IP 已改成
+    # 192.168.1.1(2026-07-18)。复位路由器会回到 192.168.0.1 —— 记得重新改回,
+    # 或临时用 --url http://192.168.0.1 跑。
+    "url": "http://192.168.1.1",
 
-    # 登录:裸密码框(无 id/name,真机确认)。按钮措辞 [待真机复核] ——
-    # 若真机不叫 "Log In",驱动会自动退回在密码框按回车。
-    # 注意:Tenda 会话超时很短,且同一时间只允许一个已登录页签。
+    # 登录页 login.html:裸密码框(无 id/name)+ class 锚定的登录按钮
+    # (文字 "Login";class 不随界面语言变,命中数==1)。
     "login": {"password": "input[type=password]",
-              "button": 'button:text-is("Log In")'},
+              "button": "button.login-form__submit"},
 
-    # 主 WAN 页:顶部导航 "Internet Settings"(真机确认)。
+    # 主 WAN 页:顶部导航 "Internet Settings" -> #/wan。
     "wan_path": ["Internet Settings"],
 
-    # 拨号控件:role-less 的 Vue <div class="v-select">,纯 CSS 不唯一
-    # (ISP Type/MTU/DNS 同类同名),必须 label 锚定 —— 真机验证过的选择器。
+    # 拨号控件:role-less 的 Vue <div class="v-select">,页面上同类控件 5 个
+    # (ISP Type/MTU/MAC Clone/DNS),必须 label 锚定(命中数==1)。
+    # value:值文本节点自带稳定锚点 data-name="wanType"(主页和 IPv6 页同名,
+    # 各自页内唯一),回读用它,不沾下拉小图标的杂质。
     "dial": {"kind": "dropdown",
              "selector": 'div.v-form-item:has-text("Internet Connection Type")'
-                         ' div.v-select'},
+                         ' div.v-select',
+             "value": "[data-name='wanType']"},
 
-    # 各模式在界面上的原文(真机下拉选项)。
-    "modes": {"dynamic": "Dynamic IP", "static": "Static IP",
-              "pppoe": "PPPoE", "l2tp": "L2TP", "pptp": "PPTP"},
+    # v4 下拉选项逐字实录:PPPoE / Dynamic IP / Static IP —— 没有 L2TP/PPTP。
+    # static 不在测试轮次里,但措辞已实测,留着备用。
+    "modes": {"dynamic": "Dynamic IP", "pppoe": "PPPoE", "static": "Static IP"},
 
-    # 参数输入框:label 锚定 + :visible(PPPoE 与 VPN 的 Username/Password
-    # 同名,但同一时刻只渲染一组)。[待真机复核 —— 真机跑通时走的是启发式]
+    # 账密输入框:data-name 直接标在 <input> 上(页内唯一;界面 label 是
+    # "PPPoE Username" / "PPPoE Password")。
     "fields": {
-        "pppoe_user": 'div.v-form-item:has-text("Username") input:visible',
-        "pppoe_pass": 'div.v-form-item:has-text("Password") input:visible',
-        "vpn_user":   'div.v-form-item:has-text("Username") input:visible',
-        "vpn_pass":   'div.v-form-item:has-text("Password") input:visible',
-        "vpn_server": 'div.v-form-item:has-text("VPN Server") input:visible',
+        "pppoe_user": "input[data-name='wanPPPoEUser']",
+        "pppoe_pass": "input[data-name='wanPPPoEPwd']",
     },
 
-    # 保存键叫 "Connect"(不是 Save/Apply),旁边有 "Disconnect" 诱饵:
-    # 用 :text-is() 精确匹配,子串永远碰不到 Disconnect。措辞来自真机截图;
-    # 实际点击 [待真机复核]。
+    # 保存键文字实测就是 "Connect"(:text-is 精确匹配,连上后若出现
+    # "Disconnect" 也绝不会误触)。它同时带 data-name="submit",但连接态下
+    # Disconnect 是否也叫 submit 未观察过,所以按文字锚定更稳。
     "apply": 'button:text-is("Connect")',
 
-    # IPv6 不在主列表里:独立页 More → IPv6,整个 WAN 区被使能开关门控
-    # (开关是 role-less div,状态是 class 修饰符;驱动只在看不到拨号控件时
-    # 才碰它,绝不会把已开启的页面点关)。导航真机确认,其余按截图建模。
+    # IPv6:独立页 More -> #/advance/ipv6,WAN 区被 "IPv6" 使能开关门控。
+    # 开关状态读内芯 [data-name='ipv6En'](开启时带 v-switch__icon--active,
+    # 驱动能读出"已开"而绝不多点;找不到拨号控件时点它即可展开)。
+    # v6 flavor 逐字实录:DHCPv6 / PPPoEv6 / Static IPv6 Address。
+    # LAN 区有一个同名 "DHCPv6" 的 radio 诱饵 —— 驱动按 option 容器匹配,
+    # 不会点到它。两个被测 flavor 各占一个可运行模式:
     "mode_overrides": {
         "ipv6": {
             "wan_path": ["More", "IPv6"],
-            "enable_toggle": "div.v-switch",
+            "enable_toggle": "[data-name='ipv6En']",
             "dial": {"kind": "dropdown",
                      "selector": 'div.v-form-item:'
                                  'has-text("Internet Connection Type")'
-                                 ' div.v-select'},
-            # 该页提供的是 v6 flavor(PPPoEv6/DHCPv6/...),默认选 DHCPv6;
-            # 要 PPPoEv6 就改这行,并带 --param pppoe_user=... pppoe_pass=...
+                                 ' div.v-select',
+                     "value": "[data-name='wanType']"},
             "modes": {"ipv6": "DHCPv6"},
-            "fields": {
-                "pppoe_user": 'div.v-form-item:has-text("PPPoE Username")'
-                              ' input:visible',
-                "pppoe_pass": 'div.v-form-item:has-text("PPPoE Password")'
-                              ' input:visible',
-            },
             # IPv6 页的保存键是 "Save",不是主页的 "Connect"。
+            "apply": 'button:text-is("Save")',
+        },
+        "pppoev6": {
+            "wan_path": ["More", "IPv6"],
+            "enable_toggle": "[data-name='ipv6En']",
+            "dial": {"kind": "dropdown",
+                     "selector": 'div.v-form-item:'
+                                 'has-text("Internet Connection Type")'
+                                 ' div.v-select',
+                     "value": "[data-name='wanType']"},
+            "modes": {"pppoev6": "PPPoEv6"},
+            # 与主页同一对 data-name(本页内唯一;label 同为 PPPoE Username/Password)
+            "fields": {
+                "pppoe_user": "input[data-name='wanPPPoEUser']",
+                "pppoe_pass": "input[data-name='wanPPPoEPwd']",
+            },
             "apply": 'button:text-is("Save")',
         },
     },
