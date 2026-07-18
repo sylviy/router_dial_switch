@@ -102,11 +102,16 @@
           <div class="v-form-item__content"><input type="password" id="pppoePass" data-name="wanPPPoEPwd"></div></div>
       </div>
 
-      <!-- Tenda labels the apply button "Connect" (not Save/Apply). A
-           "Disconnect" button sits alongside: the tool must NOT click that. -->
+      <!-- Tenda labels the apply button "Connect" (not Save/Apply). Real DOM
+           (2026-07-18): the text lives in an INNER <span>, so button:text-is()
+           misses the button entirely -- FACTS anchors on
+           button[data-name=submit]:has(span:text-is("Connect")).
+           The "Disconnect" decoy ALSO gets data-name="submit" here on purpose
+           (hypothetical worst case, not observed live): only the inner exact
+           text can discriminate, and the tool must NOT click it. -->
       <div class="v-form-item">
-        <button id="disconnectBtn">Disconnect</button>
-        <button id="connectBtn">Connect</button>
+        <button id="disconnectBtn" data-name="submit"><span class="v-button__item">Disconnect</span></button>
+        <button id="connectBtn" data-name="submit"><span class="v-button__item">Connect</span></button>
         <span id="toast"></span></div>
     </div>
   </div>

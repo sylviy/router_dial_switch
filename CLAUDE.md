@@ -238,8 +238,17 @@ pin the icon).  The v4 list is ONLY PPPoE / Dynamic IP / Static IP — no
 L2TP/PPTP on this model (removed from FACTS and mock); v6 flavors are
 DHCPv6 / PPPoEv6 / "Static IPv6 Address"; the same-text "DHCPv6" LAN radio
 decoy is real.  Mocks (tenda.html / tenda_ipv6.html) were updated to mirror
-all of this.  Still pending: actually clicking Connect/Save — the user's
-`--apply` acceptance round (dynamic → pppoe → ipv6/DHCPv6 → pppoev6).
+all of this.  First live `--apply` (2026-07-18, `dynamic --pass ... --apply`)
+exposed a matcher lesson: the real button is
+`<button data-name="submit"><span class="v-button__item">Connect</span></button>`
+— **`:text-is()` matches the element that directly owns the text node**, so
+`button:text-is("Connect")` hits 0 (the span owns it; same for the IPv6 "Save").
+Fixed by double-anchoring `button[data-name='submit']:has(span:text-is("..."))`
+(count==1 verified on both pages), mocks now replicate the nested-span DOM
+(Disconnect decoy carries data-name=submit as hypothetical worst case), and
+`_apply`'s failure warning now lists the visible buttons it saw.  Connect click
+verified live end-to-end (`applied:true`).  Still pending: the rest of the
+user's `--apply` round (pppoe → ipv6/DHCPv6 → pppoev6, i.e. the "Save" click).
 
 **Tenda was always pinnable (we got this wrong at the time).** We concluded "no
 unique selector exists → the profile escape hatch is unusable" because plain CSS

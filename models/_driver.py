@@ -355,7 +355,26 @@ def _apply(page, facts: dict, result: dict) -> None:
         result["applied"] = True
         _settle(page, 500)
     else:
-        result["warnings"].append("保存键没找到:%s" % sel)
+        # 证据优先:把页面上实际可见的按钮列出来,失败信息自己就能定位问题
+        # (例:真机按钮文字在里层 span,:text-is 会漏 —— 得换锚定写法)。
+        seen = []
+        try:
+            loc = page.locator("button")
+            for i in range(min(loc.count(), 12)):
+                b = loc.nth(i)
+                try:
+                    if not b.is_visible():
+                        continue
+                    t = (b.inner_text() or "").strip()
+                except Exception:
+                    continue
+                if t and t not in seen:
+                    seen.append(t)
+        except Exception:
+            pass
+        result["warnings"].append(
+            "保存键没找到:%s%s"
+            % (sel, "(页面可见按钮:%s)" % " / ".join(seen) if seen else ""))
 
 
 def _screenshot(page, cfg: Config, facts: dict, mode: str) -> str:

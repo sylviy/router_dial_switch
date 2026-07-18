@@ -58,10 +58,12 @@ FACTS = {
         "pppoe_pass": "input[data-name='wanPPPoEPwd']",
     },
 
-    # 保存键文字实测就是 "Connect"(:text-is 精确匹配,连上后若出现
-    # "Disconnect" 也绝不会误触)。它同时带 data-name="submit",但连接态下
-    # Disconnect 是否也叫 submit 未观察过,所以按文字锚定更稳。
-    "apply": 'button:text-is("Connect")',
+    # 保存键(2026-07-18 真机 DOM 实录):
+    #   <button data-name="submit"><span class="v-button__item">Connect</span></button>
+    # 文字在里层 <span> 上,所以 button:text-is("Connect") 命中 0(真机实测)——
+    # 必须用 属性 + 内层精确文字 双锚定。就算连接态的 Disconnect 也带
+    # data-name="submit",内层文字不同也绝不会误触。
+    "apply": 'button[data-name=\'submit\']:has(span:text-is("Connect"))',
 
     # IPv6:独立页 More -> #/advance/ipv6,WAN 区被 "IPv6" 使能开关门控。
     # 开关状态读内芯 [data-name='ipv6En'](开启时带 v-switch__icon--active,
@@ -79,8 +81,8 @@ FACTS = {
                                  ' div.v-select',
                      "value": "[data-name='wanType']"},
             "modes": {"ipv6": "DHCPv6"},
-            # IPv6 页的保存键是 "Save",不是主页的 "Connect"。
-            "apply": 'button:text-is("Save")',
+            # IPv6 页的保存键是 "Save"(同样是文字在里层 span 的嵌套结构)。
+            "apply": 'button[data-name=\'submit\']:has(span:text-is("Save"))',
         },
         "pppoev6": {
             "wan_path": ["More", "IPv6"],
@@ -96,7 +98,7 @@ FACTS = {
                 "pppoe_user": "input[data-name='wanPPPoEUser']",
                 "pppoe_pass": "input[data-name='wanPPPoEPwd']",
             },
-            "apply": 'button:text-is("Save")',
+            "apply": 'button[data-name=\'submit\']:has(span:text-is("Save"))',
         },
     },
 }
