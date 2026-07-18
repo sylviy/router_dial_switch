@@ -1,4 +1,9 @@
 # Marker only. When no brand profile matches, the engine runs on pure
 # heuristics (engine/heuristics.py). Files starting with "_" are ignored by the
-# profile loader. Real per-brand profiles are normally produced by
-# `python cli.py --record ...` and then lightly edited.
+# profile loader.
+#
+# Profiles are an ADAPTATION-phase aid, not the deliverable: a failing
+# `python cli.py <mode>` run offers to write profiles/auto_<ip>.yaml from a
+# diagnose-verified selector, so you can get one step further on an unknown
+# device. The end product is always a model script (models/<Brand>_<Model>.py)
+# -- see .claude/skills/adapt-router-model/SKILL.md.

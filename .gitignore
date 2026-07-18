@@ -6,8 +6,10 @@ vendor/
 # local run defaults incl. admin/broadband passwords (cli.py setup)
 router.yaml
 
-# models/ 层运行截图(engine 的 dial_*.png 样例仍保留在仓库里)
-artifacts/model_*.png
+# 运行产物:截图/诊断证据。都是每次跑动现场生成的,不进仓库
+# (diagnose 产物可能含会话 token / 表单里的账号密码 —— 回传前先脱敏)
+artifacts/
+recordings/
 
 __pycache__/
 *.pyc

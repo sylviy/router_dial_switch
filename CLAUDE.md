@@ -70,7 +70,6 @@ the orchestrator skeleton (switch = this tool, perf = placeholder to wire up).
   tag), pppoe_user/pppoe_pass/vpn_*, save_button. This is the main lever for
   divergent UIs (e.g. Xiaomi). Covered by the xiaomi.html smoke case.
 - `engine/browser.py` — Playwright launch (default `channel="chrome"`).
-- `engine/recorder.py` — `--record`: manual click-through → HAR + profile draft.
 - `engine/diagnose.py` — **onboarding/triage.** One-shot evidence dump for an
   unknown UI: all-frames inventory, per-strategy fired/why, dial-control
   candidates each with **verified** selectors (JS proposes, Python counts via
@@ -184,10 +183,17 @@ python cli.py --router-ip 192.168.1.1 --pass <pw> --mode pppoe \
   otherwise.
 
 ## Validated
+
+**Bench acceptance status (2026-07-19, user-confirmed):**
+`models/Tenda_AX3000.py` and `models/Cudy_AX.py` both **pass on the physical
+devices, including the real `--apply` round** — dial mode changes and saves for
+every mode they declare. They are the reference examples; copy their shape.
+`models/Mercusys_BE3600.py` still carries `[待真机复核]` field selectors (the
+2026-07-11 live run went through heuristics, not the script).
+
 Live on a **Mercusys BE3600** (2026-07-11): custom `<div>`-combobox connection
 type; Save button; L2TP fields Username/Password/"VPN Server IP/Domain Name";
-IPv6 lives under Advanced→IPv6 (not the main list). See
-`profiles/mercusys_be3600.yaml`.
+IPv6 lives under Advanced→IPv6 (not the main list).
 
 **Tenda** (2026-07-15, 192.168.0.1, Vue UI): connection type is a role-less
 `<div class="v-select">` — NO `<select>`, NO `role`, NO id/name, and the class
@@ -213,10 +219,10 @@ canonical `ipv6` (match_mode checks ipv6 before pppoe/dynamic so the
 "pppoe"/"dhcp" substrings can't misclassify), and a specific flavor is chosen
 via `mode_labels` — now honored on the combobox/widget path too, with read-back
 accepting the pinned wording. Explicit `--param` values are filled even when
-the mode requires none (PPPoEv6 creds under mode ipv6). See
-`profiles/tenda_ipv6.yaml` (WARNING inside: pass `--brand tenda --model ipv6`
-only for IPv6 runs; IPv4 runs must pass no --brand or loose matching drags them
-to the IPv6 page). Hard-learned in the mock: a leaf only counts for the widget
+the mode requires none (PPPoEv6 creds under mode ipv6). All of this now lives
+in `models/Tenda_AX3000.py`'s `mode_overrides` (the old
+`profiles/tenda_ipv6.yaml`, and its `--brand` footgun, are gone). Hard-learned
+in the mock: a leaf only counts for the widget
 scan if a connection-type label sits in a *form-row-sized* ancestor (<120
 chars) — otherwise the sidebar "IPv6" nav link and the "IPv6" switch label
 masquerade as the control (both exist on the real page), hijacking detection
@@ -305,18 +311,16 @@ was always available. `_example.yaml` documents it.
   can (open shadow roots, readonly-input mode values) so the gap is visible.
 
 ## Next steps
-- Tenda acceptance on the bench (user runs; single web session — log out of
-  the browser tab first): `python models/Tenda_AX3000.py dynamic` → `pppoe` →
-  `ipv6` → `pppoev6`, first without `--apply` (check read_back), then the real
-  round with `--apply`.
+- Produce `models/` scripts for the remaining group brands — **Buffalo, Huawei**
+  — via the adapt-router-model skill (one `cli.py diagnose` run per device;
+  never guess their DOM). Tenda + Cudy are done and accepted.
+- Read the Cudy shell label and rename `Cudy_AX.py` / its `model:` to the real
+  model name (currently a placeholder).
 - Re-verify on the bench the `[待真机复核]` lines in
   `models/Mercusys_BE3600.py` (field selectors, apply click, login button).
-- Cudy `--apply` acceptance round (dynamic → pppoe → l2tp → pptp with real
-  creds); read the shell label and rename `Cudy_AX.py` / `model:` to the real
-  model name.
-- Produce `models/` scripts for the remaining group brands — Buffalo, Huawei —
-  via the adapt-router-model skill (one `cli.py diagnose` run per device;
-  never guess their DOM).
+- The `.bat` wrappers (`setup.bat` dual online/offline, `dial.bat`) were written
+  on macOS and **have not been executed on Windows** — first Windows run should
+  confirm them (see WINDOWS.md).
 - Wire `examples/run_test_matrix.py` `run_perf_tests()`/`wait_wan_up()` to the
   real single-machine scripts (or plug them into `_driver.run(verify_hook=...)`).
 - Mercusys IPv6 (Advanced→IPv6): diagnose first, then add a `mode_overrides`

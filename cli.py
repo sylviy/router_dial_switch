@@ -1,13 +1,17 @@
-"""Command-line entry point.
+"""Command-line entry point -- the ADAPTATION toolbox.
 
-Daily use (after one-time `python cli.py setup` wrote router.yaml):
+Daily switching on an already-adapted model goes through its own script
+(`python models/Tenda_AX3000.py pppoe`).  This CLI is what you use on a device
+that has no script yet: a heuristic attempt, and `diagnose` to dump the
+evidence a new model script is written from (see
+.claude/skills/adapt-router-model/SKILL.md).
 
-    python cli.py pppoe          # mode is just the first word
+    python cli.py diagnose       # evidence dump -> artifacts/diagnose_*.json
+    python cli.py pppoe          # heuristic attempt; mode is just the first word
     python cli.py dynamic
-    python cli.py l2tp
 
-Everything else (IP, passwords, per-mode credentials) comes from router.yaml;
-any flag still overrides it.  Long form remains supported:
+Everything else (IP, passwords, per-mode credentials) comes from router.yaml
+(one-time `python cli.py setup`); any flag still overrides it.  Long form:
 
     python cli.py --router-ip 192.168.1.1 --pass admin123 \
         --mode pppoe --param pppoe_user=test --param pppoe_pass=test123
@@ -18,10 +22,6 @@ offers to write the pin profile for you (no hand-edited YAML):
 
     [pin] 1. widget-leaf text='PPPoE' label='Internet Connection Type'
     write profiles/auto_192_168_0_1.yaml with candidate 1? [Y/n]
-
-Onboard a stubborn model by recording a manual click-through:
-
-    python cli.py record --router-ip 192.168.1.1 --brand acme --model r1
 """
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ from engine.adapter import RouterAdapter, MODE_REQUIRED_FIELDS
 from engine import profile as profile_mod
 
 MODES = ["dynamic", "static", "pppoe", "l2tp", "pptp", "ipv6"]
-COMMANDS = MODES + ["setup", "record", "diagnose"]
+COMMANDS = MODES + ["setup", "diagnose"]
 
 
 def _parse_params(pairs):
@@ -231,7 +231,7 @@ def main(argv=None):
         epilog="short form: `python cli.py pppoe` -- IP/passwords come from "
                "router.yaml (create it with `python cli.py setup`)")
     ap.add_argument("command", nargs="?", metavar="mode",
-                    help="dial mode (%s) or: setup / record / diagnose"
+                    help="dial mode (%s) or: setup / diagnose"
                          % "/".join(MODES))
     ap.add_argument("--router-ip", default=None,
                     help="router LAN IP or full URL (default: router.yaml "
@@ -254,8 +254,6 @@ def main(argv=None):
     ap.add_argument("--pin", action="store_true",
                     help="on failure, write the recommended pin profile "
                          "without asking (non-interactive relay runs)")
-    ap.add_argument("--record", action="store_true",
-                    help="record mode: manual click-through -> HAR + profile draft")
     ap.add_argument("--diagnose", action="store_true",
                     help="after login+WAN nav, dump a one-shot evidence artifact "
                          "(candidate controls + verified selectors + save-button "
@@ -280,9 +278,7 @@ def main(argv=None):
                      % (args.command, ", ".join(COMMANDS)))
         if cmd == "setup":
             return run_setup()
-        if cmd == "record":
-            args.record = True
-        elif cmd == "diagnose":
+        if cmd == "diagnose":
             args.diagnose = True
         else:
             args.mode = cmd
@@ -302,14 +298,9 @@ def main(argv=None):
 
     cfg = build_config(args, saved)
 
-    if args.record:
-        from engine.recorder import record
-        record(url, brand=brand or "unknown", model=model or "model", config=cfg)
-        return 0
-
     if not args.mode and not args.diagnose:
         ap.error("give a dial mode, e.g. `python cli.py pppoe` "
-                 "(or setup / record / diagnose)")
+                 "(or setup / diagnose)")
 
     prof = profile_mod.match(brand, model, args.firmware)
     if prof:

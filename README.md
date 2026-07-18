@@ -21,12 +21,16 @@ python models/Tenda_AX3000.py pppoe          # 就这一条,切完看回读
 当前范围(按方案约定):只确认拨号控件被**定位并成功改动**(回读值 == 目标)。
 **不验证 WAN 是否真正拨通**——连通性/性能由已有的单机脚本负责。
 
-> **已在真机 Mercusys BE3600(Wi-Fi 7)上实测通过,2026-07-11。** 它的
-> "Internet Connection Type"(上网方式)控件是一个自定义 `<div role="combobox">`,
-> 而非原生 `<select>`——所以引擎同时具备"原生 select 路径"和"自定义 combobox
-> 路径(DOM 级点击选项)"。这次实测还暴露并已修复两个 bug:WAN 菜单启发式原本会
-> 误点 "Network Map"(Mercusys 的首个导航项);以及当路径含 `[Tool]` 这类 glob
-> 元字符时 profile 加载会失效。详见 `profiles/mercusys_be3600.yaml`。
+### 已适配的型号
+
+| 脚本 | 支持的模式 | 真机状态 |
+|---|---|---|
+| `models/Tenda_AX3000.py` | dynamic / pppoe / static、ipv6(DHCPv6)、pppoev6 | **台架验收通过**(2026-07-18,含 `--apply` 实际下发) |
+| `models/Cudy_AX.py` | dynamic / pppoe / static / l2tp / pptp | **台架验收通过**(2026-07-18,含 `--apply` 实际下发) |
+| `models/Mercusys_BE3600.py` | dynamic / pppoe / static / l2tp / pptp | 2026-07-11 真机跑通(当时走启发式);脚本形态的字段选择器仍标 `[待真机复核]` |
+
+各机型的具体怪癖(Tenda 的嵌套 span 按钮、Cudy 的 frameset + 隐藏诱饵按钮、
+Cudy 固件关掉了 IPv6 的证据链)都记在 `CLAUDE.md` 的 **Validated** 一节。
 
 ---
 
@@ -146,35 +150,24 @@ python cli.py --router-ip 192.168.1.1 --pass admin123 --mode dynamic
 常用参数:`--brand`/`--model`(挑选 profile)、`--no-apply`(只选不保存)、
 `--headless`、`--chrome-path`、`--bundled-chromium`。
 
-### 接入新的/难缠的品牌
-
-> **完整自助流程见 [ONBOARDING.md](ONBOARDING.md)**:裸跑 → 看诊断对号入座 →
-> 建 profile → 取 CSS 选择器 → 带 profile 迭代 → 提交。下面是其中的录制模式。
-
-```bash
-python cli.py record --brand acme --model r1        # 已 setup 时
-python cli.py record --router-ip 192.168.1.1 --brand acme --model r1
-```
-
-会弹出一个 Chrome 窗口;你手动把拨号方式切一遍,然后关闭窗口。得到:
-- `recordings/acme_r1.har` —— 全部 HTTP 请求(接口兜底资产),以及
-- `profiles/acme_r1.yaml` —— profile **草稿**;只需补上启发式没识别到的选择器,
-  每一项都是可选的。
-
-想要更完整的选择器录制,也可以用 Playwright 自带录制器:
-`python -m playwright codegen http://192.168.1.1`。
-
 ---
 
 ## 适配是如何做到的
 
-- `engine/heuristics.py` —— 多语言同义词表(目前中/英)+ 语义定位器。
-  **要加新说法或新语言 = 在这里加字符串,不改引擎。** 拨号控件有两种通用识别方式:
-  (1) 原生 `<select>`——选项能映射到最多不同拨号方式的那个;或 (2) 自定义
-  `<div role="combobox">`——按其 "connection type" 标签定位,再用 DOM 定位器点击其
-  选项(Mercusys/TP-Link 等真机就是这种)。
-- `profiles/*.yaml` —— 可选的每型号提示(WAN 菜单路径、选择器覆盖、精确选项标签),
-  按 品牌/型号/固件 宽松匹配,一个文件覆盖一个固件家族。
+面对一台**还没有脚本**的路由器,流程是:`python cli.py diagnose` 取证 →
+照证据填 `models/_template.py` → 每个模式验证回读 → `--apply` 验收。
+完整方法论(含"怎么判定这台机真的没有某功能"这类坑)见
+[.claude/skills/adapt-router-model/SKILL.md](.claude/skills/adapt-router-model/SKILL.md)
+—— 在 Claude 会话里说"适配新型号"即可触发。
+
+支撑这套流程的部件:
+
+- `engine/diagnose.py` —— **取证主力**:全 frame 清点、三条检测策略各自是否触发、
+  每个候选控件给出**已验证命中数**的选择器、每个可点按钮是否被认作保存键。
+- `engine/heuristics.py` —— 多语言同义词表(中/英)+ 语义定位器,让常见 UI
+  不用写脚本也能碰对。**要加新说法或新语言 = 在这里加字符串,不改引擎。**
+- `profiles/*.yaml` —— 适配期的临时提示(auto-pin 会自动生成),不是交付物;
+  交付物永远是 `models/` 里的型号脚本。
 - `dial_modes/*.yaml` —— 每种模式需要哪些参数。
 
 ## 如何验证(离线,无需真机)
@@ -193,10 +186,12 @@ python tests/smoke_test.py --show   # 观看它点完所有模式
 - `tenda_ipv6.html` IPv6 使能开关(enable_toggle)+ v6 flavor(mode_labels),
   以及"开关还关着时诊断必须能看见它"+ auto-pin 自动写 enable_toggle;
 - `noctrl.html` / `cardstrip.html` 两个**假阳性守卫**(绝不允许零交互的 success);
+- `cudy*.htm` **frameset 老式 UI**(登录在主文档、菜单和表单各在子 frame),
+  复刻真机 Cudy,含隐藏的 Connect/Disconnect 诱饵按钮;
 - CLI 便利层:`router.yaml` 读写、按模式过滤凭据、auto-pin 生成 profile 且不覆盖已有文件;
-- **models/ 交付层**:用 `Tenda_AX3000.py` / `Mercusys_BE3600.py` 里的真实 FACTS
-  驱动对应 mock(含 IPv6 门控页、"Connect" 保存键、按模式填参、默认不点保存),
-  以及"事实对不上的页面必须诚实失败"守卫。
+- **models/ 交付层**:用 `Tenda_AX3000.py` / `Cudy_AX.py` / `Mercusys_BE3600.py`
+  里的**真实 FACTS** 驱动对应 mock(含 IPv6 门控页、"Connect" 保存键、跨 frame
+  查找、按模式填参、默认不点保存),以及"事实对不上的页面必须诚实失败"守卫。
 
 ## 项目结构
 
@@ -218,11 +213,13 @@ router_dial_switch/
     heuristics.py        多语言关键词字典 + 语义定位器
     adapter.py           登录 -> 进 WAN 设置 -> 设模式 -> 回读
     diagnose.py          一键取证:已验证选择器 / 控件形态 / 保存键
-    profile.py           可选的每品牌提示加载器(宽松匹配)
-    recorder.py          录制模式:抓 HAR + 生成 profile 草稿
-  profiles/              适配期的每品牌 yaml 提示
+    profile.py           适配期提示加载器(宽松匹配;auto-pin 写入)
+  profiles/              适配期的临时 yaml 提示(非交付物)
   dial_modes/            每模式所需字段模板
+  tools/                 控制台粘贴用的查找脚本(手上只有浏览器时的兜底)
   tests/                 模拟路由器页 + 离线冒烟测试(37 用例)
+  setup.bat dial.bat     Windows:一次安装 + 日常切模式(见 WINDOWS.md)
+  run.bat smoke.bat      Windows:适配期 cli.py + 离线自检
 ```
 
 ## 已知限制 / 后续

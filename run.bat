@@ -1,13 +1,14 @@
 @echo off
 REM ==========================================================================
-REM  run.bat  --  run the dial-switch tool via the isolated .venv.
+REM  run.bat  --  the ADAPTATION toolbox (cli.py) via the isolated .venv.
 REM  Forwards all arguments straight to cli.py.  Examples:
 REM    run.bat setup            (one time: writes router.yaml with IP/passwords)
-REM    run.bat pppoe            (adaptation phase / unscripted device)
-REM    run.bat dynamic
-REM  Daily use on an ADAPTED model goes through its own script instead:
-REM    .venv\Scripts\python.exe models\Tenda_AX3000.py pppoe
-REM    .venv\Scripts\python.exe models\Tenda_AX3000.py dynamic --apply
+REM    run.bat diagnose         (evidence dump for a device with no script yet)
+REM    run.bat pppoe            (heuristic attempt on an unscripted device)
+REM
+REM  DAILY USE on an already-adapted model is dial.bat, not this:
+REM    dial.bat Tenda_AX3000 pppoe --apply
+REM
 REM  Long form still works:
 REM    run.bat --router-ip 192.168.1.1 --pass PW --mode pppoe ^
 REM            --param pppoe_user=x --param pppoe_pass=y --no-apply

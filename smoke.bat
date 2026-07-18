@@ -1,8 +1,10 @@
 @echo off
 REM ==========================================================================
 REM  smoke.bat  --  run the offline end-to-end self-test via the .venv.
+REM  No router needed: it serves mock router pages on localhost and drives them
+REM  with the real engine + the real model scripts.
 REM  Needs Chrome installed (channel="chrome").  Add --show to watch it click.
-REM  Expected result: "15 passed, 0 failed".
+REM  Expected result: "37 passed, 0 failed".
 REM ==========================================================================
 setlocal
 pushd "%~dp0"

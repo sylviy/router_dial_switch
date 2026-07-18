@@ -1,0 +1,18 @@
+# Windows batch files MUST be checked out with CRLF line endings.
+# cmd.exe can mis-parse LF-only .bat files (goto labels and parenthesised
+# blocks are the usual casualties), and this repo is authored on macOS --
+# so pin it here instead of relying on each user's core.autocrlf setting.
+# Applies to `git clone` and to GitHub's "Download ZIP" alike.
+*.bat text eol=crlf
+
+# Everything else: keep LF in the repo, let git decide on checkout.
+*.py   text
+*.md   text
+*.yaml text
+*.js   text
+*.html text
+*.htm  text
+
+# Binary-ish artefacts should never be line-ending-converted.
+*.png  binary
+*.har  binary
