@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8">
+<style>.hidden { display:none; } td { padding: 4px; }</style>
+</head>
+<body>
+<h3>WAN Interface Setup</h3>
+<!-- Real Cudy tcpipwan.htm (2026-07-18): native select#wanType_id[name=wanType],
+     per-mode name-anchored fields, EIGHT hidden Connect/Disconnect submit decoys,
+     a hidden "Save" submit, and the real visible "Save & Apply" submit. -->
+<form onsubmit="return false">
+<table>
+  <tr><td>Connection Type:</td><td>
+    <select id="wanType_id" name="wanType">
+      <option>Static IP</option>
+      <option selected>DHCP Client</option>
+      <option>PPPoE</option>
+      <option>PPTP</option>
+      <option>L2TP</option>
+    </select></td></tr>
+</table>
+
+<div id="pppoeBlk" class="hidden"><table>
+  <tr><td>User Name:</td><td><input type="text" name="pppUserName"></td></tr>
+  <tr><td>Password:</td><td><input type="password" name="pppPassword"></td></tr>
+  <tr><td colspan="2">
+    <input type="submit" name="pppConnect" value="Connect" class="hidden">
+    <input type="submit" name="pppDisconnect" value="Disconnect" class="hidden">
+  </td></tr>
+</table></div>
+
+<div id="pptpBlk" class="hidden"><table>
+  <tr><td>Server IP Address:</td><td><input type="text" name="pptpServerIpAddr"></td></tr>
+  <tr><td>User Name:</td><td><input type="text" name="pptpUserName"></td></tr>
+  <tr><td>Password:</td><td><input type="password" name="pptpPassword"></td></tr>
+  <tr><td colspan="2">
+    <input type="submit" name="pptpConnect" value="Connect" class="hidden">
+    <input type="submit" name="pptpDisconnect" value="Disconnect" class="hidden">
+  </td></tr>
+</table></div>
+
+<div id="l2tpBlk" class="hidden"><table>
+  <tr><td>Server IP Address:</td><td><input type="text" name="l2tpServerIpAddr"></td></tr>
+  <tr><td>User Name:</td><td><input type="text" name="l2tpUserName"></td></tr>
+  <tr><td>Password:</td><td><input type="password" name="l2tpPassword"></td></tr>
+  <tr><td colspan="2">
+    <input type="submit" name="l2tpConnect" value="Connect" class="hidden">
+    <input type="submit" name="l2tpDisconnect" value="Disconnect" class="hidden">
+  </td></tr>
+</table></div>
+
+<p>
+  <input type="submit" name="save" value="Save" class="hidden">
+  <input type="submit" name="save_apply" value="Save &amp; Apply">
+  <span id="toast" style="color:green;font-weight:bold"></span>
+</p>
+</form>
+
+<script>
+  var sel = document.getElementById('wanType_id');
+  function refresh() {
+    var v = sel.options[sel.selectedIndex].text;
+    document.getElementById('pppoeBlk').classList.toggle('hidden', v !== 'PPPoE');
+    document.getElementById('pptpBlk').classList.toggle('hidden', v !== 'PPTP');
+    document.getElementById('l2tpBlk').classList.toggle('hidden', v !== 'L2TP');
+  }
+  sel.onchange = refresh;
+  document.getElementsByName('save_apply')[0].onclick = function () {
+    document.getElementById('toast').textContent =
+        'Saved & Applied: ' + sel.options[sel.selectedIndex].text;
+    return false;
+  };
+</script>
+</body>
+</html>

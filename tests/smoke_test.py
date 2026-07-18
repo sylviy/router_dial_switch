@@ -356,10 +356,13 @@ def main():
     from models import _driver as model_driver
     from models.Tenda_AX3000 import FACTS as TENDA_FACTS
     from models.Mercusys_BE3600 import FACTS as MERCUSYS_FACTS
+    from models.Cudy_AX import FACTS as CUDY_FACTS
 
     def read_toast(page, _res):
+        # 跨 frame 找 toast(Cudy mock 的 toast 在 WAN 子 frame 里)
+        el = model_driver._locate(page, "#toast")
         try:
-            return page.locator("#toast").inner_text().strip()
+            return el.inner_text().strip() if el else ""
         except Exception:
             return ""
 
@@ -395,6 +398,20 @@ def main():
          {"pppoe_user": "acc", "pppoe_pass": "s3"}, True,
          dict(read_back="PPPoE", filled={"pppoe_user", "pppoe_pass"},
               applied=True, verify="Saved: PPPoE")),
+        # Cudy:frameset UI —— 登录在主文档,菜单/WAN 表单在各自子 frame 里,
+        # 驱动必须全 frame 查找;保存键旁埋着隐藏的 Connect/Disconnect 诱饵。
+        ("cudy dynamic no-apply", CUDY_FACTS, "cudy.html", "dynamic",
+         {}, False,
+         dict(read_back="DHCP Client", filled=set(), applied=False, verify="")),
+        ("cudy pppoe frames", CUDY_FACTS, "cudy.html", "pppoe",
+         {"pppoe_user": "acc", "pppoe_pass": "s3"}, True,
+         dict(read_back="PPPoE", filled={"pppoe_user", "pppoe_pass"},
+              applied=True, verify="Saved & Applied: PPPoE")),
+        ("cudy l2tp fields", CUDY_FACTS, "cudy.html", "l2tp",
+         {"vpn_server": "10.0.0.9", "vpn_user": "u", "vpn_pass": "p"}, True,
+         dict(read_back="L2TP",
+              filled={"vpn_server", "vpn_user", "vpn_pass"},
+              applied=True, verify="Saved & Applied: L2TP")),
     ]
     for name, facts, page_file, mode, params, do_apply, want in model_cases:
         res = model_driver.run(

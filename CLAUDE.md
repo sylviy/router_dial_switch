@@ -14,7 +14,7 @@ generality):** one self-contained script per model, `models/<Brand>_<Model>.py`
 wording, apply button) + a tiny shared runtime `models/_driver.py`. Colleagues
 run `python models/Tenda_AX3000.py pppoe` — no engine knowledge needed. Target
 brands are just the group's bench: **Cudy / Tenda / Buffalo / Huawei** (done:
-Tenda, Mercusys). The heuristics engine + `cli.py diagnose` are demoted to the
+Tenda, Mercusys, Cudy). The heuristics engine + `cli.py diagnose` are demoted to the
 **adaptation toolbox**, and the adaptation methodology is codified as a skill
 (`.claude/skills/adapt-router-model/SKILL.md`) so ANY Claude session can
 produce a new model script from a diagnose artifact. Don't build further
@@ -41,7 +41,8 @@ the orchestrator skeleton (switch = this tool, perf = placeholder to wire up).
   enable_toggle never touched while a dial control is visible, popup options
   matched via option-shaped containers first (`[role='option'], [class*='opt']`)
   so a same-text decoy elsewhere on the page can't be clicked, apply only with
-  `--apply`. `dial.kind`: select | dropdown | radio; `dial.value` optional
+  `--apply`, and every lookup sweeps ALL frames — old frameset UIs (Cudy) keep
+  the menus and the WAN form in separate child frames. `dial.kind`: select | dropdown | radio; `dial.value` optional
   read-back sub-selector; `mode_overrides` swaps whole keys per mode (Tenda
   ipv6 page). Facts lines not yet re-verified on the physical device are
   commented `[待真机复核]`. `verify_hook(page, result)` is the future WAN-up
@@ -104,7 +105,7 @@ the orchestrator skeleton (switch = this tool, perf = placeholder to wire up).
 ## Run / verify
 ```bash
 # offline logic test (no router needed) — must stay green:
-python tests/smoke_test.py            # 34/34 pass expected
+python tests/smoke_test.py            # 37/37 pass expected
 
 # daily use on an adapted model (run on a machine ON the router's LAN):
 python cli.py setup                   # one time -> router.yaml (git-ignored)
@@ -250,6 +251,23 @@ Fixed by double-anchoring `button[data-name='submit']:has(span:text-is("..."))`
 verified live end-to-end (`applied:true`).  Still pending: the rest of the
 user's `--apply` round (pppoe → ipv6/DHCPv6 → pppoev6, i.e. the "Save" click).
 
+**Cudy (2026-07-18, live at 192.168.10.1; FW 1.0.1-20240321, SSID Cudy-554C —
+shell-label model name still to be read, script is `models/Cudy_AX.py`).**
+Old-school **frameset** UI: login in the main document (`#pwd` +
+`input[value='Login']` — an input, text in `value=`), menus and the WAN form in
+separate child frames (`top_menu.htm` / `sub_menu_*.htm` / `tcpipwan.htm`), which
+is why `models/_driver.py` sweeps all frames.  Post-login landing is
+Management/Status: nav is `#Network` then `#WAN` (anchor ids == menu texts).
+Dial control is a native `select#wanType_id`; options verbatim: Static IP /
+DHCP Client / PPPoE / PPTP / L2TP (dynamic == "DHCP Client" here).  Per-mode
+name-anchored fields (`pppUserName/pppPassword`, `pptp*`, `l2tp*` — vpn_server
+maps to `*ServerIpAddr`, DomainName variant exists).  Apply is
+`input[name='save_apply']` ("Save & Apply", visible+unique); the frame also
+hides EIGHT `*Connect`/`*Disconnect` submits — never match apply by the text
+"Connect" on this brand.  No IPv6 page in this firmware's menus.  All four
+modes validated live via the script itself (read_back + fills, no-apply);
+`--apply` acceptance still pending.  Mock: `cudy*.htm` frameset set.
+
 **Tenda was always pinnable (we got this wrong at the time).** We concluded "no
 unique selector exists → the profile escape hatch is unusable" because plain CSS
 `div.v-select` matches 5 fields. But `_locate_by_selector` uses `frame.locator()`
@@ -279,9 +297,12 @@ was always available. `_example.yaml` documents it.
   round with `--apply`.
 - Re-verify on the bench the `[待真机复核]` lines in
   `models/Mercusys_BE3600.py` (field selectors, apply click, login button).
-- Produce `models/` scripts for the remaining group brands — Cudy, Buffalo,
-  Huawei — via the adapt-router-model skill (needs one `cli.py diagnose` run
-  per device; never guess their DOM).
+- Cudy `--apply` acceptance round (dynamic → pppoe → l2tp → pptp with real
+  creds); read the shell label and rename `Cudy_AX.py` / `model:` to the real
+  model name.
+- Produce `models/` scripts for the remaining group brands — Buffalo, Huawei —
+  via the adapt-router-model skill (one `cli.py diagnose` run per device;
+  never guess their DOM).
 - Wire `examples/run_test_matrix.py` `run_perf_tests()`/`wait_wan_up()` to the
   real single-machine scripts (or plug them into `_driver.run(verify_hook=...)`).
 - Mercusys IPv6 (Advanced→IPv6): diagnose first, then add a `mode_overrides`

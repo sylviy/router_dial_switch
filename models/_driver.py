@@ -91,6 +91,46 @@ def _settle(page, ms: int = 300):
         pass
 
 
+def _frames(page):
+    """主文档 + 所有子 frame。老式 frameset UI(如 Cudy)的菜单、拨号控件、
+    保存键分散在不同的子 frame 里,所有查找都必须全 frame 扫。"""
+    try:
+        return list(page.frames)
+    except Exception:
+        return []
+
+
+def _locate(page, sel, require_visible=True):
+    """跨所有 frame 找第一个可见匹配;require_visible=False 时也接受隐藏
+    元素(被美化插件藏起来的原生 <select> 是 display:none 的)。"""
+    for fr in _frames(page):
+        try:
+            loc = fr.locator(sel)
+        except Exception:
+            continue
+        el = _first_visible(loc)
+        if el:
+            return el
+        if not require_visible:
+            try:
+                if loc.count() > 0:
+                    return loc.first
+            except Exception:
+                pass
+    return None
+
+
+def _locate_text(page, text):
+    for fr in _frames(page):
+        try:
+            el = _first_visible(fr.get_by_text(text, exact=True))
+            if el:
+                return el
+        except Exception:
+            continue
+    return None
+
+
 # ---------------------------------------------------------------------------
 # facts 处理
 # ---------------------------------------------------------------------------
@@ -116,34 +156,33 @@ def _login(page, facts: dict, admin_user: str, admin_pass: str) -> bool:
     lg = facts.get("login") or {}
     pw_sel = lg.get("password") or "input[type=password]"
     # SPA 的登录框是异步挂载的:等它出现,而不是扫一次就放弃。
-    pwd = _poll(page, lambda: _first_visible(page.locator(pw_sel)), 8000)
+    pwd = _poll(page, lambda: _locate(page, pw_sel), 8000)
     if not pwd:
         return True  # 没出现登录框:当作已在会话内
     if admin_user and lg.get("user"):
-        user_el = _first_visible(page.locator(lg["user"]))
+        user_el = _locate(page, lg["user"])
         if user_el:
             user_el.fill(admin_user)
     pwd.fill(admin_pass)
     btn = None
     if lg.get("button"):
-        btn = _poll(page, lambda: _first_visible(page.locator(lg["button"])), 2000)
+        btn = _poll(page, lambda: _locate(page, lg["button"]), 2000)
     if btn:
         btn.click()
     else:
         pwd.press("Enter")
     # 确认真的离开了登录页(密码框消失);失败就如实报 login failed,
     # 不能带着未登录状态往下走再误报"找不到拨号控件"。
-    gone = _poll(page, lambda: _first_visible(page.locator(pw_sel)) is None, 8000)
+    gone = _poll(page, lambda: _locate(page, pw_sel) is None, 8000)
     return bool(gone)
 
 
 def _navigate(page, facts: dict, result: dict) -> None:
     for item in facts.get("wan_path") or []:
         if item.startswith("sel:"):        # 前缀 sel: 表示用选择器点菜单
-            loc = page.locator(item[4:])
+            el = _poll(page, lambda s=item[4:]: _locate(page, s), 6000)
         else:                              # 默认按菜单文字精确匹配
-            loc = page.get_by_text(item, exact=True)
-        el = _poll(page, lambda l=loc: _first_visible(l), 6000)
+            el = _poll(page, lambda t=item: _locate_text(page, t), 6000)
         if el:
             el.click()
             _settle(page)
@@ -152,14 +191,10 @@ def _navigate(page, facts: dict, result: dict) -> None:
 
 
 def _dial_present(page, dial: dict) -> bool:
-    loc = page.locator(dial["selector"])
-    if dial.get("kind") == "select":
-        # 美化过的原生 <select> 被有意隐藏(display:none),存在即算在。
-        try:
-            return loc.count() > 0
-        except Exception:
-            return False
-    return _first_visible(loc) is not None
+    # 美化过的原生 <select> 被有意隐藏(display:none),存在即算在。
+    require_visible = dial.get("kind") != "select"
+    return _locate(page, dial["selector"],
+                   require_visible=require_visible) is not None
 
 
 def _toggle_state(el):
@@ -190,18 +225,18 @@ def _ensure_enabled(page, facts: dict) -> None:
         return
     if _dial_present(page, facts["dial"]):
         return  # 拨号控件已在:绝不碰开关(防止把已启用的页面点关)
-    el = _poll(page, lambda: _first_visible(page.locator(sel)), 4000)
+    el = _poll(page, lambda: _locate(page, sel), 4000)
     if el and _toggle_state(el) is not True:
         el.click()
         _settle(page)
 
 
 def _set_mode_select(page, facts: dict, label: str, result: dict) -> None:
-    loc = page.locator(facts["dial"]["selector"])
-    if not _poll(page, lambda: loc.count() > 0, 8000):
-        result["message"] = "没找到拨号控件:%s" % facts["dial"]["selector"]
+    css = facts["dial"]["selector"]
+    sel = _poll(page, lambda: _locate(page, css, require_visible=False), 8000)
+    if not sel:
+        result["message"] = "没找到拨号控件:%s" % css
         return
-    sel = loc.first
     try:
         # force=True:美化隐藏的原生 select 也能驱动;select_option 会派发
         # input+change,美化皮和路由器自己的 JS 都监听得到。
@@ -244,7 +279,7 @@ def _set_mode_dropdown(page, facts: dict, label: str, result: dict) -> None:
     dial_sel = facts["dial"]["selector"]
     # dial.value:可选的回读选择器(值文本所在的子元素);不填就读整个 trigger。
     value_sel = facts["dial"].get("value") or dial_sel
-    trigger = _poll(page, lambda: _first_visible(page.locator(dial_sel)), 8000)
+    trigger = _poll(page, lambda: _locate(page, dial_sel), 8000)
     if not trigger:
         result["message"] = "没找到拨号控件:%s" % dial_sel
         return
@@ -266,20 +301,30 @@ def _set_mode_dropdown(page, facts: dict, label: str, result: dict) -> None:
     # 先只认 option 形态的容器(弹层是异步挂载的,轮询等它);实在没有,
     # 最后才退回"页面上任何精确同文字"——这一步放在轮询之外,防止弹层
     # 还没渲染时就抓走页面别处的同名文字(IPv6 页的 DHCPv6 radio 教训)。
-    opt = _poll(page, lambda: _first_visible(
-        page.locator(containers).filter(has_text=rx)), 3000)
+    def find_option():
+        for fr in _frames(page):
+            try:
+                el = _first_visible(fr.locator(containers).filter(has_text=rx))
+                if el:
+                    return el
+            except Exception:
+                continue
+        return None
+
+    opt = _poll(page, find_option, 3000)
     if not opt:
-        opt = _first_visible(page.get_by_text(label, exact=True))
+        opt = _locate_text(page, label)
     if not opt:
         seen = []
-        try:
-            loc = page.locator(containers)
-            for i in range(min(loc.count(), 12)):
-                t = (loc.nth(i).inner_text() or "").strip()
-                if t and len(t) < 30 and t not in seen:
-                    seen.append(t)
-        except Exception:
-            pass
+        for fr in _frames(page):
+            try:
+                loc = fr.locator(containers)
+                for i in range(min(loc.count(), 12)):
+                    t = (loc.nth(i).inner_text() or "").strip()
+                    if t and len(t) < 30 and t not in seen:
+                        seen.append(t)
+            except Exception:
+                continue
         result["message"] = ("下拉打开了,但没找到选项 %r%s"
                              % (label,
                                 "(看到:%s)" % " / ".join(seen) if seen else ""))
@@ -288,7 +333,7 @@ def _set_mode_dropdown(page, facts: dict, label: str, result: dict) -> None:
     _settle(page, 400)
 
     def read_now() -> str:
-        el = _first_visible(page.locator(value_sel))
+        el = _locate(page, value_sel)
         try:
             return (el.inner_text() or "").strip() if el else ""
         except Exception:
@@ -304,7 +349,7 @@ def _set_mode_dropdown(page, facts: dict, label: str, result: dict) -> None:
 def _set_mode_radio(page, facts: dict, label: str, result: dict) -> None:
     """kind=radio:modes 的值是每个模式各自 radio 的选择器。
     只信真 radio 的 is_checked();读不到状态就不许报成功。"""
-    el = _poll(page, lambda: _first_visible(page.locator(label)), 8000)
+    el = _poll(page, lambda: _locate(page, label), 8000)
     if not el:
         result["message"] = "没找到模式 radio:%s" % label
         return
@@ -336,7 +381,7 @@ def _fill_params(page, facts: dict, mode: str, params: Dict[str, str],
             result["warnings"].append("FACTS.fields 缺 %r 的选择器" % concept)
             continue
         # 账密输入框在选完模式后才挂载,等它出现。
-        el = _poll(page, lambda s=sel: _first_visible(page.locator(s)), 3000)
+        el = _poll(page, lambda s=sel: _locate(page, s), 3000)
         if el:
             el.fill(str(value))
             result["filled"].append(concept)
@@ -349,7 +394,7 @@ def _apply(page, facts: dict, result: dict) -> None:
     if not sel:
         result["warnings"].append("FACTS 没写 apply(保存键)选择器")
         return
-    el = _poll(page, lambda: _first_visible(page.locator(sel)), 3000)
+    el = _poll(page, lambda: _locate(page, sel), 3000)
     if el:
         el.click()
         result["applied"] = True
@@ -358,20 +403,26 @@ def _apply(page, facts: dict, result: dict) -> None:
         # 证据优先:把页面上实际可见的按钮列出来,失败信息自己就能定位问题
         # (例:真机按钮文字在里层 span,:text-is 会漏 —— 得换锚定写法)。
         seen = []
-        try:
-            loc = page.locator("button")
-            for i in range(min(loc.count(), 12)):
-                b = loc.nth(i)
-                try:
-                    if not b.is_visible():
+        for fr in _frames(page):
+            try:
+                loc = fr.locator("button, input[type=submit], input[type=button]")
+                for i in range(min(loc.count(), 12)):
+                    b = loc.nth(i)
+                    try:
+                        if not b.is_visible():
+                            continue
+                        t = (b.inner_text() or "").strip()
+                        if not t:      # input[type=submit] 的文字在 value 里
+                            try:
+                                t = (b.input_value() or "").strip()
+                            except Exception:
+                                t = ""
+                    except Exception:
                         continue
-                    t = (b.inner_text() or "").strip()
-                except Exception:
-                    continue
-                if t and t not in seen:
-                    seen.append(t)
-        except Exception:
-            pass
+                    if t and t not in seen:
+                        seen.append(t)
+            except Exception:
+                continue
         result["warnings"].append(
             "保存键没找到:%s%s"
             % (sel, "(页面可见按钮:%s)" % " / ".join(seen) if seen else ""))

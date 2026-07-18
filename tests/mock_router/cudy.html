@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Mock Router (Cudy-style frameset: login page)</title></head>
+<body>
+<!-- Real Cudy (2026-07-18): login lives in the MAIN document; the password box
+     is #pwd[name=password]; the submit is an <input> whose text is in value=. -->
+<h2>Router Login</h2>
+<form onsubmit="location='cudy_home.htm'; return false">
+  <input type="password" name="password" id="pwd" placeholder="Password">
+  <input type="submit" value="Login">
+</form>
+</body>
+</html>

@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Mock Router (Cudy-style frameset)</title></head>
+<!-- Old-school frameset, like the real Cudy home.htm: top menu frame + sub menu
+     frame + content frame. The WAN form only exists inside a child frame, so the
+     models/_driver MUST search all frames to drive this shape. After login the
+     device lands on Management/Status: the sub menu has NO WAN link until the
+     top-menu "Network" is clicked (mirrors the real two-step nav). -->
+<frameset rows="60,*">
+  <frame src="cudy_menu.htm" name="topmenu">
+  <frameset cols="180,*">
+    <frame src="cudy_sub_mng.htm" name="sub">
+    <frame src="cudy_status.htm" name="content">
+  </frameset>
+</frameset>
+</html>

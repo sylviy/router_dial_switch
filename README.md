@@ -185,7 +185,7 @@ python tests/smoke_test.py --show   # 观看它点完所有模式
 ```
 
 它在 localhost 起模拟路由器页并跑真实引擎:登录 → 进 WAN 设置 → 识别控件 →
-选中 → 填参数 → 回读 → 保存。当前共 **34 个用例**,覆盖:
+选中 → 填参数 → 回读 → 保存。当前共 **37 个用例**,覆盖:
 - `index.html` 原生 `<select>` / `custom.html` 自定义 `<div role="combobox">`
   (复刻真机 Mercusys)/ `tenda.html` 无 role 的 Vue widget(含 "Connect" 保存键);
 - `xiaomi.html` **故意做成启发式认不出**,用带 `selectors:` 的 profile 驱动,
@@ -205,6 +205,7 @@ router_dial_switch/
   models/                **交付层:每台型号一个脚本**
     Tenda_AX3000.py      事实(FACTS)+ 入口;直接运行
     Mercusys_BE3600.py
+    Cudy_AX.py
     _template.py         新型号照抄的注释模板
     _driver.py           所有型号共用的点击逻辑(零猜测,只吃显式事实)
   .claude/skills/
@@ -221,7 +222,7 @@ router_dial_switch/
     recorder.py          录制模式:抓 HAR + 生成 profile 草稿
   profiles/              适配期的每品牌 yaml 提示
   dial_modes/            每模式所需字段模板
-  tests/                 模拟路由器页 + 离线冒烟测试(34 用例)
+  tests/                 模拟路由器页 + 离线冒烟测试(37 用例)
 ```
 
 ## 已知限制 / 后续
