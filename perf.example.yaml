@@ -1,0 +1,60 @@
+# perf.example.yaml —— WAN 性能矩阵的配置模板。
+#
+# 复制成 perf.yaml(已被 .gitignore 忽略)再改。描述的是"测什么、怎么测";
+# 密码(管理密码/宽带账密)不在这里,走 router.yaml(python cli.py setup)。
+#
+# 任何一项都可省略,省了就用内置默认。空文件也能跑(默认 dynamic+pppoe 矩阵、
+# simulate 后端)。想先看样例报告:python run_matrix.py --demo
+
+# 驱动哪台机:models/<名字>.py 的文件名(去掉 .py)。命令行 --model 会覆盖它。
+model: Tenda_AX3000
+
+# 性能后端:
+#   simulate  离线模拟(无需 Chariot / 路由器,给演示、CI、看报告长啥样)
+#   chariot   真台架(子进程调用 matrix/chariot_perf.py,需 PyChariot 环境)
+backend: simulate
+
+# 测试矩阵 --------------------------------------------------------------------
+# 每一档:mode 必须是该型号脚本声明过的模式;params 是切它需要的账密/服务器,
+# 会传给 Web 驱动(也可以放进 router.yaml 的 params: 里按模式自动取)。
+dial_modes:
+  - mode: dynamic
+  - mode: pppoe
+    params: {pppoe_user: pppoe, pppoe_pass: pppoe}
+  # - mode: l2tp
+  #   params: {vpn_server: 192.168.202.254, vpn_user: l2tp, vpn_pass: l2tp}
+
+bands:      [lan, 2GHz]        # lan / 2GHz / 5GHz
+directions: [up, down, bi]     # 上行 / 下行 / 双向
+protocols:  [TCP]              # TCP / UDP
+
+# 切完一档模式后,等 WAN 拨通再开测 ------------------------------------------
+wan_up:
+  method: ping                 # ping = ping 通 host 再测;wait = 只固定等待
+  host: 192.168.202.99         # 台架公网口,ping 得通即视为拨通
+  timeout_s: 60
+  settle_s: 15                 # 拨通后再稳一会儿(旧脚本固定睡 15s)
+
+# 全部跑完后切回的安全模式(可选;旧脚本收尾切回 dynamic)
+reset_mode: dynamic
+
+# Chariot 后端参数(backend=simulate 时全部忽略)------------------------------
+# 逐项对应旧 Dial.py 里那些写死的常量,现在挪到配置里。
+chariot:
+  duration_s: 20
+  internet_ip: 192.168.203.1   # 内网口对端(pppoe/l2tp/pptp 的 internet 组合走这)
+  public_ip:   192.168.202.99  # 公网口对端(dynamic/static/含 public 的组合走这)
+  endpoints:                   # 客户端侧注入机,按频段
+    lan:  192.168.0.79
+    2GHz: 192.168.0.132
+    5GHz: 192.168.0.132
+  scripts:                     # 上行/下行各自的 Chariot 脚本
+    up:   Throughput.scr
+    down: Throughput_w2l.scr
+  pairs: {TCP: 50, UDP: 100}   # 每种协议的对数(bi 时上下行各一半)
+  stability_ratio: 0.9         # 中段采样 min < 0.9·max 判为"不稳"
+  python2: python              # 跑 chariot_perf.py 的解释器(台架多为 python2)
+
+report:
+  dir: artifacts               # HTML + CSV 写到哪
+  title: WAN 性能矩阵
