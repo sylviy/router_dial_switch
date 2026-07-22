@@ -95,7 +95,28 @@ python models/Tenda_AX3000.py pppoe --apply
 python models/Mercusys_BE3600.py l2tp
 ```
 
-整个测试矩阵(切模式 → 等 WAN → 跑性能)见 `examples/run_test_matrix.py`。
+### 跑整套 WAN 性能矩阵(切模式 → 等 WAN → 测吞吐 → 出报告)
+
+日常切模式只是**一步**;完整测试是一个循环:每档拨号方式都切过去、等 WAN 拨通、
+跑一遍吞吐,再换下一档。这条主循环现在是一条命令 `run_matrix.py`——它把本工具
+(Web 界面切拨号,竞品路由器也能驱动)和已有的 Chariot 性能脚本(旧 `Dial.py`
+的逻辑,已参数化)拼在一起:
+
+```bash
+python run_matrix.py --list                        # 列出已适配型号
+python run_matrix.py --demo                         # 离线演示:不碰路由器,出样例报告
+python run_matrix.py --model Tenda_AX3000           # 真跑(默认只切换不点保存)
+python run_matrix.py --model Tenda_AX3000 --apply   # 真跑并真正下发保存
+```
+
+- **测什么、怎么测**(拨号方式矩阵、频段/方向/协议、台架拓扑、WAN 拨通判据)写在
+  `perf.yaml`(复制 `perf.example.yaml` 改;git 忽略);**密码**仍走 `router.yaml`。
+- **两个性能后端**:`simulate`(纯 Python 模拟,给演示/CI/看报告长啥样)和
+  `chariot`(真台架,子进程调用 `matrix/chariot_perf.py`,保持在它原生的
+  Python 2 / Chariot 环境里)。
+- **输出**:自包含、亮暗自适应的 **HTML 报告** + 一份 **CSV**(写到 `artifacts/`),
+  一眼看清每个 拨号方式×频段×方向×协议 的吞吐、是否稳定、以及那档切换是否成功
+  —— 取代旧脚本写死路径的 Excel 模板。
 
 ### 适配一台新型号
 
@@ -197,6 +218,15 @@ python tests/smoke_test.py --show   # 观看它点完所有模式
 
 ```
 router_dial_switch/
+  run_matrix.py          **整套性能矩阵入口**:切模式 → 等WAN → 测吞吐 → 出报告
+  perf.example.yaml      矩阵配置模板(复制成 perf.yaml;测什么/怎么测/台架拓扑)
+  matrix/                性能矩阵编排层
+    run.py               主循环 + CLI(--list / --demo / --model / --apply)
+    config.py            读 perf.yaml
+    perf_backends.py     simulate(离线模拟)/ chariot(真台架,子进程)后端
+    chariot_perf.py      旧 Dial.py 的 Chariot 逻辑清理版(Py2/台架用,单次测量)
+    wanup.py             切完模式后等 WAN 拨通(ping 判据 / 固定等待)
+    report.py            自包含 HTML + CSV 报告
   models/                **交付层:每台型号一个脚本**
     Tenda_AX3000.py      事实(FACTS)+ 入口;直接运行
     Mercusys_BE3600.py
@@ -224,8 +254,9 @@ router_dial_switch/
 
 ## 已知限制 / 后续
 
-- 尚未做 WAN 拨通验证(本地无拨号服务器)—— 等有拨号台架后,加 `verify_hook.py`
-  封装单机脚本即可。
+- WAN 拨通验证:`run_matrix.py` 已内置一个 ping 判据(`perf.yaml` 的 `wan_up`),
+  切完模式后 ping 通台架地址再开测;更强的"真·拨通"判据(调单机脚本)可从
+  `matrix/wanup.py` 扩展,或用 `_driver.run(verify_hook=...)`。
 - WLAN(2.4G/5G、多 SSID)切换:后续结合单机脚本;引擎已预留无线客户端钩子。
 - 验证码登录、全 canvas 自绘 UI、重度混淆 SPA:需录制 profile 或人工——不强求全自动。
 - IPv6 位置因厂商而异:Mercusys BE3600 上它**不在**主"上网方式"列表里,而是在

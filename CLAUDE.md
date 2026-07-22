@@ -26,10 +26,17 @@ single-machine perf scripts own connectivity/throughput and plug in later via a
 `verify_hook`.
 
 ## How it fits the test workflow
-The tool is ONE step ("change the dial way"). The full run is a loop:
-`set dynamic → perf-test → set pppoe → perf-test → set l2tp → … `. The perf test
-is the existing single-machine scripts. See `examples/run_test_matrix.py` for
-the orchestrator skeleton (switch = this tool, perf = placeholder to wire up).
+The dial switch is ONE step ("change the dial way"). The full run is a loop:
+`set dynamic → perf-test → set pppoe → perf-test → set l2tp → … `. That loop is
+now a real command — `run_matrix.py` (package `matrix/`) — which stitches this
+tool (web-UI switching, works on competitor routers) to the perf half ported
+from the legacy `Dial.py`. The perf side is a pluggable backend: `simulate`
+(pure-Python offline/CI/demo) or `chariot` (the real bench, kept in its native
+Python-2/Chariot world behind a subprocess to `matrix/chariot_perf.py`). Output
+is a friendly self-contained HTML + CSV report (replaces the old hardcoded-path
+Excel template). Config split: `perf.yaml` = what/how to test (matrix, topology,
+wan-up), `router.yaml` = passwords. `python run_matrix.py --demo` runs the whole
+chain with no router/Chariot present.
 
 ## Architecture (how the files work together)
 - `models/` — **the delivery layer.** `<Brand>_<Model>.py` = a FACTS dict
@@ -47,6 +54,17 @@ the orchestrator skeleton (switch = this tool, perf = placeholder to wire up).
   ipv6 page). Facts lines not yet re-verified on the physical device are
   commented `[待真机复核]`. `verify_hook(page, result)` is the future WAN-up
   integration point. Creds come from router.yaml via `cli.merge_params`.
+- `matrix/` + `run_matrix.py` — **the orchestration layer (the full test loop).**
+  `run.py` is the main loop: for each dial mode → `_driver.run()` switch (lazy
+  import, so `--demo` needs no Playwright) → `wanup.wait_wan_up` → for each
+  band×direction×proto call `perf_backends.PerfBackend.measure` → `report.py`
+  writes HTML+CSV. `config.py` reads `perf.yaml` (defaults so an empty file
+  works). `perf_backends.py`: `SimulatorBackend` (deterministic offline numbers)
+  and `ChariotBackend` (subprocess → `chariot_perf.py`). `chariot_perf.py` is the
+  cleaned, parameterized port of the legacy `Dial.py` throughput+judge logic,
+  Py2/3-compatible and bench-only (imports Chariot lazily). A failed switch skips
+  that mode's measurements and is recorded, not silently swallowed (the legacy
+  script's bare `except: continue` even had its error write commented out).
 - `.claude/skills/adapt-router-model/SKILL.md` — the onboarding methodology as
   a skill: diagnose artifact → FACTS mapping table, selector cookbook, the
   four iron rules, verification checklist. New models go through this, never
@@ -321,8 +339,11 @@ was always available. `_example.yaml` documents it.
 - The `.bat` wrappers (`setup.bat` dual online/offline, `dial.bat`) were written
   on macOS and **have not been executed on Windows** — first Windows run should
   confirm them (see WINDOWS.md).
-- Wire `examples/run_test_matrix.py` `run_perf_tests()`/`wait_wan_up()` to the
-  real single-machine scripts (or plug them into `_driver.run(verify_hook=...)`).
+- `run_matrix.py` is the orchestrator (replaced the old `examples/run_test_matrix.py`
+  skeleton). Remaining bench work: (1) validate `matrix/chariot_perf.py` against a
+  live PyChariot install — it's a faithful port of `Dial.py` but UNRUN here (no
+  Chariot); (2) set `chariot.python2` to the bench's Py2 interpreter; (3) confirm
+  the `wan_up` ping host reflects the real topology.
 - Mercusys IPv6 (Advanced→IPv6): diagnose first, then add a `mode_overrides`
   block to its model script.
 - WLAN 2.4G/5G switching later.
