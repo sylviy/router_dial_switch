@@ -36,6 +36,12 @@
 
 ## 日常使用
 
+**最简单:双击 `start.bat`。** 它列出支持的型号,按数字选型号 → 选操作 →
+选模式,一路回车就是"只切换不保存"的安全默认;密码/宽带账号问一次可以存进
+`router.yaml`,以后全程回车。**不需要提前准备任何文件。**
+
+命令行版(想脚本化/传参数时):
+
 ```bat
 run.bat setup                        :: 一次性:存路由器 IP / 管理密码 / 宽带账号
                                      ::   (写进 router.yaml,本机文件,不进仓库)
@@ -51,8 +57,8 @@ matrix.bat --model Tenda_AX3000      :: 整轮真跑(默认只切换不点保存
 matrix.bat --model Tenda_AX3000 --apply  :: 整轮真跑并真正下发保存
 ```
 
-- **`dial.bat` 是日常命令**:第一个参数是型号脚本名(`models\` 里的文件名去掉
-  `.py`),后面的参数原样传给它。
+- **`dial.bat` 是命令行版切模式**:第一个参数是型号脚本名(`models\` 里的
+  文件名去掉 `.py`),后面的参数原样传给它。
 - **`matrix.bat` 是整轮命令**(组里性能脚本已合并进来):对配置里的每档拨号
   方式,切模式 → ping 等 WAN 拨通 → 跑吞吐并判稳 → 出自包含 HTML + CSV 报告
   (落在 `artifacts\`)。测什么写在 `perf.yaml`(复制 `perf.example.yaml` 改,
@@ -78,7 +84,7 @@ run.bat pppoe                        :: 纯启发式碰运气,常见 UI 能直�
 ```bat
 smoke.bat
 ```
-在本机起模拟路由器页跑完整流程,预期结尾 `39 passed, 0 failed`。需要装 Chrome。
+在本机起模拟路由器页跑完整流程,预期结尾 `40 passed, 0 failed`。需要装 Chrome。
 
 ---
 

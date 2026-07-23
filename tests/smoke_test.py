@@ -495,6 +495,31 @@ def main():
     passed += ok
     failed += not ok
 
+    # ③ start.py 交互式入口:管道喂按键,整条 选型号→选操作→选模式→切换 流程
+    #    在 Tenda mock 上走通;默认操作(1)绝不能点保存。
+    print("\n=== start.py (interactive wizard) ===")
+    import subprocess
+    from matrix.run import list_models
+    model_idx = list_models().index("Tenda_AX3000") + 1
+    mode_idx = model_driver.available_modes(TENDA_FACTS).index("pppoe") + 1
+    answers = "%d\n1\n%d\nadmin123\nacc\ns3\nn\n" % (model_idx, mode_idx)
+    swp = subprocess.run(
+        [sys.executable, os.path.join(ROOT, "start.py"),
+         "--url", "http://127.0.0.1:%d/tenda.html" % port]
+        + (["--headless"] if cfg.headless else []),
+        input=answers, capture_output=True, text=True, timeout=240)
+    ok = (swp.returncode == 0
+          and "已切到 pppoe" in swp.stdout
+          and "'PPPoE'" in swp.stdout
+          and "未点保存" in swp.stdout)
+    print("[%s] start.py wizard: rc=%s pick=模型%d/模式%d"
+          % ("PASS" if ok else "FAIL", swp.returncode, model_idx, mode_idx))
+    if not ok:
+        print(swp.stdout[-800:])
+        print(swp.stderr[-400:])
+    passed += ok
+    failed += not ok
+
     httpd.shutdown()
     print("\n%d passed, %d failed" % (passed, failed))
     return 1 if failed else 0

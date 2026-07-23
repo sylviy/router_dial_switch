@@ -1,10 +1,8 @@
 @echo off
 REM ==========================================================================
-REM  smoke.bat  --  run the offline end-to-end self-test via the .venv.
-REM  No router needed: it serves mock router pages on localhost and drives them
-REM  with the real engine + the real model scripts.
-REM  Needs Chrome installed (channel="chrome").  Add --show to watch it click.
-REM  Expected result: "40 passed, 0 failed".
+REM  start.bat  --  THE EASY BUTTON.  Double-click, pick a model by number,
+REM  pick what to do, done.  Nothing to prepare, nothing to remember.
+REM  (Power users: dial.bat / matrix.bat / run.bat still take arguments.)
 REM ==========================================================================
 setlocal
 pushd "%~dp0"
@@ -17,7 +15,7 @@ if not exist ".venv\Scripts\python.exe" (
   exit /b 1
 )
 
-".venv\Scripts\python.exe" tests\smoke_test.py %*
+".venv\Scripts\python.exe" start.py
 set "rc=%errorlevel%"
 popd
 endlocal

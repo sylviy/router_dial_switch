@@ -20,7 +20,6 @@
 from __future__ import annotations
 
 import argparse
-import glob
 import os
 import sys
 
@@ -42,10 +41,13 @@ def _color(txt, code):
 
 
 def list_models() -> list:
+    # 注意:不能用 glob —— 本仓库路径里有 "[Tool]",glob 会把方括号当字符类,
+    # 静默返回空列表(CLAUDE.md 的老坑,这里也踩过)。
     out = []
-    for p in sorted(glob.glob(os.path.join(ROOT, "models", "*.py"))):
-        name = os.path.splitext(os.path.basename(p))[0]
-        if not name.startswith("_"):
+    mdir = os.path.join(ROOT, "models")
+    for fn in sorted(os.listdir(mdir)):
+        name, ext = os.path.splitext(fn)
+        if ext == ".py" and not name.startswith("_"):
             out.append(name)
     return out
 

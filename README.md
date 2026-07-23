@@ -5,7 +5,17 @@ IPv6)——用于把我们的 DUT 与那些无法用 HTTP API 驱动的竞品路
 组里的 **Chariot 吞吐脚本**也已合并进来,一条命令跑完
 「切模式 → 等 WAN → 测吞吐 → 出报告」的整轮。
 
-**交付形态(2026-07-16 起):每台型号一个脚本。**
+**最简单的用法:一条命令,按数字选。**
+
+```bash
+python start.py        # Windows 上双击 start.bat
+```
+
+它自己列出支持的型号,选型号 → 选操作(只切换 / 切换并保存 / 整轮性能)→
+选模式,一路回车就是最安全的默认(只切换、不点保存)。密码和宽带账号先取
+`router.yaml` 里存过的,没有才问你,问完可以顺手存起来 —— 下次全程回车。
+
+**交付形态(2026-07-16 起):每台型号一个脚本。** 脚本化/参数化的入口也都在:
 
 ```bash
 python models/Tenda_AX3000.py pppoe          # 只切拨号:一条命令,切完看回读
@@ -81,10 +91,19 @@ Cudy 固件关掉了 IPv6 的证据链)都记在 `CLAUDE.md` 的 **Validated** �
 
 ## 使用方法
 
-### 日常使用(已适配的型号)
+### 最简:交互式向导(推荐给所有人)
+
+```bash
+python start.py        # Windows 双击 start.bat
+```
+
+不用记任何参数、不用先建任何文件:列出型号按数字选,默认永远是"只切换
+不保存"。真正保存要么明确选操作 2,要么再答一次确认。
+
+### 日常使用(已适配的型号,命令行版)
 
 第一次,把 IP / 管理密码 / 宽带账号交互式写进本机的 `router.yaml`
-(该文件已被 `.gitignore` 忽略,不会进仓库):
+(该文件已被 `.gitignore` 忽略,不会进仓库;`start.py` 里存过就不用再跑):
 
 ```bash
 python cli.py setup
@@ -203,7 +222,7 @@ python tests/smoke_test.py --show   # 观看它点完所有模式
 ```
 
 它在 localhost 起模拟路由器页并跑真实引擎:登录 → 进 WAN 设置 → 识别控件 →
-选中 → 填参数 → 回读 → 保存。当前共 **39 个用例**,覆盖:
+选中 → 填参数 → 回读 → 保存。当前共 **40 个用例**,覆盖:
 - `index.html` 原生 `<select>` / `custom.html` 自定义 `<div role="combobox">`
   (复刻真机 Mercusys)/ `tenda.html` 无 role 的 Vue widget(含 "Connect" 保存键);
 - `xiaomi.html` **故意做成启发式认不出**,用带 `selectors:` 的 profile 驱动,
@@ -219,13 +238,16 @@ python tests/smoke_test.py --show   # 观看它点完所有模式
   查找、按模式填参、默认不点保存),以及"事实对不上的页面必须诚实失败"守卫;
 - **run_matrix 编排层**:`--demo` 离线整轮(配置 → 主循环 → simulate 后端 →
   HTML+CSV 落盘),以及 `chariot_perf._judge` 判稳纯函数 == 旧脚本
-  `result_judge` 语义的守卫。
+  `result_judge` 语义的守卫;
+- **start.py 交互向导**:管道喂按键走通 选型号→选操作→选模式→切换 整条流程
+  (默认操作必须不点保存)。
 
 ## 项目结构
 
 ```
 router_dial_switch/
-  run_matrix.py          **整套性能矩阵入口**:切模式 → 等WAN → 测吞吐 → 出报告
+  start.py               **交互式向导(最简入口)**:列型号按数字选,回车即默认
+  run_matrix.py          整套性能矩阵入口:切模式 → 等WAN → 测吞吐 → 出报告
   perf.example.yaml      矩阵配置模板(复制成 perf.yaml;测什么/怎么测/台架拓扑)
   matrix/                性能矩阵编排层
     run.py               主循环 + CLI(--list / --demo / --model / --apply)
@@ -254,9 +276,9 @@ router_dial_switch/
   profiles/              适配期的临时 yaml 提示(非交付物)
   dial_modes/            每模式所需字段模板
   tools/                 控制台粘贴用的查找脚本(手上只有浏览器时的兜底)
-  tests/                 模拟路由器页 + 离线冒烟测试(39 用例)
-  setup.bat dial.bat     Windows:一次安装 + 日常切模式(见 WINDOWS.md)
-  matrix.bat             Windows:整套性能矩阵(run_matrix.py)
+  tests/                 模拟路由器页 + 离线冒烟测试(40 用例)
+  setup.bat start.bat    Windows:一次安装 + 双击即用的交互向导(见 WINDOWS.md)
+  dial.bat matrix.bat    Windows:命令行版 切模式 / 整套性能矩阵
   run.bat smoke.bat      Windows:适配期 cli.py + 离线自检
 ```
 

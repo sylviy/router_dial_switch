@@ -54,6 +54,15 @@ chain with no router/Chariot present.
   ipv6 page). Facts lines not yet re-verified on the physical device are
   commented `[待真机复核]`. `verify_hook(page, result)` is the future WAN-up
   integration point. Creds come from router.yaml via `cli.merge_params`.
+- `start.py` (+ `start.bat`) — **the zero-knowledge entry** (user ask
+  2026-07-23: "python script.py → list models → choose → run, no prep").
+  Interactive wizard: lists models/ by number (modes shown), action menu
+  (switch-only default / switch+apply with a second confirm / matrix demo /
+  matrix real), prompts only for what's missing (password + the mode's
+  MODE_REQUIRED_FIELDS, defaults from router.yaml), offers to save typed
+  creds back to router.yaml. Friendly verdict lines instead of raw JSON.
+  Hidden `--url`/`--headless` exist ONLY so the smoke test can drive it over
+  piped stdin (indexes computed, not hardcoded, so new models don't break it).
 - `matrix/` + `run_matrix.py` — **the orchestration layer (the full test loop).**
   `run.py` is the main loop: for each dial mode → `_driver.run()` switch (lazy
   import, so `--demo` needs no Playwright) → `wanup.wait_wan_up` → for each
@@ -122,7 +131,10 @@ chain with no router/Chariot present.
 ## Run / verify
 ```bash
 # offline logic test (no router needed) — must stay green:
-python tests/smoke_test.py            # 39/39 pass expected
+python tests/smoke_test.py            # 40/40 pass expected
+
+# the zero-knowledge entry (colleagues): interactive wizard, pick by number
+python start.py                       # Windows: double-click start.bat
 
 # daily use on an adapted model (run on a machine ON the router's LAN):
 python cli.py setup                   # one time -> router.yaml (git-ignored)
@@ -148,7 +160,9 @@ python cli.py --router-ip 192.168.1.1 --pass <pw> --mode pppoe \
 ## Gotchas (learned the hard way)
 - The repo path contains `[Tool]`, a glob character class. Use `glob.escape()`
   in Python and quote paths in shell, or matching silently returns nothing.
-  (Already fixed in `profile.py`.)
+  (Fixed in `profile.py`; bit AGAIN in `matrix/run.py list_models` — PR #1
+  shipped it returning `[]` on this path; now os.listdir. Prefer os.listdir
+  over glob for in-repo scans.)
 - A network-sandboxed environment can reach the internet but NOT the router's
   LAN. To drive a real router, run where Chrome can reach it (your machine), or
   via the Claude-in-Chrome extension.
