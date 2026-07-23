@@ -20,10 +20,10 @@ Tenda, Mercusys, Cudy). The heuristics engine + `cli.py diagnose` are demoted to
 produce a new model script from a diagnose artifact. Don't build further
 "universal tool" surface; invest in per-model scripts + the skill.
 
-**Current scope:** confirm the dial control is *located and changed* (read-back
-== target). It does NOT verify WAN actually dials up — the existing
-single-machine perf scripts own connectivity/throughput and plug in later via a
-`verify_hook`.
+**Current scope:** a model script confirms the dial control is *located and
+changed* (read-back == target). WAN-up + throughput belong to the full-round
+runner (`run_matrix.py` / `matrix/` — see next section); the legacy
+single-machine perf script is merged there, no longer a separate future hook.
 
 ## How it fits the test workflow
 The dial switch is ONE step ("change the dial way"). The full run is a loop:
@@ -122,11 +122,14 @@ chain with no router/Chariot present.
 ## Run / verify
 ```bash
 # offline logic test (no router needed) — must stay green:
-python tests/smoke_test.py            # 37/37 pass expected
+python tests/smoke_test.py            # 39/39 pass expected
 
 # daily use on an adapted model (run on a machine ON the router's LAN):
 python cli.py setup                   # one time -> router.yaml (git-ignored)
 python models/Tenda_AX3000.py pppoe   # add --apply to really save
+# full performance round (switch + WAN-up + throughput + HTML/CSV report):
+python run_matrix.py --demo           # offline sample report, no router needed
+python run_matrix.py --model Tenda_AX3000 --apply   # real round (perf.yaml)
 # adaptation phase (new/unscripted device): heuristics + evidence dump
 python cli.py pppoe                   # heuristic attempt
 python cli.py diagnose                # -> artifacts/diagnose_*.json
@@ -336,9 +339,9 @@ was always available. `_example.yaml` documents it.
   model name (currently a placeholder).
 - Re-verify on the bench the `[待真机复核]` lines in
   `models/Mercusys_BE3600.py` (field selectors, apply click, login button).
-- The `.bat` wrappers (`setup.bat` dual online/offline, `dial.bat`) were written
-  on macOS and **have not been executed on Windows** — first Windows run should
-  confirm them (see WINDOWS.md).
+- The `.bat` wrappers (`setup.bat` dual online/offline, `dial.bat`,
+  `matrix.bat`) were written on macOS and **have not been executed on
+  Windows** — first Windows run should confirm them (see WINDOWS.md).
 - `run_matrix.py` is the orchestrator (replaced the old `examples/run_test_matrix.py`
   skeleton). Remaining bench work: (1) validate `matrix/chariot_perf.py` against a
   live PyChariot install — it's a faithful port of `Dial.py` but UNRUN here (no
@@ -346,4 +349,11 @@ was always available. `_example.yaml` documents it.
   the `wan_up` ping host reflects the real topology.
 - Mercusys IPv6 (Advanced→IPv6): diagnose first, then add a `mode_overrides`
   block to its model script.
+- (History note) The perf merge was implemented twice in parallel on
+  2026-07-23; the subprocess/Py2 design (PR #1) won because PyChariot is a
+  Python-2-era library. The other attempt — an in-process py3 port with an
+  optional `wan_perf.xls` template writer (the old CONN_TYPE_INDEX cell map) —
+  lives on local branch `keep/perf-py3-parallel-impl` (never pushed). If the
+  team wants results written into the group's wan_perf.xls template again,
+  lift `perf/report.py` from that branch into `matrix/report.py`.
 - WLAN 2.4G/5G switching later.

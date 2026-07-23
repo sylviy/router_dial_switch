@@ -45,10 +45,20 @@ dial.bat Tenda_AX3000 pppoe --apply  :: 确认无误后,真正下发保存
 dial.bat Cudy_AX l2tp --apply
 
 dial.bat                             :: 不带参数 = 列出有哪些已适配的型号
+
+matrix.bat --demo                    :: 整轮演示:不碰路由器,出样例 HTML 报告
+matrix.bat --model Tenda_AX3000      :: 整轮真跑(默认只切换不点保存)
+matrix.bat --model Tenda_AX3000 --apply  :: 整轮真跑并真正下发保存
 ```
 
 - **`dial.bat` 是日常命令**:第一个参数是型号脚本名(`models\` 里的文件名去掉
   `.py`),后面的参数原样传给它。
+- **`matrix.bat` 是整轮命令**(组里性能脚本已合并进来):对配置里的每档拨号
+  方式,切模式 → ping 等 WAN 拨通 → 跑吞吐并判稳 → 出自包含 HTML + CSV 报告
+  (落在 `artifacts\`)。测什么写在 `perf.yaml`(复制 `perf.example.yaml` 改,
+  git 忽略);真跑 Chariot 吞吐要在装了 IxChariot 的台架上,并在 `perf.yaml`
+  的 `chariot.python2` 指定台架的 Python 2 解释器;没有台架就用默认的
+  `simulate` 后端(离线模拟值,报告里会标明非实测)。
 - **不加 `--apply` 就不会点保存** —— 接入调试期一直这样跑,不会把在用的网切断。
 - 输出是一段 JSON:看 `success` 和 `read_back`(界面回读到的实际值)是否等于
   你要的模式;失败时 `message` / `warnings` 会指出卡在哪一步。
@@ -68,7 +78,7 @@ run.bat pppoe                        :: 纯启发式碰运气,常见 UI 能直�
 ```bat
 smoke.bat
 ```
-在本机起模拟路由器页跑完整流程,预期结尾 `37 passed, 0 failed`。需要装 Chrome。
+在本机起模拟路由器页跑完整流程,预期结尾 `39 passed, 0 failed`。需要装 Chrome。
 
 ---
 
@@ -82,10 +92,12 @@ smoke.bat
 | `dial.bat` 报 `No such model script` | 型号名拼错了。不带参数跑 `dial.bat` 看可用列表。 |
 | 运行后卡在登录页 / `login failed` | ① 管理密码不对;② 有些机型(Tenda/Mercusys)**同一时间只允许一个 Web 会话** —— 先把浏览器里登录着的路由器页签退出。 |
 | 提示缺少宽带账号密码 | 先 `run.bat setup` 存进 router.yaml,或本次加 `--param pppoe_user=账号 --param pppoe_pass=密码`。 |
+| `matrix.bat` 真跑时吞吐格全是 `err` | 台架没装 IxChariot / `perf.yaml` 的 `chariot.python2` 没指到台架的 Python 2。先用 `--demo` 或 `simulate` 后端确认链路,再配台架。 |
 | 换一台 Windows | 整个文件夹拷过去重新双击 `setup.bat`。**`.venv` 不要跨机拷**(里面写死了本机路径),删掉重建即可。 |
 
 ## 安全提示
 
-- `router.yaml` 存着管理密码和宽带账号,**已被 git 忽略**,不要提交、不要贴进工单。
+- `router.yaml` 存着管理密码和宽带账号,`perf.yaml` 的 `dial_modes.params`
+  里也可能有宽带账密 —— **都已被 git 忽略**,不要提交、不要贴进工单。
 - `artifacts\diagnose_*.json` 可能含会话 token 和表单值,也已被 git 忽略;
   回传给别人前先过一眼。

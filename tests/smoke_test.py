@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 import sys
 import threading
+import yaml
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
@@ -443,6 +444,54 @@ def main():
     ok = (not res["success"]) and not res["applied"] and bool(res["message"])
     print("[%s] wrong-page guard: success=%s message=%r"
           % ("PASS" if ok else "FAIL", res["success"], res["message"]))
+    passed += ok
+    failed += not ok
+
+    # --- run_matrix(matrix/ 编排层)-----------------------------------------
+    # ① --demo 离线整轮:读 perf.yaml -> 主循环 -> simulate 后端 -> HTML+CSV
+    #    报告落盘。不碰路由器、不需要 Playwright,验证的是编排层本身。
+    print("\n=== run_matrix (matrix/ orchestration) ===")
+    import glob as glob_mod
+    from matrix.run import main as matrix_main
+    with tempfile.TemporaryDirectory() as td:
+        pcfg = os.path.join(td, "perf.yaml")
+        with open(pcfg, "w", encoding="utf-8") as fh:
+            yaml.safe_dump({"model": "Tenda_AX3000", "backend": "simulate",
+                            "bands": ["lan", "2GHz"], "protocols": ["TCP"],
+                            "report": {"dir": td}}, fh, allow_unicode=True)
+        rc = matrix_main(["--demo", "--config", pcfg])
+        htmls = glob_mod.glob(os.path.join(td, "wanperf_*.html"))
+        csvs = glob_mod.glob(os.path.join(td, "wanperf_*.csv"))
+        csv_text = open(csvs[0], encoding="utf-8").read() if csvs else ""
+        # 默认矩阵 dynamic+pppoe × 2 频段 × 3 方向 × TCP = 12 行测量
+        ok = (rc == 0 and len(htmls) == 1 and len(csvs) == 1
+              and os.path.getsize(htmls[0]) > 1000
+              and csv_text.count("\n") == 13    # 表头 + 12 行
+              and "2GHz" in csv_text)
+        print("[%s] run_matrix --demo: rc=%s html=%d csv_rows=%d"
+              % ("PASS" if ok else "FAIL", rc, len(htmls),
+                 max(csv_text.count("\n") - 1, 0)))
+        passed += ok
+        failed += not ok
+
+    # ② chariot_perf._judge:判稳纯函数 == 旧脚本 result_judge 的语义
+    #    (跳过前 10s 爬坡窗;min < 0.9*max 即判不稳)。
+    from matrix.chariot_perf import _judge
+
+    class _FakeChariot:
+        """duration=20 时 _judge 应取 get_throughput(10,15) 和 (15,20) 两窗。"""
+        def __init__(self, windows, total):
+            self._w, self._t = windows, total
+
+        def get_throughput(self, time_1=None, time_2=None):
+            return self._t if time_1 is None else self._w[time_1]
+
+    t1, s1, ok1 = _judge(_FakeChariot({10: 95.0, 15: 92.0}, 100.0), 20, 0.9)
+    t2, s2, ok2 = _judge(_FakeChariot({10: 100.0, 15: 89.0}, 99.0), 20, 0.9)
+    ok = (t1 == 100.0 and s1 == [95.0, 92.0] and ok1 is True   # 92 >= 90
+          and t2 == 99.0 and ok2 is False)                     # 89 < 90
+    print("[%s] chariot_perf._judge == original result_judge semantics"
+          % ("PASS" if ok else "FAIL"))
     passed += ok
     failed += not ok
 

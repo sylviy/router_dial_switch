@@ -1,12 +1,15 @@
-# router_dial_switch（路由器拨号方式切换)
+# router_dial_switch（路由器拨号切换 + WAN 性能矩阵)
 
 自动化**通过路由器 Web 界面切换 WAN 拨号方式**(动态IP / PPPoE / L2TP / PPTP /
-IPv6)——用于把我们的 DUT 与那些无法用 HTTP API 驱动的竞品路由器做对比测试。
+IPv6)——用于把我们的 DUT 与那些无法用 HTTP API 驱动的竞品路由器做对比测试;
+组里的 **Chariot 吞吐脚本**也已合并进来,一条命令跑完
+「切模式 → 等 WAN → 测吞吐 → 出报告」的整轮。
 
 **交付形态(2026-07-16 起):每台型号一个脚本。**
 
 ```bash
-python models/Tenda_AX3000.py pppoe          # 就这一条,切完看回读
+python models/Tenda_AX3000.py pppoe          # 只切拨号:一条命令,切完看回读
+python run_matrix.py --demo                  # 整轮性能矩阵:先离线看个样例报告
 ```
 
 - `models/<品牌>_<型号>.py` —— **交付物**。一个文件 = 这台机的全部"事实"
@@ -18,8 +21,9 @@ python models/Tenda_AX3000.py pppoe          # 就这一条,切完看回读
   (任何 Claude 会话都能按这个 skill 干活)。启发式引擎不再追求"通吃所有品牌",
   它的职责是把适配一台新机的成本压到"跑一次诊断 + 抄几个选择器"。
 
-当前范围(按方案约定):只确认拨号控件被**定位并成功改动**(回读值 == 目标)。
-**不验证 WAN 是否真正拨通**——连通性/性能由已有的单机脚本负责。
+型号脚本本身只确认拨号控件被**定位并成功改动**(回读值 == 目标);
+「WAN 是否拨通、吞吐多少」由 `run_matrix.py` 的整轮流程负责(见下文
+"跑整套 WAN 性能矩阵" —— 组里原来的 Chariot 单机脚本已合并进来)。
 
 ### 已适配的型号
 
@@ -38,18 +42,18 @@ Cudy 固件关掉了 IPv6 的证据链)都记在 `CLAUDE.md` 的 **Validated** �
 
 | 分层 | 与品牌相关? | 由谁负责 |
 |------|-------------|----------|
-| 改拨号方式(写操作) | **是** —— 本工具 | Playwright DOM 自动化 |
-| 验证连通性 / 吞吐(读操作) | 否 | 已有单机脚本(后续接入) |
+| 改拨号方式(写操作) | **是** —— models/ 型号脚本 | Playwright DOM 自动化 |
+| 验证连通性 / 吞吐(读操作) | 否 | `matrix/`(组里 Chariot 脚本的移植),由 `run_matrix.py` 编排 |
 
-- **逆向每个品牌的 HTTP 接口** → 全球海量品牌下每型号都逆向成本太高,仅作为
-  *兜底*(录制模式会顺带把每个型号的 HTTP 请求抓下来)。
+- **逆向每个品牌的 HTTP 接口** → 每型号都逆向成本太高(组里旧性能脚本用
+  RouterCtrl HTTP API,只能驱动自家 DUT —— 这正是本工具要补的缺口)。
 - **按像素点击** → 太脆弱。我们用 **DOM 语义**(`get_by_role` / `get_by_label`
   / `get_by_text`)点击 → 跨品牌、跨固件都稳。
-- **不靠 AI 的通用性** → 关键词字典启发式覆盖常规 UI;录制模式让每个新品牌只需
-  几分钟;profile 库随用随长。
+- **不猜没见过的 DOM** → 每台型号的事实(FACTS)都来自 diagnose 取证或真机
+  直接观察;适配方法论固化在 skill 里,任何 Claude 会话都能照做。
 
 现实边界:纯规则不可能覆盖世界上 100% 的路由器(验证码登录、全 canvas 自绘 UI、
-重度混淆 SPA)。这些走录制 profile 或人工——见*已知限制*。
+重度混淆 SPA)。这些走人工——见*已知限制*。
 
 ---
 
@@ -199,7 +203,7 @@ python tests/smoke_test.py --show   # 观看它点完所有模式
 ```
 
 它在 localhost 起模拟路由器页并跑真实引擎:登录 → 进 WAN 设置 → 识别控件 →
-选中 → 填参数 → 回读 → 保存。当前共 **37 个用例**,覆盖:
+选中 → 填参数 → 回读 → 保存。当前共 **39 个用例**,覆盖:
 - `index.html` 原生 `<select>` / `custom.html` 自定义 `<div role="combobox">`
   (复刻真机 Mercusys)/ `tenda.html` 无 role 的 Vue widget(含 "Connect" 保存键);
 - `xiaomi.html` **故意做成启发式认不出**,用带 `selectors:` 的 profile 驱动,
@@ -212,7 +216,10 @@ python tests/smoke_test.py --show   # 观看它点完所有模式
 - CLI 便利层:`router.yaml` 读写、按模式过滤凭据、auto-pin 生成 profile 且不覆盖已有文件;
 - **models/ 交付层**:用 `Tenda_AX3000.py` / `Cudy_AX.py` / `Mercusys_BE3600.py`
   里的**真实 FACTS** 驱动对应 mock(含 IPv6 门控页、"Connect" 保存键、跨 frame
-  查找、按模式填参、默认不点保存),以及"事实对不上的页面必须诚实失败"守卫。
+  查找、按模式填参、默认不点保存),以及"事实对不上的页面必须诚实失败"守卫;
+- **run_matrix 编排层**:`--demo` 离线整轮(配置 → 主循环 → simulate 后端 →
+  HTML+CSV 落盘),以及 `chariot_perf._judge` 判稳纯函数 == 旧脚本
+  `result_judge` 语义的守卫。
 
 ## 项目结构
 
@@ -247,8 +254,9 @@ router_dial_switch/
   profiles/              适配期的临时 yaml 提示(非交付物)
   dial_modes/            每模式所需字段模板
   tools/                 控制台粘贴用的查找脚本(手上只有浏览器时的兜底)
-  tests/                 模拟路由器页 + 离线冒烟测试(37 用例)
+  tests/                 模拟路由器页 + 离线冒烟测试(39 用例)
   setup.bat dial.bat     Windows:一次安装 + 日常切模式(见 WINDOWS.md)
+  matrix.bat             Windows:整套性能矩阵(run_matrix.py)
   run.bat smoke.bat      Windows:适配期 cli.py + 离线自检
 ```
 
