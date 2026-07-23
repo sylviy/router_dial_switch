@@ -114,7 +114,10 @@ def load(path: str = DEFAULT_PATH) -> PerfConfig:
     cfg = PerfConfig()
     cfg.model = str(data.get("model", "") or "")
     cfg.backend = str(data.get("backend", cfg.backend) or cfg.backend).lower()
-    cfg.dial_modes = _dial_steps(data.get("dial_modes")) or list(_DEFAULT_MATRIX)
+    # dial_modes 不写 = 留空,由 run.py 用"该型号声明的全部模式"补齐
+    # (工具的本意:跑一次遍历所有支持的拨号方式)。--demo 无型号时才用
+    # _DEFAULT_MATRIX。
+    cfg.dial_modes = _dial_steps(data.get("dial_modes"))
     cfg.bands = list(data.get("bands") or cfg.bands)
     cfg.directions = list(data.get("directions") or cfg.directions)
     cfg.protocols = [str(p).upper() for p in (data.get("protocols")

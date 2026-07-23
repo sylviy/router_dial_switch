@@ -11,9 +11,10 @@ IPv6)——用于把我们的 DUT 与那些无法用 HTTP API 驱动的竞品路
 python start.py        # Windows 上双击 start.bat
 ```
 
-它自己列出支持的型号,选型号 → 选操作(只切换 / 切换并保存 / 整轮性能)→
-选模式,一路回车就是最安全的默认(只切换、不点保存)。密码和宽带账号先取
-`router.yaml` 里存过的,没有才问你,问完可以顺手存起来 —— 下次全程回车。
+它自己列出支持的型号,按数字选一台,回车 —— **默认就是工具的本体:遍历这台
+型号支持的全部拨号方式,每档真切换 → 等 WAN → 测吞吐 → 出报告**(台架语义,
+不问"要不要保存")。也可以选"只切一个模式"做单步调试。密码和宽带账号先取
+`router.yaml` 里存过的,没有才问你,问完顺手存起来 —— 下次全程回车。
 
 **交付形态(2026-07-16 起):每台型号一个脚本。** 脚本化/参数化的入口也都在:
 
@@ -39,7 +40,7 @@ python run_matrix.py --demo                  # 整轮性能矩阵:先离线看�
 
 | 脚本 | 支持的模式 | 真机状态 |
 |---|---|---|
-| `models/Tenda_AX3000.py` | dynamic / pppoe / static、ipv6(DHCPv6)、pppoev6 | **台架验收通过**(2026-07-18,含 `--apply` 实际下发) |
+| `models/Tenda_AX3000.py` | dynamic / pppoe / static / dhcpv6 / pppoev6(v6 精确到 flavor,无笼统 "ipv6") | **台架验收通过**(2026-07-18,含实际下发) |
 | `models/Cudy_AX.py` | dynamic / pppoe / static / l2tp / pptp | **台架验收通过**(2026-07-18,含 `--apply` 实际下发) |
 | `models/Mercusys_BE3600.py` | dynamic / pppoe / static / l2tp / pptp | 2026-07-11 真机跑通(当时走启发式);脚本形态的字段选择器仍标 `[待真机复核]` |
 
@@ -97,8 +98,9 @@ Cudy 固件关掉了 IPv6 的证据链)都记在 `CLAUDE.md` 的 **Validated** �
 python start.py        # Windows 双击 start.bat
 ```
 
-不用记任何参数、不用先建任何文件:列出型号按数字选,默认永远是"只切换
-不保存"。真正保存要么明确选操作 2,要么再答一次确认。
+不用记任何参数、不用先建任何文件:列出型号按数字选,回车即整轮
+(遍历全部拨号方式 + 吞吐 + 报告)。单步调试选操作 2;想"只切换不保存"
+地演练,用 `python models/<型号>.py <mode>`(不带 `--apply`)。
 
 ### 日常使用(已适配的型号,命令行版)
 
@@ -126,11 +128,15 @@ python models/Mercusys_BE3600.py l2tp
 的逻辑,已参数化)拼在一起:
 
 ```bash
-python run_matrix.py --list                        # 列出已适配型号
-python run_matrix.py --demo                         # 离线演示:不碰路由器,出样例报告
-python run_matrix.py --model Tenda_AX3000           # 真跑(默认只切换不点保存)
-python run_matrix.py --model Tenda_AX3000 --apply   # 真跑并真正下发保存
+python run_matrix.py --list                # 列出已适配型号
+python run_matrix.py --demo                # 离线演示:不碰路由器,出样例报告
+python run_matrix.py --model Tenda_AX3000  # 整轮:遍历该型号的全部拨号方式
 ```
+
+**台架语义:整轮 = 自动遍历型号脚本里声明的全部拨号方式**(Tenda 就是
+dynamic → pppoe → static → dhcpv6 → pppoev6),每档切换**必定真正下发**再测
+吞吐 —— 不下发,吞吐测的就不是这档模式,所以整轮没有 `--apply` 开关。
+"只切换不保存"的安全演练留在单模式入口(`models/<型号>.py`)。
 
 - **测什么、怎么测**(拨号方式矩阵、频段/方向/协议、台架拓扑、WAN 拨通判据)写在
   `perf.yaml`(复制 `perf.example.yaml` 改;git 忽略);**密码**仍走 `router.yaml`。
@@ -250,7 +256,7 @@ router_dial_switch/
   run_matrix.py          整套性能矩阵入口:切模式 → 等WAN → 测吞吐 → 出报告
   perf.example.yaml      矩阵配置模板(复制成 perf.yaml;测什么/怎么测/台架拓扑)
   matrix/                性能矩阵编排层
-    run.py               主循环 + CLI(--list / --demo / --model / --apply)
+    run.py               主循环 + CLI(--list / --demo / --model;整轮必下发)
     config.py            读 perf.yaml
     perf_backends.py     simulate(离线模拟)/ chariot(真台架,子进程)后端
     chariot_perf.py      旧 Dial.py 的 Chariot 逻辑清理版(Py2/台架用,单次测量)

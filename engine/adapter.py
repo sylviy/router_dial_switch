@@ -24,8 +24,10 @@ MODE_REQUIRED_FIELDS: Dict[str, List[str]] = {
     "l2tp": ["vpn_server", "vpn_user", "vpn_pass"],
     "pptp": ["vpn_server", "vpn_user", "vpn_pass"],
     "ipv6": [],
-    # v6 flavor exposed as its own runnable mode by models/ scripts (e.g. the
-    # Tenda test round iterates DHCPv6 then PPPoEv6); not a cli.py mode.
+    # v6 flavors exposed as their own runnable modes by models/ scripts (the
+    # Tenda test round iterates DHCPv6 then PPPoEv6 -- named precisely, never
+    # a vague "ipv6"); not cli.py modes.
+    "dhcpv6": [],
     "pppoev6": ["pppoe_user", "pppoe_pass"],
 }
 

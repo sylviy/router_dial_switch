@@ -385,8 +385,9 @@ def main():
               filled={"vpn_server", "vpn_user", "vpn_pass"},
               applied=True, verify="Saved: L2TP")),
         # IPv6 独立页:mode_overrides 换页 + enable_toggle 开门 + v6 flavor;
+        # 模式名精确到 flavor(dhcpv6,不叫笼统的 "ipv6" —— 2026-07-23 用户定);
         # LAN 区的同名 "DHCPv6" radio 诱饵绝不能被点到(点到 = read_back 错)。
-        ("tenda ipv6 gated page", TENDA_FACTS, "tenda_ipv6.html", "ipv6",
+        ("tenda dhcpv6 gated page", TENDA_FACTS, "tenda_ipv6.html", "dhcpv6",
          {}, True,
          dict(read_back="DHCPv6", filled=set(), applied=True,
               verify="Saved: DHCPv6")),
@@ -495,14 +496,14 @@ def main():
     passed += ok
     failed += not ok
 
-    # ③ start.py 交互式入口:管道喂按键,整条 选型号→选操作→选模式→切换 流程
-    #    在 Tenda mock 上走通;默认操作(1)绝不能点保存。
+    # ③ start.py 交互式入口:管道喂按键,选型号→操作2(单切)→选模式→切换。
+    #    台架语义(2026-07-23 用户定):切了就真正下发 —— 断言 apply 发生了。
     print("\n=== start.py (interactive wizard) ===")
     import subprocess
-    from matrix.run import list_models
+    from matrix.run import list_models, all_modes as matrix_all_modes
     model_idx = list_models().index("Tenda_AX3000") + 1
-    mode_idx = model_driver.available_modes(TENDA_FACTS).index("pppoe") + 1
-    answers = "%d\n1\n%d\nadmin123\nacc\ns3\nn\n" % (model_idx, mode_idx)
+    mode_idx = matrix_all_modes(TENDA_FACTS).index("pppoe") + 1
+    answers = "%d\n2\n%d\nadmin123\nacc\ns3\nn\n" % (model_idx, mode_idx)
     swp = subprocess.run(
         [sys.executable, os.path.join(ROOT, "start.py"),
          "--url", "http://127.0.0.1:%d/tenda.html" % port]
@@ -511,7 +512,7 @@ def main():
     ok = (swp.returncode == 0
           and "已切到 pppoe" in swp.stdout
           and "'PPPoE'" in swp.stdout
-          and "未点保存" in swp.stdout)
+          and "已下发保存" in swp.stdout)
     print("[%s] start.py wizard: rc=%s pick=模型%d/模式%d"
           % ("PASS" if ok else "FAIL", swp.returncode, model_idx, mode_idx))
     if not ok:

@@ -2,13 +2,17 @@
 
     python start.py            (Windows 上双击 start.bat)
 
-启动后它自己列出支持的型号,按数字选:型号 → 操作 → 模式,一路回车就是
-最常用的默认(只切换、不点保存)。密码/宽带账号会先取 router.yaml 里存过的,
-没有才问你,问完还可以顺手存起来 —— 下次就真的只剩按回车了。
+工具的本意(台架):**跑一次 = 遍历该型号支持的全部拨号方式,每档真切换、
+测吞吐、出报告**。所以向导的默认操作(一路回车)就是整轮;台架上不问
+"要不要保存" —— 不真正下发,吞吐测的就不是这档模式(2026-07-23 用户定;
+"只切换不保存"的安全演练仍在 models/<型号>.py 单模式入口里)。
 
-想用参数化/脚本化的方式跑,老入口都还在:
-    python models/<型号>.py <mode> [--apply]     单条命令切模式
-    python run_matrix.py --demo / --model ...    整轮性能矩阵
+密码/宽带账号先取 router.yaml 里存过的,没有才问你,问完可以顺手存起来 ——
+下次就真的只剩按回车。
+
+参数化/脚本化的入口都还在:
+    python run_matrix.py --model <型号>          整轮(同向导操作 1)
+    python models/<型号>.py <mode> [--apply]     单条命令切一个模式
 """
 from __future__ import annotations
 
@@ -76,6 +80,7 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
 
     from models import _driver as model_driver
+    from matrix.run import all_modes
 
     print("==== 路由器拨号切换 / WAN 性能测试 ====")
     names = list_models()
@@ -83,48 +88,70 @@ def main(argv=None) -> int:
         print("models/ 里没有型号脚本 —— 先按 skill 适配一台(见 README)。")
         return 1
 
-    print("支持的型号:")
+    print("支持的型号(括号里 = 整轮会遍历的拨号方式,按轮次顺序):")
     facts_all = {}
     for i, name in enumerate(names, 1):
         facts_all[name] = _load_facts(name)
         print("  %d. %-18s (%s)"
-              % (i, name,
-                 "/".join(model_driver.available_modes(facts_all[name]))))
+              % (i, name, "/".join(all_modes(facts_all[name]))))
     name = names[_pick("选型号", len(names)) - 1]
     facts = facts_all[name]
+    round_modes = all_modes(facts)
 
     print("要做什么:")
-    print("  1. 切拨号方式(只切换看回读,不点保存 —— 最常用)")
-    print("  2. 切拨号方式并真正保存(会改动路由器配置!)")
-    print("  3. 整轮性能矩阵 · 离线演示(不碰路由器,出样例报告)")
-    print("  4. 整轮性能矩阵 · 真跑(切换+吞吐+报告,需测试台架)")
-    action = _pick("选操作", 4)
+    print("  1. 整轮性能测试(默认):遍历全部拨号方式 %s,"
+          % " → ".join(round_modes))
+    print("     每档真切换 → 等WAN → 测吞吐 → 出报告")
+    print("  2. 只切一个拨号方式(单步调试;同样直接下发)")
+    print("  3. 整轮离线演示(不碰路由器,出样例报告)")
+    action = _pick("选操作", 3)
 
     saved = settings_mod.load()
 
-    # ---- 3/4:整轮矩阵交给 run_matrix --------------------------------------
-    if action in (3, 4):
+    # ---- 3:离线演示 --------------------------------------------------------
+    if action == 3:
         from matrix.run import main as matrix_main
-        if action == 3:
-            return matrix_main(["--demo"])
+        return matrix_main(["--demo"])
+
+    # ---- 1:整轮 —— 工具的本体 ---------------------------------------------
+    if action == 1:
+        from matrix.run import main as matrix_main
         pw = ""
         if facts.get("login"):
             pw = _ask_secret("管理密码%s: " % ("(回车=用 router.yaml 存的)"
                                               if saved.get("pass") else ""),
                              str(saved.get("pass") or ""))
-        do_apply = _ask("吞吐前的切换要真正保存吗?(整轮一般要)[Y/n]: ",
-                        "y").lower().startswith("y")
-        print("提示:各模式的宽带账号取 router.yaml / perf.yaml;频段与台架"
-              "拓扑在 perf.yaml(没有就用内置默认)。")
+            if not pw:
+                print("✗ 这台机要登录,必须给管理密码。")
+                return 2
+        # 整轮要用到的宽带账号:把缺的问齐,并存进 router.yaml 供逐模式取用
+        need = []
+        for m in round_modes:
+            for f in MODE_REQUIRED_FIELDS.get(m, []):
+                if f not in need:
+                    need.append(f)
+        params_saved = dict(saved.get("params") or {})
+        typed = {}
+        for f in need:
+            cur = str(params_saved.get(f) or "")
+            val = _ask("%s %s%s: " % (f, _FIELD_HINT.get(f, f),
+                                      "(回车=用已存的)" if cur else ""), cur)
+            if val and val != cur:
+                typed[f] = val
+        if typed:
+            # 整轮是逐模式从 router.yaml 取账号的,所以这里必须落盘
+            saved.setdefault("params", {}).update(typed)
+            settings_mod.save(saved)
+            print("已存进 router.yaml(仅本机,git 忽略)。")
+        print("开始整轮:每档拨号方式都会真正下发;频段/台架拓扑取 perf.yaml"
+              "(没有就用内置默认)。")
         cmd = ["--model", name, "--pass", pw]
-        if do_apply:
-            cmd.append("--apply")
         if args.headless:
             cmd.append("--headless")
         return matrix_main(cmd)
 
-    # ---- 1/2:切一次拨号方式 ------------------------------------------------
-    modes = model_driver.available_modes(facts)
+    # ---- 2:只切一个拨号方式(单步调试)------------------------------------
+    modes = round_modes
     print("该型号支持的模式:")
     for i, m in enumerate(modes, 1):
         print("  %d. %s" % (i, m))
@@ -151,25 +178,21 @@ def main(argv=None) -> int:
             if val != cur:
                 typed_params[field] = val
 
-    do_apply = action == 2
-    if do_apply:
-        sure = _ask("确认真正保存到路由器?[y/N]: ", "n")
-        if not sure.lower().startswith("y"):
-            do_apply = False
-            print("好 —— 这次只切换不保存。")
-
-    print("运行中(会打开 Chrome,别动它)...")
-    res = model_driver.run(facts, mode, params=params, apply=do_apply,
+    # 台架语义:切了就下发(想只看回读不保存,用 python models/<型号>.py <mode>)
+    print("运行中(会打开 Chrome,别动它;切换会真正下发)...")
+    res = model_driver.run(facts, mode, params=params, apply=True,
                            admin_pass=pw, url=args.url,
                            headless=args.headless)
 
     if res["success"]:
         print("✓ 已切到 %s(界面回读 %r)%s"
               % (mode, res["read_back"],
-                 ",并已点保存" if res["applied"]
-                 else ";未点保存(演练)。要真正下发:重跑选操作 2"))
+                 ",已下发保存" if res["applied"]
+                 else ",但保存键没点到 —— 看下面的警告"))
         if res["filled"]:
             print("  已填参数:%s" % ", ".join(res["filled"]))
+        for w in res["warnings"]:
+            print("  ⚠ %s" % w)
     else:
         print("✗ 失败:%s" % (res["message"] or "未知原因"))
         for w in res["warnings"]:

@@ -36,8 +36,9 @@
 
 ## 日常使用
 
-**最简单:双击 `start.bat`。** 它列出支持的型号,按数字选型号 → 选操作 →
-选模式,一路回车就是"只切换不保存"的安全默认;密码/宽带账号问一次可以存进
+**最简单:双击 `start.bat`。** 它列出支持的型号,按数字选一台,回车 ——
+默认就是整轮:**遍历该型号的全部拨号方式,每档真切换 → 等 WAN → 测吞吐 →
+出报告**(台架语义,不问"要不要保存")。密码/宽带账号问一次存进
 `router.yaml`,以后全程回车。**不需要提前准备任何文件。**
 
 命令行版(想脚本化/传参数时):
@@ -53,8 +54,8 @@ dial.bat Cudy_AX l2tp --apply
 dial.bat                             :: 不带参数 = 列出有哪些已适配的型号
 
 matrix.bat --demo                    :: 整轮演示:不碰路由器,出样例 HTML 报告
-matrix.bat --model Tenda_AX3000      :: 整轮真跑(默认只切换不点保存)
-matrix.bat --model Tenda_AX3000 --apply  :: 整轮真跑并真正下发保存
+matrix.bat --model Tenda_AX3000      :: 整轮真跑:自动遍历该型号的全部拨号方式,
+                                     ::   每档真正下发并测吞吐(整轮没有 --apply)
 ```
 
 - **`dial.bat` 是命令行版切模式**:第一个参数是型号脚本名(`models\` 里的
@@ -65,7 +66,8 @@ matrix.bat --model Tenda_AX3000 --apply  :: 整轮真跑并真正下发保存
   git 忽略);真跑 Chariot 吞吐要在装了 IxChariot 的台架上,并在 `perf.yaml`
   的 `chariot.python2` 指定台架的 Python 2 解释器;没有台架就用默认的
   `simulate` 后端(离线模拟值,报告里会标明非实测)。
-- **不加 `--apply` 就不会点保存** —— 接入调试期一直这样跑,不会把在用的网切断。
+- **`dial.bat` 不加 `--apply` 就不会点保存** —— 单模式调试期这样跑,不会把在
+  用的网切断。整轮(`start.bat` / `matrix.bat`)是台架语义:每档都真正下发。
 - 输出是一段 JSON:看 `success` 和 `read_back`(界面回读到的实际值)是否等于
   你要的模式;失败时 `message` / `warnings` 会指出卡在哪一步。
 

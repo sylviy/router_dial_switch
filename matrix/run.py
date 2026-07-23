@@ -10,9 +10,13 @@
 用法:
     python run_matrix.py --list                       列出已适配型号
     python run_matrix.py --demo                       离线演示(不碰路由器,模拟数据)
-    python run_matrix.py --model Tenda_AX3000         真跑(默认只切换不点保存)
-    python run_matrix.py --model Tenda_AX3000 --apply 真跑并真正下发保存
-    python run_matrix.py --config my.yaml --backend chariot --apply
+    python run_matrix.py --model Tenda_AX3000         真跑整轮
+    python run_matrix.py --config my.yaml --backend chariot
+
+台架语义(2026-07-23 用户定):整轮 = **自动遍历该型号脚本声明的全部拨号
+方式**(perf.yaml 不写 dial_modes 就是全遍历),而且每档切换**必定真正下发**
+—— 不下发吞吐就没有意义,所以这里没有 --apply 开关。"只切换看回读"的
+安全演练属于单模式入口(models/<型号>.py 默认不保存,加 --apply 才下发)。
 
 凭据(管理密码/宽带账密)取自 router.yaml(python cli.py setup 生成),
 按模式过滤 —— PPPoE 账密不会带进 dynamic 运行。
@@ -66,13 +70,24 @@ def _load_facts(model: str) -> dict:
     return facts
 
 
-def _switch(facts, mode, params, apply, admin_user, admin_pass, headless):
-    """真正切一次拨号方式。延迟 import _driver:它会拉起 Playwright,
-    --demo 时根本不 import,好让工具在没装 playwright 的机器上也能演示。"""
+def all_modes(facts: dict) -> list:
+    """该型号声明的全部模式,按脚本里的声明顺序(= 台架轮次顺序):
+    先 modes,再 mode_overrides 里新增的(如 Tenda 的 dhcpv6/pppoev6)。"""
+    modes = list((facts.get("modes") or {}).keys())
+    for m in (facts.get("mode_overrides") or {}):
+        if m not in modes:
+            modes.append(m)
+    return modes
+
+
+def _switch(facts, mode, params, admin_user, admin_pass, headless):
+    """真正切一次拨号方式并**下发保存**(整轮里不下发,吞吐测的就不是这档
+    模式 —— 所以矩阵里没有"只切换不保存"的选项)。延迟 import _driver:
+    它会拉起 Playwright,--demo 时根本不 import。"""
     from cli import merge_params
     from models import _driver
     merged = merge_params(mode, params.get("saved") or {}, params.get("explicit") or {})
-    return _driver.run(facts, mode, params=merged, apply=apply,
+    return _driver.run(facts, mode, params=merged, apply=True,
                        admin_user=admin_user, admin_pass=admin_pass,
                        headless=headless)
 
@@ -87,8 +102,6 @@ def main(argv=None) -> int:
                     help="型号脚本名(models/<name>.py);覆盖 perf.yaml 的 model")
     ap.add_argument("--backend", choices=["simulate", "chariot"], default=None,
                     help="性能后端;覆盖 perf.yaml")
-    ap.add_argument("--apply", action="store_true",
-                    help="切模式时真正点保存/连接(默认只切换看回读)")
     ap.add_argument("--demo", action="store_true",
                     help="离线演示:不驱动路由器、强制 simulate 后端,直接出样例报告")
     ap.add_argument("--headless", action="store_true", help="无窗口驱动浏览器")
@@ -123,13 +136,20 @@ def main(argv=None) -> int:
         raise SystemExit("缺管理密码:先 `python cli.py setup` 存进 router.yaml,"
                          "或本次加 --pass <密码>。(只想看样例报告加 --demo)")
 
+    # perf.yaml 没写 dial_modes = 工具的本意:遍历该型号声明的**全部**拨号方式
+    if not cfg.dial_modes:
+        if facts:
+            cfg.dial_modes = [perf_config.DialStep(m) for m in all_modes(facts)]
+        else:                       # --demo 且无型号:用内置样例矩阵
+            cfg.dial_modes = list(perf_config._DEFAULT_MATRIX)
+
     backend = make_backend(cfg)
     print(_color("===== WAN 性能矩阵 =====", _C_DIM))
     print("型号=%s  后端=%s  模式=%s  频段=%s  方向=%s  协议=%s%s"
           % (cfg.model or "(demo)", cfg.backend,
              "/".join(s.mode for s in cfg.dial_modes), "/".join(cfg.bands),
              "/".join(cfg.directions), "/".join(cfg.protocols),
-             "  [demo]" if args.demo else ("" if args.apply else "  [不点保存]")))
+             "  [demo]" if args.demo else "  (每档切换都会真正下发)"))
 
     rows = []            # 扁平结果(给报告 + CSV)
     switch_log = []      # 每档模式的切换状态
@@ -144,7 +164,7 @@ def main(argv=None) -> int:
             res = _switch(facts, mode,
                           {"saved": saved.get("params") or {},
                            "explicit": step.params},
-                          args.apply, args.user, args.password, args.headless)
+                          args.user, args.password, args.headless)
             switched = bool(res.get("success"))
             read_back = res.get("read_back") or ""
             applied = bool(res.get("applied"))
@@ -190,7 +210,7 @@ def main(argv=None) -> int:
         try:
             _switch(facts, cfg.reset_mode,
                     {"saved": saved.get("params") or {}, "explicit": {}},
-                    args.apply, args.user, args.password, args.headless)
+                    args.user, args.password, args.headless)
         except Exception as exc:
             print(_color("    收尾切换出错(忽略):%s" % exc, _C_DIM))
 

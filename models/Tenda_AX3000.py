@@ -3,11 +3,14 @@
 用法(默认只切换不保存;确认回读无误后加 --apply 才真正下发):
     python models/Tenda_AX3000.py dynamic
     python models/Tenda_AX3000.py pppoe --param pppoe_user=x --param pppoe_pass=y
-    python models/Tenda_AX3000.py ipv6 --apply          # IPv6 页,选 DHCPv6
+    python models/Tenda_AX3000.py dhcpv6 --apply        # IPv6 页,选 DHCPv6
     python models/Tenda_AX3000.py pppoev6 --apply       # IPv6 页,选 PPPoEv6
 
+模式名与真机下拉逐字对应:v6 没有笼统的 "ipv6",只有 dhcpv6 / pppoev6 两档
+(2026-07-23 应用户要求改精确)。台架整轮请用 python start.py 或 run_matrix.py
+—— 会自动遍历本脚本声明的全部模式并跑吞吐。
 测试轮次(2026-07-18 与台架约定):复位后默认即 dynamic,先确认 → pppoe
-→ IPv6 页遍历 DHCPv6 / PPPoEv6(带 --apply 保存)。
+→ IPv6 页遍历 DHCPv6 / PPPoEv6。
 管理密码/宽带账密可先 `python cli.py setup` 写进 router.yaml,之后不用带参数。
 注意:这台机同一时间只允许一个 Web 会话 —— 跑脚本前先退出浏览器里登录着的页签。
 
@@ -70,7 +73,7 @@ FACTS = {
     # LAN 区有一个同名 "DHCPv6" 的 radio 诱饵 —— 驱动按 option 容器匹配,
     # 不会点到它。两个被测 flavor 各占一个可运行模式:
     "mode_overrides": {
-        "ipv6": {
+        "dhcpv6": {
             "wan_path": ["More", "IPv6"],
             "enable_toggle": "[data-name='ipv6En']",
             "dial": {"kind": "dropdown",
@@ -78,7 +81,7 @@ FACTS = {
                                  'has-text("Internet Connection Type")'
                                  ' div.v-select',
                      "value": "[data-name='wanType']"},
-            "modes": {"ipv6": "DHCPv6"},
+            "modes": {"dhcpv6": "DHCPv6"},
             # IPv6 页的保存键是 "Save"(同样是文字在里层 span 的嵌套结构)。
             "apply": 'button[data-name=\'submit\']:has(span:text-is("Save"))',
         },

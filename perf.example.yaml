@@ -3,8 +3,12 @@
 # 复制成 perf.yaml(已被 .gitignore 忽略)再改。描述的是"测什么、怎么测";
 # 密码(管理密码/宽带账密)不在这里,走 router.yaml(python cli.py setup)。
 #
-# 任何一项都可省略,省了就用内置默认。空文件也能跑(默认 dynamic+pppoe 矩阵、
-# simulate 后端)。想先看样例报告:python run_matrix.py --demo
+# 任何一项都可省略,省了就用内置默认;**没有 perf.yaml 也能直接跑**
+# (python run_matrix.py --model <型号> = 遍历该型号的全部拨号方式)。
+# 想先看样例报告:python run_matrix.py --demo
+#
+# 台架语义:整轮里每档切换都**真正下发**(没有 --apply 开关)——
+# 不下发,吞吐测的就不是这档模式。
 
 # 驱动哪台机:models/<名字>.py 的文件名(去掉 .py)。命令行 --model 会覆盖它。
 model: Tenda_AX3000
@@ -15,14 +19,18 @@ model: Tenda_AX3000
 backend: simulate
 
 # 测试矩阵 --------------------------------------------------------------------
-# 每一档:mode 必须是该型号脚本声明过的模式;params 是切它需要的账密/服务器,
-# 会传给 Web 驱动(也可以放进 router.yaml 的 params: 里按模式自动取)。
-dial_modes:
-  - mode: dynamic
-  - mode: pppoe
-    params: {pppoe_user: pppoe, pppoe_pass: pppoe}
-  # - mode: l2tp
-  #   params: {vpn_server: 192.168.202.254, vpn_user: l2tp, vpn_pass: l2tp}
+# **默认(不写 dial_modes)= 自动遍历该型号脚本声明的全部拨号方式**,按脚本
+# 里的声明顺序 —— 这就是工具的本意,一般不用写。
+# 只有想"只测其中几档 / 换顺序 / 给某档单独塞参数"时才展开写:
+#   mode   必须是该型号脚本声明过的模式(如 Tenda: dynamic/pppoe/static/
+#          dhcpv6/pppoev6 —— v6 精确到 flavor,没有笼统的 "ipv6")
+#   params 该档需要的账密/服务器;不写 = 按模式从 router.yaml 的 params: 取
+# dial_modes:
+#   - mode: dynamic
+#   - mode: pppoe
+#     params: {pppoe_user: pppoe, pppoe_pass: pppoe}
+#   - mode: l2tp
+#     params: {vpn_server: 192.168.202.254, vpn_user: l2tp, vpn_pass: l2tp}
 
 bands:      [lan, 2GHz]        # lan / 2GHz / 5GHz
 directions: [up, down, bi]     # 上行 / 下行 / 双向

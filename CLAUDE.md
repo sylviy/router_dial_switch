@@ -56,24 +56,35 @@ chain with no router/Chariot present.
   integration point. Creds come from router.yaml via `cli.merge_params`.
 - `start.py` (+ `start.bat`) — **the zero-knowledge entry** (user ask
   2026-07-23: "python script.py → list models → choose → run, no prep").
-  Interactive wizard: lists models/ by number (modes shown), action menu
-  (switch-only default / switch+apply with a second confirm / matrix demo /
-  matrix real), prompts only for what's missing (password + the mode's
-  MODE_REQUIRED_FIELDS, defaults from router.yaml), offers to save typed
-  creds back to router.yaml. Friendly verdict lines instead of raw JSON.
+  Interactive wizard; the DEFAULT action (plain Enter) is the tool's whole
+  point: the FULL ROUND — every mode the chosen model script declares, each
+  really applied, then throughput, then report. Menu: 1 full round (default) /
+  2 single-mode switch (also applies directly) / 3 offline demo. **Bench
+  semantics (user decision 2026-07-23): no apply-or-not question anywhere in
+  the wizard or matrix — switching that isn't applied makes the throughput
+  meaningless.** The no-apply safety default survives ONLY in the per-model
+  CLI (`models/<X>.py <mode>`, `--apply` to save) for home/dev environments.
+  The full-round path prompts the union of MODE_REQUIRED_FIELDS across the
+  round's modes and MUST save typed creds to router.yaml (the matrix pulls
+  creds per mode from there). Friendly verdict lines instead of raw JSON.
   Hidden `--url`/`--headless` exist ONLY so the smoke test can drive it over
   piped stdin (indexes computed, not hardcoded, so new models don't break it).
 - `matrix/` + `run_matrix.py` — **the orchestration layer (the full test loop).**
   `run.py` is the main loop: for each dial mode → `_driver.run()` switch (lazy
   import, so `--demo` needs no Playwright) → `wanup.wait_wan_up` → for each
   band×direction×proto call `perf_backends.PerfBackend.measure` → `report.py`
-  writes HTML+CSV. `config.py` reads `perf.yaml` (defaults so an empty file
-  works). `perf_backends.py`: `SimulatorBackend` (deterministic offline numbers)
-  and `ChariotBackend` (subprocess → `chariot_perf.py`). `chariot_perf.py` is the
-  cleaned, parameterized port of the legacy `Dial.py` throughput+judge logic,
-  Py2/3-compatible and bench-only (imports Chariot lazily). A failed switch skips
-  that mode's measurements and is recorded, not silently swallowed (the legacy
-  script's bare `except: continue` even had its error write commented out).
+  writes HTML+CSV. **Default matrix = `all_modes(facts)` — every mode the
+  model script declares, in declaration order — and every switch applies for
+  real; there is NO --apply flag (removed 2026-07-23, user decision: on the
+  bench you always apply, or the throughput isn't measuring that mode).**
+  `config.py` reads `perf.yaml` (optional; `dial_modes:` only to subset/
+  reorder/add params). `perf_backends.py`: `SimulatorBackend` (deterministic
+  offline numbers) and `ChariotBackend` (subprocess → `chariot_perf.py`).
+  `chariot_perf.py` is the cleaned, parameterized port of the legacy `Dial.py`
+  throughput+judge logic, Py2/3-compatible and bench-only (imports Chariot
+  lazily). A failed switch skips that mode's measurements and is recorded, not
+  silently swallowed (the legacy script's bare `except: continue` even had its
+  error write commented out).
 - `.claude/skills/adapt-router-model/SKILL.md` — the onboarding methodology as
   a skill: diagnose artifact → FACTS mapping table, selector cookbook, the
   four iron rules, verification checklist. New models go through this, never
@@ -133,7 +144,8 @@ chain with no router/Chariot present.
 # offline logic test (no router needed) — must stay green:
 python tests/smoke_test.py            # 40/40 pass expected
 
-# the zero-knowledge entry (colleagues): interactive wizard, pick by number
+# the zero-knowledge entry (colleagues): interactive wizard, pick by number;
+# default action = FULL ROUND (all declared modes, really applied, + perf)
 python start.py                       # Windows: double-click start.bat
 
 # daily use on an adapted model (run on a machine ON the router's LAN):
@@ -256,7 +268,11 @@ via `mode_labels` — now honored on the combobox/widget path too, with read-bac
 accepting the pinned wording. Explicit `--param` values are filled even when
 the mode requires none (PPPoEv6 creds under mode ipv6). All of this now lives
 in `models/Tenda_AX3000.py`'s `mode_overrides` (the old
-`profiles/tenda_ipv6.yaml`, and its `--brand` footgun, are gone). Hard-learned
+`profiles/tenda_ipv6.yaml`, and its `--brand` footgun, are gone).
+**2026-07-23 rename (user decision, precision):** the model-script mode key
+`ipv6` → `dhcpv6` — v6 modes are named by their exact flavor (`dhcpv6` /
+`pppoev6`), never a vague "ipv6". The canonical `ipv6` class survives only
+inside the heuristics engine (cli.py adaptation runs, match_mode ordering). Hard-learned
 in the mock: a leaf only counts for the widget
 scan if a connection-type label sits in a *form-row-sized* ancestor (<120
 chars) — otherwise the sidebar "IPv6" nav link and the "IPv6" switch label
