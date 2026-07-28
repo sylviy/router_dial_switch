@@ -409,10 +409,15 @@ was always available. `_example.yaml` documents it.
   `matrix.bat`) were written on macOS and **have not been executed on
   Windows** — first Windows run should confirm them (see WINDOWS.md).
 - `run_matrix.py` is the orchestrator (replaced the old `examples/run_test_matrix.py`
-  skeleton). Remaining bench work: (1) validate `matrix/chariot_perf.py` against a
-  live PyChariot install — it's a faithful port of `Dial.py` but UNRUN here (no
-  Chariot); (2) set `chariot.python2` to the bench's Py2 interpreter; (3) confirm
-  the `wan_up` ping host reflects the real topology.
+  skeleton). **`matrix/chariot_perf.py` now runs for real** (bench 2026-07-28:
+  one cell, dynamic/lan/up/TCP, 947.98 Mbps, `stable:true`, self-consistent with
+  the driver's own `sent_bytes_e1 / elapsed_time`) — the port is no longer
+  UNRUN. `chariot.python2` = `C:\Python26\python.exe`. Remaining: (1) the
+  orchestration layer end-to-end (`run_matrix.py` driving switch + measure in
+  one loop) has NOT been run on the bench yet, only its two halves separately;
+  (2) confirm one `wan_up` ping host that answers in every mode — 202.99
+  answers in dynamic, 203.1 in the tunnel modes, and `wan_up.host` is global,
+  not per-mode.
 - Mercusys IPv6 (Advanced→IPv6): diagnose first, then add a `mode_overrides`
   block to its model script.
 - (History note) The perf merge was implemented twice in parallel on
