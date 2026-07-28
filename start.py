@@ -138,22 +138,35 @@ def main(argv=None) -> int:
                 print("[X] 这台机要登录,必须给管理密码。")
                 return 2
         # 整轮要用到的宽带账号:把缺的问齐,并存进 router.yaml 供逐模式取用
-        need = []
-        for m in round_modes:
-            for f in MODE_REQUIRED_FIELDS.get(m, []):
-                if f not in need:
-                    need.append(f)
+        # 逐档问,不合并成一个字段清单:L2TP 和 PPTP 用同一套字段名
+        # (vpn_user/vpn_pass),但台架给的是两套不同账号,合并问就只能存一套。
+        # 上一档填过的值会作为下一档的默认,所以同一个账号照样是一路回车。
         params_saved = dict(saved.get("params") or {})
-        typed = {}
-        for f in need:
-            cur = str(params_saved.get(f) or "")
-            val = _ask("%s %s%s: " % (f, _FIELD_HINT.get(f, f),
-                                      "(回车=用已存的)" if cur else ""), cur)
-            if val and val != cur:
-                typed[f] = val
-        if typed:
+        typed_by_mode, last_seen = {}, {}
+        for m in round_modes:
+            fields = MODE_REQUIRED_FIELDS.get(m, [])
+            if not fields:
+                continue
+            blk = params_saved.get(m)
+            blk = blk if isinstance(blk, dict) else {}
+            print("  [%s]" % m)
+            for f in fields:
+                cur = str(blk.get(f) or last_seen.get(f)
+                          or params_saved.get(f) or "")
+                val = _ask("    %s %s%s: "
+                           % (f, _FIELD_HINT.get(f, f),
+                              "(回车=%s)" % cur if cur else ""), cur)
+                if val:
+                    last_seen[f] = val
+                    typed_by_mode.setdefault(m, {})[f] = val
+        if typed_by_mode:
             # 整轮是逐模式从 router.yaml 取账号的,所以这里必须落盘
-            saved.setdefault("params", {}).update(typed)
+            store = saved.setdefault("params", {})
+            for m, kv in typed_by_mode.items():
+                cur_blk = store.get(m)
+                if not isinstance(cur_blk, dict):
+                    cur_blk = store[m] = {}
+                cur_blk.update(kv)
             settings_mod.save(saved)
             print("已存进 router.yaml(仅本机,git 忽略)。")
         print("开始整轮:每档拨号方式都会真正下发;频段/台架拓扑取 perf.yaml"

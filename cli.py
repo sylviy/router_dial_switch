@@ -58,15 +58,37 @@ def _parse_params(pairs):
 
 
 def merge_params(mode: str, saved: dict, explicit: dict) -> dict:
-    """Params for this run: router.yaml credentials are picked *per mode*
-    (only the fields the mode needs, so PPPoE creds stored in router.yaml
-    don't leak into a dynamic/ipv6 run), while an explicit --param is user
-    intent and always passes through."""
+    """本次运行要用的参数。router.yaml 里的凭据**按模式挑**(只取该模式需要
+    的字段,所以 PPPoE 账密绝不会漏进 dynamic/ipv6 的运行),而命令行显式给的
+    --param 是用户意图,永远直通。
+
+    router.yaml 的 params: 支持两层,后者覆盖前者 ——
+
+        params:
+          pppoe_user: adsl            # 扁平写法:所有模式共用
+          pppoe_pass: adsl
+          l2tp:                       # 按模式写法:只对这个模式生效
+            vpn_server: 192.168.202.254
+            vpn_user: l2tp_account
+            vpn_pass: l2tp_secret
+          pptp:
+            vpn_server: 192.168.202.254
+            vpn_user: pptp_account    # 和 L2TP 是不同的账号
+            vpn_pass: pptp_secret
+
+    L2TP 和 PPTP 共用 vpn_user/vpn_pass 这套字段名(界面上就是同一个概念),
+    但台架给它们发的是两套账号,所以必须能分开存 —— 只有扁平一层的话,
+    后填的那套会把先填的覆盖掉。
+    """
     out = {}
     needed = MODE_REQUIRED_FIELDS.get(mode, [])
-    for k, v in (saved or {}).items():
-        if k in needed and v is not None:
-            out[k] = str(v)
+    saved = saved or {}
+    per_mode = saved.get(mode)
+    per_mode = per_mode if isinstance(per_mode, dict) else {}
+    for src in (saved, per_mode):          # 按模式的块优先级更高
+        for k, v in src.items():
+            if k in needed and v is not None:
+                out[k] = str(v)
     out.update(explicit)
     return out
 
@@ -104,16 +126,31 @@ def run_setup() -> int:
     data["user"] = ask("管理员用户名,通常留空 (admin user)", "user")
     data["pass"] = ask("管理员密码 (admin password)", "pass")
     params = dict(old.get("params") or {})
-    print("-- 拨号凭据,只在对应模式时使用;留空跳过 --")
-    for key, label in (("pppoe_user", "宽带账号 (pppoe_user)"),
-                       ("pppoe_pass", "宽带密码 (pppoe_pass)"),
-                       ("vpn_server", "L2TP/PPTP 服务器 (vpn_server)"),
-                       ("vpn_user", "VPN 用户名 (vpn_user)"),
-                       ("vpn_pass", "VPN 密码 (vpn_pass)")):
-        cur = str(params.get(key, "") or "")
-        val = input("%s%s: " % (label, (" [%s]" % cur) if cur else "")).strip()
+
+    def ask_field(store, key, label):
+        """问一个凭据字段,回车沿用已存的。store 是要写进去的那层 dict。"""
+        cur = str(store.get(key, "") or "")
+        val = input("  %s%s: " % (label, (" [%s]" % cur) if cur else "")).strip()
         if val or cur:
-            params[key] = val or cur
+            store[key] = val or cur
+
+    print("-- 拨号凭据,只在对应模式时使用;留空跳过 --")
+    print("[PPPoE]")
+    ask_field(params, "pppoe_user", "宽带账号 (pppoe_user)")
+    ask_field(params, "pppoe_pass", "宽带密码 (pppoe_pass)")
+
+    # L2TP 和 PPTP 分开问:界面上是同一套字段名,但台架给的是两套账号,
+    # 存在一层里后填的会覆盖先填的(2026-07-28 用户反馈)。各自存进
+    # params[模式] 的子块,merge_params 会按模式取。
+    for mode, title in (("l2tp", "[L2TP]"), ("pptp", "[PPTP]")):
+        blk = params.get(mode)
+        blk = dict(blk) if isinstance(blk, dict) else {}
+        print("%s(这台机没有就直接回车跳过)" % title)
+        ask_field(blk, "vpn_server", "服务器地址 (vpn_server)")
+        ask_field(blk, "vpn_user", "用户名 (vpn_user)")
+        ask_field(blk, "vpn_pass", "密码 (vpn_pass)")
+        if blk:
+            params[mode] = blk
     if params:
         data["params"] = params
     ans = input("默认不点保存(--no-apply,先试跑更安全)?[Y/n]: ").strip().lower()
