@@ -77,6 +77,26 @@ class SimulatorBackend(PerfBackend):
 
 
 # --------------------------------------------------------------------------
+def _last_json(text: str) -> Optional[dict]:
+    """从后往前找第一行能解析成 JSON 对象的,没有就 None。
+
+    不能直接取最后一行:台架实测 PyChariot 自己带 logging,一 import 就打
+    `DEBUG:ChariotApi:...` 之类的行,收尾时也可能再吐几行。结果 JSON 是
+    chariot_perf.py 打的最后一条**有效**输出,不一定是最后一条输出。
+    """
+    for line in reversed((text or "").strip().splitlines()):
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            data = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(data, dict):
+            return data
+    return None
+
+
 class ChariotBackend(PerfBackend):
     """真台架:子进程调用 chariot_perf.py(Py2/Windows,内部 import Chariot)。
     每次测量传入拓扑(内外网 IP、注入机、脚本、对数、时长)作为一个 JSON,
@@ -102,7 +122,12 @@ class ChariotBackend(PerfBackend):
         }
         cmd = [self.cfg.python2, self.script, "--json", json.dumps(payload)]
         try:
+            # errors="replace":台架实测 PyChariot 一 import 就往外打 DEBUG 行,
+            # 里面还有中文;子进程按 GBK 写、父进程按 GBK 读本来是对的,但只要
+            # 有一个字节对不上,UnicodeDecodeError 就会连这一格的测量一起打掉。
+            # 宁可把那个字符显示成 ?,也不能丢一格数据。
             out = subprocess.run(cmd, capture_output=True, text=True,
+                                 errors="replace",
                                  timeout=self.cfg.duration_s * 6 + 120)
         except Exception as exc:
             return Measurement(mode, band, direction, proto,
@@ -112,11 +137,12 @@ class ChariotBackend(PerfBackend):
             return Measurement(mode, band, direction, proto,
                                error="chariot_perf.py 退出码 %d: %s"
                                      % (out.returncode, msg))
-        try:
-            data = json.loads((out.stdout or "").strip().splitlines()[-1])
-        except Exception as exc:
+        data = _last_json(out.stdout or "")
+        if data is None:
+            tail = (out.stdout or out.stderr or "").strip()[-300:]
             return Measurement(mode, band, direction, proto,
-                               error="无法解析 chariot_perf.py 输出: %s" % exc)
+                               error="chariot_perf.py 输出里没有 JSON 结果: %s"
+                                     % tail)
         return Measurement(mode, band, direction, proto,
                            mbps=data.get("mbps"), stable=data.get("stable"),
                            samples=list(data.get("samples") or []),

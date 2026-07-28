@@ -184,9 +184,14 @@ python cli.py --router-ip 192.168.1.1 --pass <pw> --mode pppoe \
   top-level entry script needs that insert — do not rely on the script dir.
 - The bench's Python 2 is an asset, not a problem: `matrix/chariot_perf.py` is
   meant to run under it (`chariot.python2`). Only the Playwright half needs 3.8.
-  **That Python is 2.6.5, not 2.7** (bench, 2026-07-28), so `chariot_perf.py`
-  must avoid `argparse` (stdlib only since 2.7) — it hand-parses `--json`. Keep
-  anything that runs under it to 2.6-safe stdlib.
+  **That Python is ActivePython 2.6.5 (32-bit), not 2.7** (bench, 2026-07-28,
+  `import PyChariot` confirmed working on it), so `chariot_perf.py` must avoid
+  `argparse` (stdlib only since 2.7) — it hand-parses `--json`. Keep anything
+  that runs under it to 2.6-safe stdlib. **PyChariot is chatty**: it configures
+  logging and prints `DEBUG:ChariotApi:...` lines (some containing Chinese) from
+  `import` onwards, so `ChariotBackend` reads the last line that *parses* as
+  JSON (`_last_json`) rather than the last line, and decodes the subprocess with
+  `errors="replace"`.
 - Interpreter choice lives in `_py.bat`, `call`ed by every other `.bat`:
   `.venv\Scripts\python.exe` first, else `vendor\python\python.exe`. No fallback
   to a bare `python` on PATH — on those benches that IS the Python 2, and the
