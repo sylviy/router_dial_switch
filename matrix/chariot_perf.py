@@ -86,23 +86,40 @@ def _e2_ip(topo, mode):
 
 
 def _protocol(proto):
-    """'TCP'/'UDP' -> add_pair 要的协议值。
+    """协议名 -> add_pair 要的协议值。名字直接对应 PyChariot 的常量,所以
+    TCP / UDP / TCP6 / UDP6 都认(v6 那两个还需要 e1/e2 填 IPv6 地址)。
 
     台架 2026-07-28 实测定案:`CHR_PROTOCOL_TCP` **不是整数 2,是 c_byte(2)**
     (PyChariot 自己的日志打的就是 `protocol:c_byte(2)`),而它内部又会拿它去
     构造一次 c_byte —— 等于 c_byte(c_byte(2)),ctypes 报
     `TypeError: an integer is required`。所以必须取 .value 再 int()。
     传字符串 "TCP" 同样不行(第一版就是这么错的)。
+
+    名字不认识就**报错**,不猜。以前 measure() 会把任何非 UDP 的写法悄悄当成
+    TCP —— 那样 `protocols: [TCP6]` 会安安静静地测出一份 v4 的数据,还标着
+    TCP6,比直接失败坏得多。
     """
     import PyChariot
     raw = getattr(PyChariot, "CHR_PROTOCOL_" + proto, None)
-    if raw is None:                     # 库里没有这个常量:退回字符串
-        return proto
-    raw = getattr(raw, "value", raw)    # 常量可能是 c_int 之类的包装对象
+    if raw is None:
+        known = sorted(n[len("CHR_PROTOCOL_"):] for n in dir(PyChariot)
+                       if n.startswith("CHR_PROTOCOL_"))
+        raise ValueError("PyChariot 不认识协议 %r;它支持的是:%s"
+                         % (proto, ", ".join(known)))
+    raw = getattr(raw, "value", raw)    # 常量可能是 c_byte/c_int 之类的包装
     try:
         return int(raw)
     except (TypeError, ValueError):
         return raw
+
+
+def _pairs_for(topo, proto):
+    """该协议用多少对。TCP6/UDP6 没单独配就沿用同族的 TCP/UDP 配置。"""
+    table = topo["pairs"]
+    if proto in table:
+        return int(table[proto])
+    base = proto[:-1] if proto.endswith("6") else proto
+    return int(table.get(base, 50))
 
 
 def _add_pairs(chr_obj, e1, e2, proto, script, pairs, half=False):
@@ -118,7 +135,7 @@ def _add_pairs(chr_obj, e1, e2, proto, script, pairs, half=False):
     n = pairs // 2 if half else pairs
     kwargs = {"e1_addr": e1, "e2_addr": e2, "script_name": script,
               "protocol": _protocol(proto), "pair_number": n}
-    if proto == UDP:
+    if proto.startswith(UDP):      # UDP 和 UDP6 都算
         # UDP 非分片场景旧脚本会限制发送缓冲(send_buffer_size=1300),这里保留
         kwargs["script_variable"] = {"send_buffer_size": "1300"}
     _call("add_pair", chr_obj.add_pair, **kwargs)
@@ -144,10 +161,10 @@ def measure(topo):
     mode = topo["mode"]
     band = topo["band"]
     direction = topo["direction"]          # up | down | bi
-    proto = UDP if topo["proto"].upper() == UDP else TCP
+    proto = topo["proto"].upper()          # TCP / UDP / TCP6 / UDP6
 
     e1, e2 = _e1_ip(topo, band), _e2_ip(topo, mode)
-    pairs = int(topo["pairs"].get(proto, 50))
+    pairs = _pairs_for(topo, proto)
     up_scr = topo["scripts"]["up"]
     down_scr = topo["scripts"]["down"]
 
@@ -181,7 +198,7 @@ def plan(topo):
     数字照样出得来,只是测的不是你以为的那条路。
     """
     mode, band = topo["mode"], topo["band"]
-    proto = UDP if topo["proto"].upper() == UDP else TCP
+    proto = topo["proto"].upper()
     public = _e2_ip(topo, mode) == topo.get("public_ip")
     return {"dry_run": True,
             "mode": mode, "band": band,
@@ -191,7 +208,7 @@ def plan(topo):
             "e2_source": "public_ip (direct)" if public
                          else "internet_ip (tunnel)",
             "scripts": topo["scripts"],
-            "pairs": int(topo["pairs"].get(proto, 50)),
+            "pairs": _pairs_for(topo, proto),
             "duration_s": topo["duration_s"]}
 
 
