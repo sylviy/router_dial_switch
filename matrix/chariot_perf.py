@@ -88,10 +88,11 @@ def _e2_ip(topo, mode):
 def _protocol(proto):
     """'TCP'/'UDP' -> add_pair 要的协议值。
 
-    台架 2026-07-28 实录:PyChariot 里有 CHR_PROTOCOL_TCP / CHR_PROTOCOL_UDP,
-    而 add_pair 的 console_e1_protocol 默认值是整数 2 —— 说明 protocol 收的是
-    整数常量,不是字符串。所以优先取库自己的常量;取不到才退回字符串(老包装
-    器有可能自己做映射)。这样不用赌。
+    台架 2026-07-28 实测定案:`CHR_PROTOCOL_TCP` **不是整数 2,是 c_byte(2)**
+    (PyChariot 自己的日志打的就是 `protocol:c_byte(2)`),而它内部又会拿它去
+    构造一次 c_byte —— 等于 c_byte(c_byte(2)),ctypes 报
+    `TypeError: an integer is required`。所以必须取 .value 再 int()。
+    传字符串 "TCP" 同样不行(第一版就是这么错的)。
     """
     import PyChariot
     raw = getattr(PyChariot, "CHR_PROTOCOL_" + proto, None)

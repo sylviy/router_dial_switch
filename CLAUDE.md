@@ -191,7 +191,10 @@ python cli.py --router-ip 192.168.1.1 --pass <pw> --mode pppoe \
   logging and prints `DEBUG:ChariotApi:...` lines (some containing Chinese) from
   `import` onwards, so `ChariotBackend` reads the last line that *parses* as
   JSON (`_last_json`) rather than the last line, and decodes the subprocess with
-  `errors="replace"`.
+  `errors="replace"`. **Its `CHR_PROTOCOL_*` constants are `c_byte` objects,
+  not ints** (bench 2026-07-28: its own log prints `protocol:c_byte(2)`), and
+  `CHR_pair_set_protocol` re-wraps them → `TypeError: an integer is required`.
+  Pass `.value`. Assume every PyChariot constant may be a ctypes object.
 - Interpreter choice lives in `_py.bat`, `call`ed by every other `.bat`:
   `.venv\Scripts\python.exe` first, else `vendor\python\python.exe`. No fallback
   to a bare `python` on PATH — on those benches that IS the Python 2, and the
