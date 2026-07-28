@@ -70,6 +70,9 @@ class ChariotCfg:
                                  "down": "Throughput_w2l.scr"})
     pairs: Dict[str, int] = field(
         default_factory=lambda: {"TCP": 50, "UDP": 100})
+    # 不分片档(协议写成 UDP-nofrag)要设的 send_buffer_size,按拨号方式取 ——
+    # 它是各自封装开销算出来的 MTU。没配的模式会明确报错,不猜。
+    nofrag_bytes: Dict[str, int] = field(default_factory=dict)
     stability_ratio: float = 0.9   # min < ratio*max 即判为"不稳"
     python2: str = "python"        # 跑 chariot_perf.py 的解释器(台架多为 py2)
     script: str = ""               # chariot_perf.py 路径(默认取包内同目录)
@@ -157,6 +160,8 @@ def load(path: str = DEFAULT_PATH) -> PerfConfig:
         scripts=dict(ch.get("scripts") or base.scripts),
         pairs={str(k).upper(): int(v)
                for k, v in (ch.get("pairs") or base.pairs).items()},
+        nofrag_bytes={str(k): int(v)
+                      for k, v in (ch.get("nofrag_bytes") or {}).items()},
         stability_ratio=float(ch.get("stability_ratio", base.stability_ratio)),
         python2=str(ch.get("python2", base.python2)),
         script=str(ch.get("script", "") or ""))

@@ -66,8 +66,10 @@ class SimulatorBackend(PerfBackend):
             base *= 1.35                              # 双向合计更高
         elif direction == "down":
             base *= 1.02
-        if proto == "UDP":
+        if proto.startswith("UDP"):
             base *= 1.05                              # UDP 略高于 TCP
+        if proto.endswith("-NOFRAG"):
+            base *= 0.88            # 不分片:包更小,包头开销占比更高
         mbps = round(base * self._jitter(mode, band, direction, proto), 1)
         # 造 4 个 5 秒采样点,和 result_judge 的稳定性判据同形态
         j = self._jitter(band, direction, proto, mode)
@@ -118,6 +120,7 @@ class ChariotBackend(PerfBackend):
             "endpoints": self.cfg.endpoints,
             "scripts": self.cfg.scripts,
             "pairs": self.cfg.pairs,
+            "nofrag_bytes": self.cfg.nofrag_bytes,
             "stability_ratio": self.cfg.stability_ratio,
         }
         cmd = [self.cfg.python2, self.script, "--json", json.dumps(payload)]

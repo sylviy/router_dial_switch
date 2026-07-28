@@ -34,7 +34,11 @@ backend: simulate
 
 bands:      [lan, 2GHz]        # lan / 2GHz / 5GHz
 directions: [up, down, bi]     # 上行 / 下行 / 双向
-protocols:  [TCP]              # TCP / UDP
+# TCP / UDP / TCP6 / UDP6,后面可加 -nofrag:
+#   UDP          发送缓冲用 Throughput 脚本的默认值 —— 也就是**分片**那一档
+#   UDP-nofrag   按下面 chariot.nofrag_bytes 里该拨号方式的 MTU 设缓冲,不分片
+# 两个写在一起就是同一轮里既测分片又测不分片,报告的"协议"列自然分开两行。
+protocols:  [TCP]
 
 # 切完一档模式后,等 WAN 拨通再开测 ------------------------------------------
 wan_up:
@@ -68,6 +72,15 @@ chariot:
     up:   Throughput.scr
     down: Throughput_w2l.scr
   pairs: {TCP: 50, UDP: 100}   # 每种协议的对数(bi 时上下行各一半)
+  # 只有 -nofrag 那档用:各拨号方式按自己的封装开销算出来的 MTU。
+  # 没在这里配的模式,跑 -nofrag 会**报错**而不是随便挑个值 —— 猜错的话流量
+  # 照样跑、数字照样漂亮,但其实分了片,一份标着"不分片"的分片数据最难发现。
+  nofrag_bytes:
+    dynamic: 1460
+    static:  1460
+    pppoe:   1440
+    l2tp:    1383
+    pptp:    1383
   stability_ratio: 0.9         # 中段采样 min < 0.9·max 判为"不稳"
   python2: python              # 跑 chariot_perf.py 的解释器(台架多为 python2)
 

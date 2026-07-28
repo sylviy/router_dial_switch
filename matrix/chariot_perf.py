@@ -100,12 +100,13 @@ def _protocol(proto):
     TCP6,比直接失败坏得多。
     """
     import PyChariot
-    raw = getattr(PyChariot, "CHR_PROTOCOL_" + proto, None)
+    base, _ = _split_proto(proto)
+    raw = getattr(PyChariot, "CHR_PROTOCOL_" + base, None)
     if raw is None:
         known = sorted(n[len("CHR_PROTOCOL_"):] for n in dir(PyChariot)
                        if n.startswith("CHR_PROTOCOL_"))
         raise ValueError("PyChariot 不认识协议 %r;它支持的是:%s"
-                         % (proto, ", ".join(known)))
+                         "(可加 -nofrag 后缀)" % (base, ", ".join(known)))
     raw = getattr(raw, "value", raw)    # 常量可能是 c_byte/c_int 之类的包装
     try:
         return int(raw)
@@ -113,17 +114,60 @@ def _protocol(proto):
         return raw
 
 
+def _split_proto(label):
+    """把矩阵里的协议写法拆成 (基础协议, 变体)。
+
+        "TCP"          -> ("TCP",  None)      脚本默认发送缓冲
+        "UDP"          -> ("UDP",  None)      同上 —— 会分片,这是"分片"那一档
+        "UDP-nofrag"   -> ("UDP",  "nofrag")  按该拨号方式的 MTU 设缓冲,不分片
+        "UDP6-nofrag"  -> ("UDP6", "nofrag")
+
+    做成协议标签的后缀,而不是新开一个矩阵轴:报告和 CSV 的"协议"列原样就
+    能区分这两行,一行渲染代码都不用改。
+    """
+    if "-" not in label:
+        return label, None
+    base, variant = label.split("-", 1)
+    variant = variant.lower()
+    if variant != "nofrag":
+        raise ValueError("协议 %r 的变体只支持 -nofrag(不写后缀 = 用脚本默认"
+                         "缓冲,即分片那一档)" % label)
+    return base, variant
+
+
 def _pairs_for(topo, proto):
-    """该协议用多少对。TCP6/UDP6 没单独配就沿用同族的 TCP/UDP 配置。"""
+    """该协议用多少对。没单独配就退回同族:UDP-nofrag -> UDP6 -> UDP。"""
     table = topo["pairs"]
-    if proto in table:
-        return int(table[proto])
-    base = proto[:-1] if proto.endswith("6") else proto
-    return int(table.get(base, 50))
+    base, _ = _split_proto(proto)
+    for key in (proto, base, base[:-1] if base.endswith("6") else base):
+        if key in table:
+            return int(table[key])
+    return 50
 
 
-def _add_pairs(chr_obj, e1, e2, proto, script, pairs, half=False):
-    """proto 是 'TCP'/'UDP' 字符串。
+def _send_buffer(topo, proto, mode):
+    """不分片那一档要设的 send_buffer_size(字节);分片档返回 None。
+
+    值按**拨号方式**取,因为它是各自封装开销算出来的 MTU:动态 1460、
+    PPPoE 1440、L2TP/PPTP 1383(2026-07-28 用户给的台架口径)。
+
+    该模式没配就**报错,绝不猜**。猜一个 MTU 的后果是:流量照样跑、数字照样
+    漂亮,但实际上分了片 —— 一份标着"不分片"的分片数据,比测不出来坏得多。
+    """
+    _, variant = _split_proto(proto)
+    if variant != "nofrag":
+        return None
+    table = topo.get("nofrag_bytes") or {}
+    if mode not in table:
+        raise ValueError("模式 %r 没有配不分片的 send_buffer_size;"
+                         "在 perf.yaml 的 chariot.nofrag_bytes 里加一条"
+                         "(已配:%s)" % (mode, ", ".join(sorted(table)) or "无"))
+    return int(table[mode])
+
+
+def _add_pairs(chr_obj, e1, e2, proto, script, pairs, send_buffer=None,
+               half=False):
+    """proto 是矩阵里的协议标签(可能带 -nofrag 后缀)。
 
     add_pair 的签名 2026-07-28 在台架上核对过:
       add_pair(e1_addr, e2_addr, script_name, protocol, pair_number,   <- 必填
@@ -131,13 +175,16 @@ def _add_pairs(chr_obj, e1, e2, proto, script, pairs, half=False):
                console_e1_protocol=2, console_e1_qos_name=None,
                e1_e2_addr=None, script_variable={})
     我们用到的五个关键字全部对得上。
+
+    send_buffer=None 就**完全不传** script_variable,让 Throughput 脚本用它
+    自己的默认值。(旧版这里写死 send_buffer_size=1300 —— 它既不是脚本默认,
+    也不是任何一档的不分片值,是移植时照抄的一个来历不明的常量。)
     """
     n = pairs // 2 if half else pairs
     kwargs = {"e1_addr": e1, "e2_addr": e2, "script_name": script,
               "protocol": _protocol(proto), "pair_number": n}
-    if proto.startswith(UDP):      # UDP 和 UDP6 都算
-        # UDP 非分片场景旧脚本会限制发送缓冲(send_buffer_size=1300),这里保留
-        kwargs["script_variable"] = {"send_buffer_size": "1300"}
+    if send_buffer is not None:
+        kwargs["script_variable"] = {"send_buffer_size": str(int(send_buffer))}
     _call("add_pair", chr_obj.add_pair, **kwargs)
 
 
@@ -165,17 +212,18 @@ def measure(topo):
 
     e1, e2 = _e1_ip(topo, band), _e2_ip(topo, mode)
     pairs = _pairs_for(topo, proto)
+    sbuf = _send_buffer(topo, proto, mode)
     up_scr = topo["scripts"]["up"]
     down_scr = topo["scripts"]["down"]
 
     chr_obj = _call("Chariot()", Chariot)
     if direction == "up":
-        _add_pairs(chr_obj, e1, e2, proto, up_scr, pairs)
+        _add_pairs(chr_obj, e1, e2, proto, up_scr, pairs, sbuf)
     elif direction == "down":
-        _add_pairs(chr_obj, e1, e2, proto, down_scr, pairs)
+        _add_pairs(chr_obj, e1, e2, proto, down_scr, pairs, sbuf)
     else:  # bi:上下行各占一半对数
-        _add_pairs(chr_obj, e1, e2, proto, up_scr, pairs, half=True)
-        _add_pairs(chr_obj, e1, e2, proto, down_scr, pairs, half=True)
+        _add_pairs(chr_obj, e1, e2, proto, up_scr, pairs, sbuf, half=True)
+        _add_pairs(chr_obj, e1, e2, proto, down_scr, pairs, sbuf, half=True)
 
     _call("set_run_option", chr_obj.set_run_option,
           duration=int(topo["duration_s"]))
@@ -209,6 +257,7 @@ def plan(topo):
                          else "internet_ip (tunnel)",
             "scripts": topo["scripts"],
             "pairs": _pairs_for(topo, proto),
+            "send_buffer_size": _send_buffer(topo, proto, mode) or "脚本默认(分片)",
             "duration_s": topo["duration_s"]}
 
 
