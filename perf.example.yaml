@@ -82,6 +82,10 @@ chariot:
     l2tp:    1383
     pptp:    1383
   stability_ratio: 0.9         # 中段采样 min < 0.9·max 判为"不稳"
+  save_tests: true             # 保留 Chariot 的 .tst 原始记录(出争议时要翻它)。
+                               # 落在 artifacts/wanperf_<型号>_<时间戳>_tst/,
+                               # 和同一轮的 HTML/CSV 同名同戳,一眼对得上。
+                               # 只要数字不要记录就写 false。
   python2: python              # 跑 chariot_perf.py 的解释器(台架多为 python2)
 
 report:

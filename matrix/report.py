@@ -156,10 +156,16 @@ def write_html(ctx: dict, path: str) -> str:
     return path
 
 
-def write_reports(ctx: dict, out_dir: str) -> Dict[str, str]:
+def report_slug(model) -> str:
+    return (model or "matrix").replace(" ", "_")
+
+
+def write_reports(ctx: dict, out_dir: str, stamp: str = "") -> Dict[str, str]:
+    """stamp 由调用方给,好让 HTML/CSV 和同一轮的 .tst 目录用同一个时间戳
+    (artifacts/wanperf_X_20260728_170122.html 挨着 ..._170122_tst/)。"""
     os.makedirs(out_dir, exist_ok=True)
-    stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    slug = (ctx.get("model") or "matrix").replace(" ", "_")
+    stamp = stamp or datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    slug = report_slug(ctx.get("model"))
     html_path = os.path.join(out_dir, "wanperf_%s_%s.html" % (slug, stamp))
     csv_path = os.path.join(out_dir, "wanperf_%s_%s.csv" % (slug, stamp))
     write_html(ctx, html_path)

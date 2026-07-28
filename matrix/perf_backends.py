@@ -121,6 +121,7 @@ class ChariotBackend(PerfBackend):
             "scripts": self.cfg.scripts,
             "pairs": self.cfg.pairs,
             "nofrag_bytes": self.cfg.nofrag_bytes,
+            "tst_dir": self.cfg.tst_dir if self.cfg.save_tests else "",
             "stability_ratio": self.cfg.stability_ratio,
         }
         cmd = [self.cfg.python2, self.script, "--json", json.dumps(payload)]

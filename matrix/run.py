@@ -24,6 +24,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime
 import os
 import sys
 
@@ -170,6 +171,16 @@ def main(argv=None) -> int:
         else:                       # --demo 且无型号:用内置样例矩阵
             cfg.dial_modes = list(perf_config._DEFAULT_MATRIX)
 
+    # 一轮一个时间戳:报告文件名和这一轮的 .tst 目录共用它,artifacts 里
+    # 一眼就能看出哪批原始记录属于哪份报告。
+    run_stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    out_dir = (cfg.report_dir if os.path.isabs(cfg.report_dir)
+               else os.path.join(ROOT, cfg.report_dir))
+    if cfg.chariot.save_tests:
+        cfg.chariot.tst_dir = os.path.join(
+            out_dir, "wanperf_%s_%s_tst"
+            % (report_mod.report_slug(cfg.model), run_stamp))
+
     backend = make_backend(cfg)
     print(_color("===== WAN 性能矩阵 =====", _C_DIM))
     print("型号=%s  后端=%s  模式=%s  频段=%s  方向=%s  协议=%s%s"
@@ -242,15 +253,12 @@ def main(argv=None) -> int:
             print(_color("    收尾切换出错(忽略):%s" % exc, _C_DIM))
 
     # 出报告
-    import datetime
     ctx = {"title": cfg.report_title, "model": cfg.model,
            "backend": cfg.backend,
            "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
            "bands": cfg.bands, "directions": cfg.directions,
            "protocols": cfg.protocols, "rows": rows, "switch": switch_log}
-    paths = report_mod.write_reports(ctx, os.path.join(ROOT, cfg.report_dir)
-                                     if not os.path.isabs(cfg.report_dir)
-                                     else cfg.report_dir)
+    paths = report_mod.write_reports(ctx, out_dir, stamp=run_stamp)
 
     print(_color("\n===== 汇总 =====", _C_DIM))
     for s in switch_log:

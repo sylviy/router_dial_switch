@@ -26,6 +26,7 @@
 from __future__ import print_function
 
 import json
+import os
 import sys
 import traceback
 
@@ -188,6 +189,26 @@ def _add_pairs(chr_obj, e1, e2, proto, script, pairs, send_buffer=None,
     _call("add_pair", chr_obj.add_pair, **kwargs)
 
 
+def _tst_target(topo, mode, band, proto, direction):
+    """返回 (set_filename 用的路径, 要不要 save_test)。
+
+    Chariot 的 .tst 是原始测试记录 —— 出了争议要翻它,所以默认保留。但过去
+    只给了个裸文件名,于是它们全落在**当前工作目录**(仓库根),一轮 54 个;
+    而且名字里没有轮次信息,下一轮直接把上一轮覆盖掉,等于既乱又留不住。
+    现在跟报告放在一起:artifacts/wanperf_<型号>_<时间戳>_tst/。
+    """
+    name = "%s_%s_%s_%s.tst" % (mode, band, proto, direction)
+    tst_dir = topo.get("tst_dir")
+    if not tst_dir:                       # 配了 save_tests: false
+        return name, False
+    if not os.path.isdir(tst_dir):
+        try:
+            os.makedirs(tst_dir)          # Py2.6 没有 exist_ok
+        except OSError:
+            pass
+    return os.path.join(tst_dir, name), True
+
+
 def _judge(chr_obj, duration_s, ratio):
     """稳定性判据(照搬 result_judge):看中段各 5s 采样是否 min >= ratio*max。
     返回 (总吞吐 float, 采样 list, 是否稳定 bool)。"""
@@ -227,10 +248,11 @@ def measure(topo):
 
     _call("set_run_option", chr_obj.set_run_option,
           duration=int(topo["duration_s"]))
-    _call("set_filename", chr_obj.set_filename,
-          "%s_%s_%s_%s.tst" % (mode, band, proto, direction))
+    tst_path, do_save = _tst_target(topo, mode, band, proto, direction)
+    _call("set_filename", chr_obj.set_filename, tst_path)
     _call("run", chr_obj.run)
-    _call("save_test", chr_obj.save_test)
+    if do_save:
+        _call("save_test", chr_obj.save_test)
 
     total, samples, stable = _judge(chr_obj, topo["duration_s"],
                                     float(topo["stability_ratio"]))

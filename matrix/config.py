@@ -74,6 +74,8 @@ class ChariotCfg:
     # 它是各自封装开销算出来的 MTU。没配的模式会明确报错,不猜。
     nofrag_bytes: Dict[str, int] = field(default_factory=dict)
     stability_ratio: float = 0.9   # min < ratio*max 即判为"不稳"
+    save_tests: bool = True        # 是否保留 Chariot 的 .tst 原始记录
+    tst_dir: str = ""              # 运行时由 run.py 填(每轮一个目录)
     python2: str = "python"        # 跑 chariot_perf.py 的解释器(台架多为 py2)
     script: str = ""               # chariot_perf.py 路径(默认取包内同目录)
 
@@ -163,6 +165,7 @@ def load(path: str = DEFAULT_PATH) -> PerfConfig:
         nofrag_bytes={str(k): int(v)
                       for k, v in (ch.get("nofrag_bytes") or {}).items()},
         stability_ratio=float(ch.get("stability_ratio", base.stability_ratio)),
+        save_tests=bool(ch.get("save_tests", base.save_tests)),
         python2=str(ch.get("python2", base.python2)),
         script=str(ch.get("script", "") or ""))
     return cfg

@@ -24,3 +24,7 @@ venv/
 
 # diagnose evidence dumps may contain session tokens / form values -- never commit
 artifacts/diagnose_*.json
+
+# Chariot 的原始测试记录。正常情况下它们落在 artifacts/ 里(已忽略),
+# 这条是兜底:旧版本会把它们丢在仓库根目录。
+*.tst
