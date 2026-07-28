@@ -35,6 +35,44 @@ USAGE = ("usage: chariot_perf.py (--json '<topology json>'"
 TCP, UDP = "TCP", "UDP"
 
 
+def _to_native(obj):
+    """Py2 上把 json.loads 出来的 unicode 递归转成 str(字节串)。
+
+    PyChariot 是 ctypes 包的 C API,绝大多数入参要的是 str;而 Py2 的
+    json.loads **所有**字符串都给 unicode。不转的话,IP、脚本名、甚至 dict 的
+    键全是 unicode,踩雷只是早晚问题。Py3 上原样返回。
+    """
+    if sys.version_info[0] >= 3:
+        return obj
+    if isinstance(obj, unicode):            # noqa: F821  仅 Py2 存在
+        return obj.encode("utf-8")
+    if isinstance(obj, dict):
+        return dict((_to_native(k), _to_native(v)) for k, v in obj.items())
+    if isinstance(obj, list):
+        return [_to_native(v) for v in obj]
+    return obj
+
+
+def _call(what, fn, *args, **kwargs):
+    """调 PyChariot 的一步,失败时把**每个参数的值和类型**一起报出来。
+
+    ctypes 的 "an integer is required" 不说是哪个参数出的问题,而这台机器
+    我看不见、每问一轮都要人跑一趟机架。所以让错误自己带上证据:一行报错
+    就能定位到是哪个参数、它当时是什么类型。
+    """
+    try:
+        return fn(*args, **kwargs)
+    except Exception as exc:
+        detail = ", ".join(
+            ["%r(%s)" % (a, type(a).__name__) for a in args]
+            + ["%s=%r(%s)" % (k, v, type(v).__name__)
+               for k, v in sorted(kwargs.items())])
+        # 消息保持纯 ASCII:它会被 json.dumps 打出来,中文会变成一串
+        # \uXXXX 转义,现场读报错时反而更费劲。
+        raise RuntimeError("%s(%s) -> %s: %s"
+                           % (what, detail, type(exc).__name__, exc))
+
+
 def _e1_ip(topo, band):
     """客户端侧注入机:按频段取。"""
     return topo["endpoints"].get(band, topo["endpoints"].get("lan"))
@@ -56,7 +94,14 @@ def _protocol(proto):
     器有可能自己做映射)。这样不用赌。
     """
     import PyChariot
-    return getattr(PyChariot, "CHR_PROTOCOL_" + proto, proto)
+    raw = getattr(PyChariot, "CHR_PROTOCOL_" + proto, None)
+    if raw is None:                     # 库里没有这个常量:退回字符串
+        return proto
+    raw = getattr(raw, "value", raw)    # 常量可能是 c_int 之类的包装对象
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return raw
 
 
 def _add_pairs(chr_obj, e1, e2, proto, script, pairs, half=False):
@@ -75,7 +120,7 @@ def _add_pairs(chr_obj, e1, e2, proto, script, pairs, half=False):
     if proto == UDP:
         # UDP 非分片场景旧脚本会限制发送缓冲(send_buffer_size=1300),这里保留
         kwargs["script_variable"] = {"send_buffer_size": "1300"}
-    chr_obj.add_pair(**kwargs)
+    _call("add_pair", chr_obj.add_pair, **kwargs)
 
 
 def _judge(chr_obj, duration_s, ratio):
@@ -84,8 +129,9 @@ def _judge(chr_obj, duration_s, ratio):
     n = max(duration_s // 5, 3)
     samples = []
     for i in range(2, n):
-        samples.append(chr_obj.get_throughput(time_1=5 * i, time_2=5 * (i + 1)))
-    total = chr_obj.get_throughput()
+        samples.append(_call("get_throughput", chr_obj.get_throughput,
+                             time_1=5 * i, time_2=5 * (i + 1)))
+    total = _call("get_throughput", chr_obj.get_throughput)
     stable = bool(samples) and (min(samples) >= ratio * max(samples))
     return total, samples, stable
 
@@ -104,7 +150,7 @@ def measure(topo):
     up_scr = topo["scripts"]["up"]
     down_scr = topo["scripts"]["down"]
 
-    chr_obj = Chariot()
+    chr_obj = _call("Chariot()", Chariot)
     if direction == "up":
         _add_pairs(chr_obj, e1, e2, proto, up_scr, pairs)
     elif direction == "down":
@@ -113,10 +159,12 @@ def measure(topo):
         _add_pairs(chr_obj, e1, e2, proto, up_scr, pairs, half=True)
         _add_pairs(chr_obj, e1, e2, proto, down_scr, pairs, half=True)
 
-    chr_obj.set_run_option(duration=topo["duration_s"])
-    chr_obj.set_filename("%s_%s_%s_%s.tst" % (mode, band, proto, direction))
-    chr_obj.run()
-    chr_obj.save_test()
+    _call("set_run_option", chr_obj.set_run_option,
+          duration=int(topo["duration_s"]))
+    _call("set_filename", chr_obj.set_filename,
+          "%s_%s_%s_%s.tst" % (mode, band, proto, direction))
+    _call("run", chr_obj.run)
+    _call("save_test", chr_obj.save_test)
 
     total, samples, stable = _judge(chr_obj, topo["duration_s"],
                                     float(topo["stability_ratio"]))
@@ -172,7 +220,7 @@ def _payload_from_argv(args):
 def main(argv=None):
     args = list(sys.argv[1:] if argv is None else argv)
     try:
-        topo = json.loads(_payload_from_argv(args))
+        topo = _to_native(json.loads(_payload_from_argv(args)))
         result = plan(topo) if "--dry-run" in args else measure(topo)
     except Exception as exc:                 # noqa: BLE001  收敛成 JSON 错误
         # 完整 traceback 打到 stderr:stdout 要留给 JSON(ChariotBackend 解析
