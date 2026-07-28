@@ -73,7 +73,20 @@ def _load_facts(name: str) -> dict:
     return importlib.import_module("models.%s" % name).FACTS
 
 
+def _console_safe() -> None:
+    """台架 Windows 控制台是 GBK(cp936),管道时 Python 也按 GBK 编码输出。
+    路由器回读的文字里只要有一个 GBK 编不出的字符,print 就会抛
+    UnicodeEncodeError 把整轮打断 —— 在最不该崩的时候崩。改成用 ? 顶掉。
+    (2026-07-28 台架实测:start.py 打印 U+2713 时就这么炸过。)"""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="replace")
+        except Exception:                      # 老 Python / 非标准流:忽略
+            pass
+
+
 def main(argv=None) -> int:
+    _console_safe()
     ap = argparse.ArgumentParser(add_help=False)   # 隐藏参数,仅冒烟测试用
     ap.add_argument("--url", default=None, help=argparse.SUPPRESS)
     ap.add_argument("--headless", action="store_true", help=argparse.SUPPRESS)
@@ -122,7 +135,7 @@ def main(argv=None) -> int:
                                               if saved.get("pass") else ""),
                              str(saved.get("pass") or ""))
             if not pw:
-                print("✗ 这台机要登录,必须给管理密码。")
+                print("[X] 这台机要登录,必须给管理密码。")
                 return 2
         # 整轮要用到的宽带账号:把缺的问齐,并存进 router.yaml 供逐模式取用
         need = []
@@ -163,7 +176,7 @@ def main(argv=None) -> int:
                                           if saved.get("pass") else ""),
                          str(saved.get("pass") or ""))
         if not pw:
-            print("✗ 这台机要登录,必须给管理密码。")
+            print("[X] 这台机要登录,必须给管理密码。")
             return 2
 
     params = merge_params(mode, saved.get("params") or {}, {})
@@ -185,18 +198,18 @@ def main(argv=None) -> int:
                            headless=args.headless)
 
     if res["success"]:
-        print("✓ 已切到 %s(界面回读 %r)%s"
+        print("[OK] 已切到 %s(界面回读 %r)%s"
               % (mode, res["read_back"],
                  ",已下发保存" if res["applied"]
                  else ",但保存键没点到 —— 看下面的警告"))
         if res["filled"]:
             print("  已填参数:%s" % ", ".join(res["filled"]))
         for w in res["warnings"]:
-            print("  ⚠ %s" % w)
+            print("  [!] %s" % w)
     else:
-        print("✗ 失败:%s" % (res["message"] or "未知原因"))
+        print("[X] 失败:%s" % (res["message"] or "未知原因"))
         for w in res["warnings"]:
-            print("  ⚠ %s" % w)
+            print("  [!] %s" % w)
         if res.get("screenshot"):
             print("  截图:%s" % res["screenshot"])
 

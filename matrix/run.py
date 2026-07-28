@@ -92,7 +92,20 @@ def _switch(facts, mode, params, admin_user, admin_pass, headless):
                        headless=headless)
 
 
+def _console_safe() -> None:
+    """台架 Windows 控制台是 GBK(cp936),管道时 Python 也按 GBK 编码输出。
+    路由器回读的文字里只要有一个 GBK 编不出的字符,print 就会抛
+    UnicodeEncodeError 把整轮打断 —— 在最不该崩的时候崩。改成用 ? 顶掉。
+    (2026-07-28 台架实测:start.py 打印 U+2713 时就这么炸过。)"""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="replace")
+        except Exception:                      # 老 Python / 非标准流:忽略
+            pass
+
+
 def main(argv=None) -> int:
+    _console_safe()
     saved = settings_mod.load()
     ap = argparse.ArgumentParser(
         description="WAN 性能矩阵:切拨号方式(Web 驱动)→ 等 WAN → 测吞吐 → 出报告")
@@ -177,7 +190,7 @@ def main(argv=None) -> int:
         switch_log.append({"mode": mode, "switched": switched,
                            "read_back": read_back, "message": message})
         if not switched:
-            print(_color("    ✗ 切换失败,跳过该模式的吞吐测量。", _C_BAD)
+            print(_color("    [X] 切换失败,跳过该模式的吞吐测量。", _C_BAD)
                   + ("  %s" % message if message else ""))
             rows.append({"mode": mode, "switched": False, "read_back": read_back,
                          "band": "", "direction": "", "proto": "",
@@ -194,7 +207,7 @@ def main(argv=None) -> int:
                     m = backend.measure(mode, band, direction, proto)
                     flag = (_color("err", _C_BAD) if m.error else
                             (_color("%.1f" % m.mbps, _C_OK) if m.stable
-                             else _color("%.1f ⚠" % m.mbps, _C_BAD)))
+                             else _color("%.1f !" % m.mbps, _C_BAD)))
                     print("    %-4s %-4s %-3s  %s Mbps%s"
                           % (band, direction, proto, flag,
                              "  " + m.error if m.error else ""))

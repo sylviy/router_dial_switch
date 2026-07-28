@@ -502,12 +502,25 @@ def run(facts: dict, mode: str, params: Optional[Dict[str, str]] = None,
     return result
 
 
+def _console_safe() -> None:
+    """台架 Windows 控制台是 GBK(cp936),管道时 Python 也按 GBK 编码输出。
+    路由器回读的文字里只要有一个 GBK 编不出的字符,print 就会抛
+    UnicodeEncodeError 把整轮打断 —— 在最不该崩的时候崩。改成用 ? 顶掉。
+    (2026-07-28 台架实测:start.py 打印 U+2713 时就这么炸过。)"""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="replace")
+        except Exception:                      # 老 Python / 非标准流:忽略
+            pass
+
+
 def run_cli(facts: dict, argv: Optional[List[str]] = None) -> int:
     """型号脚本的 main:python models/<型号>.py <mode> [--apply] [--param k=v]。
 
     管理密码 / 宽带账密默认取 router.yaml(python cli.py setup 生成),
     并按模式过滤 —— PPPoE 账密绝不会带进 dynamic 运行。
     """
+    _console_safe()
     saved = settings_mod.load()
     parser = argparse.ArgumentParser(
         description="%s %s —— WAN 拨号方式切换(默认只切换不保存,"

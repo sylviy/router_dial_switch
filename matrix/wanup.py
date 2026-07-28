@@ -37,7 +37,7 @@ def wait_wan_up(cfg, log=print) -> bool:
                 time.sleep(cfg.settle_s)
                 return True
             time.sleep(2)
-        log("    ⚠ 等 WAN 拨通超时(%ds ping 不通 %s),仍继续测量。"
+        log("    [!] 等 WAN 拨通超时(%ds ping 不通 %s),仍继续测量。"
             % (cfg.timeout_s, cfg.host))
         time.sleep(cfg.settle_s)
         return False
