@@ -8,9 +8,11 @@
   * 保持在它原生的 **Python 2 / Windows / Chariot** 环境里跑
     (import Chariot 放到真正测量时才做,这样别的机器 import 本文件不会炸)。
 
-用法(由 ChariotBackend 自动拼好,一般不手敲):
-    python chariot_perf.py --json '{"mode":"pppoe","band":"lan",
-        "direction":"up","proto":"TCP","duration_s":20, ...}'
+用法。程序调用(ChariotBackend 自动拼好,不经人手):
+    python chariot_perf.py --json '{"mode":"pppoe","band":"lan", ...}'
+人在台架上手动调试,用文件版(**别在 PowerShell 里手敲内联 JSON**,它会把
+双引号吃掉):把 matrix/cell.example.json 复制一份改好,然后
+    python chariot_perf.py --json-file cell.json --dry-run
 输出:最后一行是 {"mbps": <float>, "stable": <bool>, "samples": [...]},
       失败则 {"error": "类型: 说明"} 且退出码非 0,**完整 traceback 打在
       stderr** 上(stdout 要留给 JSON)。
@@ -27,7 +29,8 @@ import json
 import sys
 import traceback
 
-USAGE = "usage: chariot_perf.py --json '<topology json>'"
+USAGE = ("usage: chariot_perf.py (--json '<topology json>'"
+         " | --json-file <path>) [--dry-run]")
 
 TCP, UDP = "TCP", "UDP"
 
@@ -144,7 +147,20 @@ def plan(topo):
 
 
 def _payload_from_argv(args):
-    """手写取 --json 的值。只认这一个参数,够用,而且不依赖 argparse。"""
+    """取要解析的 JSON 文本。手写解析,不依赖 argparse。两种给法:
+
+      --json '<内联 JSON>'   ChariotBackend 用这个(程序拼的,引号不经人手);
+      --json-file <路径>     人在台架上用这个。PowerShell 传参给外部程序时会
+                             把字符串里的双引号吃掉,内联 JSON 会变成一堆
+                             {mode:dynamic} 这样的残骸 —— 那是个纯粹浪费时间
+                             的坑,放文件里编辑既没这问题,也方便反复改。
+    """
+    if "--json-file" in args:
+        i = args.index("--json-file")
+        if i + 1 >= len(args):
+            raise ValueError("--json-file needs a path after it")
+        with open(args[i + 1]) as fh:
+            return fh.read()
     if "--json" not in args:
         raise ValueError(USAGE)
     i = args.index("--json")

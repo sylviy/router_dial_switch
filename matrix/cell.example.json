@@ -1,0 +1,14 @@
+{
+  "mode":      "dynamic",
+  "band":      "lan",
+  "direction": "up",
+  "proto":     "TCP",
+
+  "duration_s": 20,
+  "public_ip":   "192.168.202.99",
+  "internet_ip": "192.168.203.1",
+  "endpoints":   {"lan": "PC2_IP_HERE", "2GHz": "PC1_IP_HERE"},
+  "scripts":     {"up": "Throughput.scr", "down": "Throughput_w2l.scr"},
+  "pairs":       {"TCP": 50, "UDP": 100},
+  "stability_ratio": 0.9
+}
