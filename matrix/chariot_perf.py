@@ -12,7 +12,10 @@
     python chariot_perf.py --json '{"mode":"pppoe","band":"lan",
         "direction":"up","proto":"TCP","duration_s":20, ...}'
 输出:最后一行是 {"mbps": <float>, "stable": <bool>, "samples": [...]},
-      失败则 {"error": "..."} 且退出码非 0。
+      失败则 {"error": "类型: 说明"} 且退出码非 0,**完整 traceback 打在
+      stderr** 上(stdout 要留给 JSON)。
+加 --dry-run:只解析拓扑并打印它要打给谁、用哪个脚本、多少对,不碰 PyChariot
+      —— 台架接线对不对,一眼就能看出来,不用真跑一轮。
 
 兼容 Python 2/3 写法:from __future__ print_function、不用 except X, e、
 **不用 argparse**(标准库 2.7 才收它;2026-07-28 台架实测 PATH 上的 Python
@@ -22,6 +25,7 @@ from __future__ import print_function
 
 import json
 import sys
+import traceback
 
 USAGE = "usage: chariot_perf.py --json '<topology json>'"
 
@@ -117,9 +121,30 @@ def measure(topo):
             "samples": [round(float(s), 2) for s in samples]}
 
 
-def _payload_from_argv(argv):
+def plan(topo):
+    """--dry-run:把拓扑解析出来给人看,**完全不碰 PyChariot**。
+
+    真跑一格之前先跑这个,能当场看出 e1/e2/脚本/对数有没有指错 —— 这类错
+    (注入机 IP 写错、隧道模式却打到直连口)靠看真实测量结果是看不出来的,
+    数字照样出得来,只是测的不是你以为的那条路。
+    """
+    mode, band = topo["mode"], topo["band"]
+    proto = UDP if topo["proto"].upper() == UDP else TCP
+    public = _e2_ip(topo, mode) == topo.get("public_ip")
+    return {"dry_run": True,
+            "mode": mode, "band": band,
+            "direction": topo["direction"], "proto": proto,
+            "e1_client_side": _e1_ip(topo, band),
+            "e2_wan_side": _e2_ip(topo, mode),
+            "e2_source": "public_ip (direct)" if public
+                         else "internet_ip (tunnel)",
+            "scripts": topo["scripts"],
+            "pairs": int(topo["pairs"].get(proto, 50)),
+            "duration_s": topo["duration_s"]}
+
+
+def _payload_from_argv(args):
     """手写取 --json 的值。只认这一个参数,够用,而且不依赖 argparse。"""
-    args = list(sys.argv[1:] if argv is None else argv)
     if "--json" not in args:
         raise ValueError(USAGE)
     i = args.index("--json")
@@ -129,11 +154,16 @@ def _payload_from_argv(argv):
 
 
 def main(argv=None):
+    args = list(sys.argv[1:] if argv is None else argv)
     try:
-        topo = json.loads(_payload_from_argv(argv))
-        result = measure(topo)
+        topo = json.loads(_payload_from_argv(args))
+        result = plan(topo) if "--dry-run" in args else measure(topo)
     except Exception as exc:                 # noqa: BLE001  收敛成 JSON 错误
-        print(json.dumps({"error": str(exc)}))
+        # 完整 traceback 打到 stderr:stdout 要留给 JSON(ChariotBackend 解析
+        # 它),stderr 则被原样收进错误信息。这样出事时一次就能看全,不用再
+        # 来回问"能不能再跑一遍加个 -v" —— 现场只有一个人,往返很贵。
+        traceback.print_exc()
+        print(json.dumps({"error": "%s: %s" % (type(exc).__name__, exc)}))
         return 2
     print(json.dumps(result))
     return 0
