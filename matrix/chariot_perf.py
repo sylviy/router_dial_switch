@@ -40,17 +40,35 @@ def _e2_ip(topo, mode):
     return topo["internet_ip"]
 
 
-def _add_pairs(chr_obj, e1, e2, proto_const, script, pairs, half=False):
-    from PyChariot import Chariot  # noqa: F401  (仅为文档;实际类型由调用方给)
+def _protocol(proto):
+    """'TCP'/'UDP' -> add_pair 要的协议值。
+
+    台架 2026-07-28 实录:PyChariot 里有 CHR_PROTOCOL_TCP / CHR_PROTOCOL_UDP,
+    而 add_pair 的 console_e1_protocol 默认值是整数 2 —— 说明 protocol 收的是
+    整数常量,不是字符串。所以优先取库自己的常量;取不到才退回字符串(老包装
+    器有可能自己做映射)。这样不用赌。
+    """
+    import PyChariot
+    return getattr(PyChariot, "CHR_PROTOCOL_" + proto, proto)
+
+
+def _add_pairs(chr_obj, e1, e2, proto, script, pairs, half=False):
+    """proto 是 'TCP'/'UDP' 字符串。
+
+    add_pair 的签名 2026-07-28 在台架上核对过:
+      add_pair(e1_addr, e2_addr, script_name, protocol, pair_number,   <- 必填
+               comment=None, qos_name=None, console_e1_addr=None,
+               console_e1_protocol=2, console_e1_qos_name=None,
+               e1_e2_addr=None, script_variable={})
+    我们用到的五个关键字全部对得上。
+    """
     n = pairs // 2 if half else pairs
-    # UDP 非分片场景旧脚本会限制发送缓冲(send_buffer_size=1300),这里保留
-    if proto_const == UDP:
-        chr_obj.add_pair(e1_addr=e1, e2_addr=e2, script_name=script,
-                         protocol=proto_const, pair_number=n,
-                         script_variable={"send_buffer_size": "1300"})
-    else:
-        chr_obj.add_pair(e1_addr=e1, e2_addr=e2, script_name=script,
-                         protocol=proto_const, pair_number=n)
+    kwargs = {"e1_addr": e1, "e2_addr": e2, "script_name": script,
+              "protocol": _protocol(proto), "pair_number": n}
+    if proto == UDP:
+        # UDP 非分片场景旧脚本会限制发送缓冲(send_buffer_size=1300),这里保留
+        kwargs["script_variable"] = {"send_buffer_size": "1300"}
+    chr_obj.add_pair(**kwargs)
 
 
 def _judge(chr_obj, duration_s, ratio):
@@ -72,8 +90,7 @@ def measure(topo):
     mode = topo["mode"]
     band = topo["band"]
     direction = topo["direction"]          # up | down | bi
-    proto = topo["proto"].upper()
-    proto_const = UDP if proto == UDP else TCP
+    proto = UDP if topo["proto"].upper() == UDP else TCP
 
     e1, e2 = _e1_ip(topo, band), _e2_ip(topo, mode)
     pairs = int(topo["pairs"].get(proto, 50))
@@ -82,12 +99,12 @@ def measure(topo):
 
     chr_obj = Chariot()
     if direction == "up":
-        _add_pairs(chr_obj, e1, e2, proto_const, up_scr, pairs)
+        _add_pairs(chr_obj, e1, e2, proto, up_scr, pairs)
     elif direction == "down":
-        _add_pairs(chr_obj, e1, e2, proto_const, down_scr, pairs)
+        _add_pairs(chr_obj, e1, e2, proto, down_scr, pairs)
     else:  # bi:上下行各占一半对数
-        _add_pairs(chr_obj, e1, e2, proto_const, up_scr, pairs, half=True)
-        _add_pairs(chr_obj, e1, e2, proto_const, down_scr, pairs, half=True)
+        _add_pairs(chr_obj, e1, e2, proto, up_scr, pairs, half=True)
+        _add_pairs(chr_obj, e1, e2, proto, down_scr, pairs, half=True)
 
     chr_obj.set_run_option(duration=topo["duration_s"])
     chr_obj.set_filename("%s_%s_%s_%s.tst" % (mode, band, proto, direction))
