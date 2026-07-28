@@ -85,8 +85,22 @@ def _switch(facts, mode, params, admin_user, admin_pass, headless):
     模式 —— 所以矩阵里没有"只切换不保存"的选项)。延迟 import _driver:
     它会拉起 Playwright,--demo 时根本不 import。"""
     from cli import merge_params
+    from engine.adapter import MODE_REQUIRED_FIELDS
     from models import _driver
     merged = merge_params(mode, params.get("saved") or {}, params.get("explicit") or {})
+
+    # 账密不全就别碰路由器。单模式入口(models/<型号>.py)早就有这个检查,
+    # 整轮里一直没有 —— 而整轮**必定下发**,等于拿一个空账号的 PPPoE 覆盖掉
+    # 现有配置,WAN 直接断,而且看起来还像是"切换成功了"。宁可这一档记成失败。
+    missing = [f for f in MODE_REQUIRED_FIELDS.get(mode, []) if not merged.get(f)]
+    if missing:
+        return {"success": False, "read_back": "", "applied": False,
+                "warnings": [],
+                "message": "缺 %s 需要的参数:%s。存进 router.yaml"
+                           "(run.bat setup),或写在 perf.yaml 的 "
+                           "dial_modes[].params 里。已跳过,没有碰路由器。"
+                           % (mode, ", ".join(missing))}
+
     return _driver.run(facts, mode, params=merged, apply=True,
                        admin_user=admin_user, admin_pass=admin_pass,
                        headless=headless)
