@@ -35,11 +35,22 @@ class DialStep:
 @dataclass
 class WanUpCfg:
     """切完模式后等 WAN 拨通的判据。method=ping 就 ping host 到通为止,
-    否则只做固定等待。拨通后再多等 settle_s 秒让链路稳定(旧脚本睡 15s)。"""
+    否则只做固定等待。拨通后再多等 settle_s 秒让链路稳定(旧脚本睡 15s)。
+
+    `hosts` 是按拨号方式覆盖 `host`。台架上直连段和隧道段是**两个不同网段**
+    (2026-07-28 实测:dynamic 打 192.168.202.99,pppoe 走隧道后要打
+    192.168.203.1),单一个全局 host 必然有几档 ping 不通 —— 那几档不会失败,
+    但会白等满 timeout_s 再测,一档浪费一分钟。
+    """
     method: str = "wait"          # ping | wait
     host: str = ""
+    hosts: Dict[str, str] = field(default_factory=dict)   # 模式 -> 地址
     timeout_s: int = 60
     settle_s: int = 15
+
+    def host_for(self, mode):
+        """该模式该 ping 谁:先看 hosts 里的按模式覆盖,再退回全局 host。"""
+        return (self.hosts or {}).get(mode) or self.host
 
 
 @dataclass
@@ -131,6 +142,8 @@ def load(path: str = DEFAULT_PATH) -> PerfConfig:
     wu = data.get("wan_up") or {}
     cfg.wan_up = WanUpCfg(method=str(wu.get("method", cfg.wan_up.method)),
                           host=str(wu.get("host", "") or ""),
+                          hosts=dict((str(k), str(v)) for k, v
+                                     in (wu.get("hosts") or {}).items()),
                           timeout_s=int(wu.get("timeout_s", cfg.wan_up.timeout_s)),
                           settle_s=int(wu.get("settle_s", cfg.wan_up.settle_s)))
 

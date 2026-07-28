@@ -199,7 +199,7 @@ def main(argv=None) -> int:
             continue
 
         if not args.demo:
-            wait_wan_up(cfg.wan_up)
+            wait_wan_up(cfg.wan_up, mode)
 
         for band in cfg.bands:
             for proto in cfg.protocols:

@@ -26,19 +26,24 @@ def _ping_once(host: str, timeout_s: int = 2) -> bool:
         return False
 
 
-def wait_wan_up(cfg, log=print) -> bool:
-    """cfg 为 config.WanUpCfg。返回是否判定为已拨通。"""
-    if cfg.method == "ping" and cfg.host:
+def wait_wan_up(cfg, mode=None, log=print) -> bool:
+    """cfg 为 config.WanUpCfg。返回是否判定为已拨通。
+
+    `mode` 用来选 ping 目标 —— 直连档和隧道档的对端在不同网段,靠
+    `wan_up.hosts` 按模式覆盖(见 WanUpCfg.host_for)。
+    """
+    host = cfg.host_for(mode)
+    if cfg.method == "ping" and host:
         deadline = time.time() + max(cfg.timeout_s, 1)
         while time.time() < deadline:
-            if _ping_once(cfg.host):
-                log("    WAN 已拨通(ping %s 通),稳定 %ds..." % (cfg.host,
+            if _ping_once(host):
+                log("    WAN 已拨通(ping %s 通),稳定 %ds..." % (host,
                                                                 cfg.settle_s))
                 time.sleep(cfg.settle_s)
                 return True
             time.sleep(2)
         log("    [!] 等 WAN 拨通超时(%ds ping 不通 %s),仍继续测量。"
-            % (cfg.timeout_s, cfg.host))
+            % (cfg.timeout_s, host))
         time.sleep(cfg.settle_s)
         return False
     # 没有 ping 判据:固定等待
