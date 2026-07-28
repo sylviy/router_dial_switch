@@ -9,8 +9,8 @@ REM    dial.bat Tenda_AX3000 pppoe --apply    (really saves)
 REM    dial.bat Cudy_AX l2tp --apply
 REM    dial.bat                               (lists the available models)
 REM
-REM  Router IP / passwords come from router.yaml -- create it once with
-REM  `run.bat setup`.  For a device with no script yet, use run.bat (cli.py).
+REM  Router IP / passwords come from router.yaml -- create it once from
+REM  start.bat (menu 4), or `start.py --setup`.
 REM ==========================================================================
 setlocal
 pushd "%~dp0"

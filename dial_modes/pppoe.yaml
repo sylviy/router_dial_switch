@@ -1,5 +1,0 @@
-# Parameters the caller must supply for a PPPoE dial switch.
-mode: pppoe
-required_fields:
-  - pppoe_user   # broadband account / 宽带账号
-  - pppoe_pass   # broadband password / 宽带密码

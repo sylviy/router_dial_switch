@@ -25,8 +25,7 @@ if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
 import settings as settings_mod
-from cli import merge_params
-from engine.adapter import MODE_REQUIRED_FIELDS
+from modes import MODE_REQUIRED_FIELDS, merge_params
 from matrix.run import list_models
 
 # 字段问起来时给同事看的中文说明
@@ -85,12 +84,68 @@ def _console_safe() -> None:
             pass
 
 
+def run_setup() -> int:
+    """把路由器 IP / 管理密码 / 宽带账号存进 router.yaml(本机文件,git 忽略)。
+
+    存过之后,整轮和单模式都不用再输 —— 而且密码不会留在命令行历史里。
+    (2026-07-28 从 cli.py 搬过来:测试员只需要记住 start 这一个入口。)
+    """
+    old = settings_mod.load()
+    print("一次性配置 —— 写入 router.yaml(本机文件,不会进 git)")
+
+    def ask_top(label, key, default=""):
+        cur = str(old.get(key, default) or default)
+        return _ask("%s%s: " % (label, (" [%s]" % cur) if cur else ""), cur)
+
+    data = dict(old)
+    data["router_ip"] = ask_top("路由器 IP", "router_ip", "192.168.1.1")
+    data["user"] = ask_top("管理员用户名(通常留空)", "user")
+    data["pass"] = _ask_secret("管理员密码%s: "
+                               % ("(回车=沿用已存的)" if old.get("pass") else ""),
+                               str(old.get("pass") or ""))
+
+    params = dict(old.get("params") or {})
+
+    def ask_field(store, key, label):
+        cur = str(store.get(key, "") or "")
+        val = _ask("    %s%s: " % (label, (" [%s]" % cur) if cur else ""), cur)
+        if val:
+            store[key] = val
+
+    print("拨号凭据 —— 只在对应模式用到;这台机没有的就直接回车跳过")
+    print("  [PPPoE]")
+    ask_field(params, "pppoe_user", "宽带账号 (pppoe_user)")
+    ask_field(params, "pppoe_pass", "宽带密码 (pppoe_pass)")
+    # L2TP 和 PPTP 分开存:界面上是同一套字段名,但台架发的是两套账号,
+    # 存在一层里后填的会覆盖先填的。
+    for mode, title in (("l2tp", "[L2TP]"), ("pptp", "[PPTP]")):
+        blk = params.get(mode)
+        blk = dict(blk) if isinstance(blk, dict) else {}
+        print("  %s" % title)
+        ask_field(blk, "vpn_server", "服务器地址 (vpn_server)")
+        ask_field(blk, "vpn_user", "用户名 (vpn_user)")
+        ask_field(blk, "vpn_pass", "密码 (vpn_pass)")
+        if blk:
+            params[mode] = blk
+    if params:
+        data["params"] = params
+
+    path = settings_mod.save(data)
+    print("已写入 %s" % path)
+    return 0
+
+
 def main(argv=None) -> int:
     _console_safe()
     ap = argparse.ArgumentParser(add_help=False)   # 隐藏参数,仅冒烟测试用
     ap.add_argument("--url", default=None, help=argparse.SUPPRESS)
     ap.add_argument("--headless", action="store_true", help=argparse.SUPPRESS)
+    ap.add_argument("--setup", action="store_true",
+                    help="直接进设置(等同菜单里的 4)")
     args = ap.parse_args(argv)
+
+    if args.setup:
+        return run_setup()
 
     from models import _driver as model_driver
     from matrix.run import all_modes
@@ -117,7 +172,11 @@ def main(argv=None) -> int:
     print("     每档真切换 → 等WAN → 测吞吐 → 出报告")
     print("  2. 只切一个拨号方式(单步调试;同样直接下发)")
     print("  3. 整轮离线演示(不碰路由器,出样例报告)")
-    action = _pick("选操作", 3)
+    print("  4. 设置:存路由器 IP / 管理密码 / 宽带账号(存一次,以后全回车)")
+    action = _pick("选操作", 4)
+
+    if action == 4:
+        return run_setup()
 
     saved = settings_mod.load()
 

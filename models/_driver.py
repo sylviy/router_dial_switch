@@ -34,9 +34,8 @@ if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
 from config import Config
-from engine.browser import Browser
-from engine.adapter import MODE_REQUIRED_FIELDS
-from cli import merge_params
+from models._browser import Browser
+from modes import MODE_REQUIRED_FIELDS, merge_params
 import settings as settings_mod
 
 _STEP_MS = 200

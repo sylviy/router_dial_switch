@@ -27,14 +27,9 @@ python run_matrix.py --demo                  # 整轮性能矩阵:先离线看�
   (登录、菜单路径、控件选择器、各模式措辞、保存按钮),同事直接运行即可,
   不需要理解引擎。组内目标品牌:Cudy / Tenda / Buffalo / Huawei。
 - `models/_driver.py` —— 所有型号共用的点击逻辑(约 500 行,修一处全体受益)。
-- `engine/` + `cli.py` —— **适配期工具箱**:面对新型号先 `python cli.py diagnose`
-  取证,再照 `.claude/skills/adapt-router-model` 的方法论产出新的型号脚本
-  (任何 Claude 会话都能按这个 skill 干活)。启发式引擎不再追求"通吃所有品牌",
-  它的职责是把适配一台新机的成本压到"跑一次诊断 + 抄几个选择器"。
-
-型号脚本本身只确认拨号控件被**定位并成功改动**(回读值 == 目标);
-「WAN 是否拨通、吞吐多少」由 `run_matrix.py` 的整轮流程负责(见下文
-"跑整套 WAN 性能矩阵" —— 组里原来的 Chariot 单机脚本已合并进来)。
+- `.claude/skills/adapt-router-model/` —— **适配方法论**:面对一台新型号,把
+  Claude 接到那台机上(Claude in Chrome)照这个 skill 走一遍,产出它的
+  `models/<品牌>_<型号>.py`。不猜 DOM,每一条事实都来自真机观察。
 
 ### 已适配的型号
 
@@ -60,8 +55,8 @@ Cudy 固件关掉了 IPv6 的证据链)都记在 `CLAUDE.md` 的 **Validated** �
   RouterCtrl HTTP API,只能驱动自家 DUT —— 这正是本工具要补的缺口)。
 - **按像素点击** → 太脆弱。我们用 **DOM 语义**(`get_by_role` / `get_by_label`
   / `get_by_text`)点击 → 跨品牌、跨固件都稳。
-- **不猜没见过的 DOM** → 每台型号的事实(FACTS)都来自 diagnose 取证或真机
-  直接观察;适配方法论固化在 skill 里,任何 Claude 会话都能照做。
+- **不猜没见过的 DOM** → 每台型号的事实(FACTS)都来自真机上的**逐条观察**
+  (每个选择器都验证过命中数 == 1);适配方法论固化在 skill 里。
 
 现实边界:纯规则不可能覆盖世界上 100% 的路由器(验证码登录、全 canvas 自绘 UI、
 重度混淆 SPA)。这些走人工——见*已知限制*。
@@ -105,7 +100,7 @@ python start.py        # Windows 双击 start.bat
 (该文件已被 `.gitignore` 忽略,不会进仓库;`start.py` 里存过就不用再跑):
 
 ```bash
-python cli.py setup
+python start.py --setup        # Windows 上:双击 start.bat,选菜单 4
 ```
 
 之后切换一台**已适配**的机器只要一条命令(凭据按模式自动取用,PPPoE 账号
@@ -146,76 +141,26 @@ dynamic → pppoe → static → dhcpv6 → pppoev6),每档切换**必定真正�
 
 ### 适配一台新型号
 
-照 `.claude/skills/adapt-router-model/SKILL.md` 的流程:`python cli.py diagnose`
-取证 → 复制 `models/_template.py` 填 FACTS → 每模式验证回读 → `--apply` 验收。
-Claude 会话里说"适配新型号"即可触发该 skill。下面的 cli.py 用法都属于这个
-适配阶段。
+把 Claude 接到那台路由器上(**Claude in Chrome**,从你自己那台能访问路由器
+LAN 的机器发起),然后照
+`.claude/skills/adapt-router-model/SKILL.md` 走:在页面上逐条确认登录框、菜单
+路径、拨号控件、各模式的**逐字措辞**、各模式要填的字段、保存按钮,每条都用
+`querySelectorAll(...).length === 1` 验证唯一性,写进一个新的
+`models/<品牌>_<型号>.py`。
 
-### 适配期:cli.py(启发式引擎)
-
-启发式引擎也可以直接驱动一台没写过脚本的机器(碰运气,常见 UI 能直接成):
-
-```bash
-python cli.py pppoe
-python cli.py dynamic
-python cli.py l2tp
-```
-
-识别失败时会自动跑诊断;若诊断验证出了唯一选择器,终端会直接问一句
-「写入哪一个?」——**回车即自动生成 profile 并记住品牌**,重跑同一条命令即可,
-不需要手写 YAML。非交互脚本加 `--pin` 自动采用第 1 个候选。
-
-> setup 向导默认 `no_apply: true`(只切换、不点保存,试跑更安全);确认无误后
-> 用 `python cli.py pppoe --apply` 真正下发,或重跑 setup 关掉该默认。
-
-### 完整命令(不想用 router.yaml 时)
-
-切到 PPPoE(纯启发式,无需 profile):
+产出物就是那**一个文件**。拷进 `models/` 之后:
 
 ```bash
-python cli.py --router-ip 192.168.1.1 --pass admin123 \
-    --mode pppoe --param pppoe_user=宽带账号 --param pppoe_pass=宽带密码
+python models/<品牌>_<型号>.py dynamic          # 先看回读,不保存
+python models/<品牌>_<型号>.py pppoe --apply    # 确认无误再下发
 ```
 
-L2TP / PPTP:
+其它文件一律不用动 —— `_driver.py` 已经包含全部点击逻辑,`start.py` 会自动
+把新型号列进菜单,`run_matrix.py` 会自动遍历它声明的全部模式。
 
-```bash
-python cli.py --router-ip 192.168.1.1 --pass admin123 --mode l2tp \
-    --param vpn_server=1.2.3.4 --param vpn_user=u --param vpn_pass=p
-```
-
-动态IP / IPv6(无需参数):
-
-```bash
-python cli.py --router-ip 192.168.1.1 --pass admin123 --mode dynamic
-```
-
-输出为 JSON:`success`、`detected_via`(select/combobox/radio)、`read_back`、
-`filled`、`applied`、`needs_recording`,并在 `artifacts/` 存截图。退出码
-`0` = 成功,`2` = 未确认拨号控件。
-
-常用参数:`--brand`/`--model`(挑选 profile)、`--no-apply`(只选不保存)、
-`--headless`、`--chrome-path`、`--bundled-chromium`。
-
----
-
-## 适配是如何做到的
-
-面对一台**还没有脚本**的路由器,流程是:`python cli.py diagnose` 取证 →
-照证据填 `models/_template.py` → 每个模式验证回读 → `--apply` 验收。
-完整方法论(含"怎么判定这台机真的没有某功能"这类坑)见
-[.claude/skills/adapt-router-model/SKILL.md](.claude/skills/adapt-router-model/SKILL.md)
-—— 在 Claude 会话里说"适配新型号"即可触发。
-
-支撑这套流程的部件:
-
-- `engine/diagnose.py` —— **取证主力**:全 frame 清点、三条检测策略各自是否触发、
-  每个候选控件给出**已验证命中数**的选择器、每个可点按钮是否被认作保存键。
-- `engine/heuristics.py` —— 多语言同义词表(中/英)+ 语义定位器,让常见 UI
-  不用写脚本也能碰对。**要加新说法或新语言 = 在这里加字符串,不改引擎。**
-- `profiles/*.yaml` —— 适配期的临时提示(auto-pin 会自动生成),不是交付物;
-  交付物永远是 `models/` 里的型号脚本。
-- `dial_modes/*.yaml` —— 每种模式需要哪些参数。
+**不要靠猜写 FACTS。** 这个仓库里所有"假成功"的教训(点了个同名的诱饵元素、
+把卡片条的第一张当成当前值、`:text-is()` 匹配不到文字在内层 span 的按钮)都是
+因为选择器没在真机上验证过 —— 详见 `CLAUDE.md` 的 Validated 一节。
 
 ## 如何验证(离线,无需真机)
 
@@ -224,65 +169,52 @@ python tests/smoke_test.py          # 无头,驱动内置模拟路由器页
 python tests/smoke_test.py --show   # 观看它点完所有模式
 ```
 
-它在 localhost 起模拟路由器页并跑真实引擎:登录 → 进 WAN 设置 → 识别控件 →
-选中 → 填参数 → 回读 → 保存。当前共 **40 个用例**,覆盖:
-- `index.html` 原生 `<select>` / `custom.html` 自定义 `<div role="combobox">`
-  (复刻真机 Mercusys)/ `tenda.html` 无 role 的 Vue widget(含 "Connect" 保存键);
-- `xiaomi.html` **故意做成启发式认不出**,用带 `selectors:` 的 profile 驱动,
-  验证选择器覆盖已接入;`beautify.html` 美化隐藏的原生 select;
-- `tenda_ipv6.html` IPv6 使能开关(enable_toggle)+ v6 flavor(mode_labels),
-  以及"开关还关着时诊断必须能看见它"+ auto-pin 自动写 enable_toggle;
-- `noctrl.html` / `cardstrip.html` 两个**假阳性守卫**(绝不允许零交互的 success);
-- `cudy*.htm` **frameset 老式 UI**(登录在主文档、菜单和表单各在子 frame),
-  复刻真机 Cudy,含隐藏的 Connect/Disconnect 诱饵按钮;
-- CLI 便利层:`router.yaml` 读写、按模式过滤凭据、auto-pin 生成 profile 且不覆盖已有文件;
+它在 localhost 起模拟路由器页,用**真实的型号脚本 + 真实的驱动**跑完整条路:
+登录 → 进 WAN 设置 → 定位控件 → 选中 → 填参数 → 回读 → 保存。看结尾的
+**`0 failed`**。覆盖:
+
 - **models/ 交付层**:用 `Tenda_AX3000.py` / `Cudy_AX.py` / `Mercusys_BE3600.py`
-  里的**真实 FACTS** 驱动对应 mock(含 IPv6 门控页、"Connect" 保存键、跨 frame
-  查找、按模式填参、默认不点保存),以及"事实对不上的页面必须诚实失败"守卫;
+  里的**真实 FACTS** 驱动对应 mock —— 原生 `<select>`、无 role 的 Vue widget
+  (含 "Connect" 保存键)、IPv6 使能开关门控页、`cudy*.htm` 的老式 frameset
+  (登录在主文档、菜单和表单各在子 frame,还有隐藏的 Connect/Disconnect 诱饵),
+  以及**"事实对不上的页面必须诚实失败"**这条守卫;
+- **凭据层**:`router.yaml` 读写、按模式挑参数(PPPoE 账密不得漏进 dynamic);
 - **run_matrix 编排层**:`--demo` 离线整轮(配置 → 主循环 → simulate 后端 →
   HTML+CSV 落盘),以及 `chariot_perf._judge` 判稳纯函数 == 旧脚本
   `result_judge` 语义的守卫;
-- **start.py 交互向导**:管道喂按键走通 选型号→选操作→选模式→切换 整条流程
-  (默认操作必须不点保存)。
+- **start.py 交互向导**:管道喂按键走通 选型号 → 选操作 → 选模式 → 切换 整条流程。
 
 ## 项目结构
 
 ```
 router_dial_switch/
-  start.py               **交互式向导(最简入口)**:列型号按数字选,回车即默认
-  run_matrix.py          整套性能矩阵入口:切模式 → 等WAN → 测吞吐 → 出报告
+  start.bat / start.py   **唯一需要记住的入口**:列型号按数字选,回车即整轮;
+                         菜单 4 = 存 IP/密码/宽带账号到 router.yaml
+  run_matrix.py          整套性能矩阵:切模式 → 等WAN → 测吞吐 → 出报告
   perf.example.yaml      矩阵配置模板(复制成 perf.yaml;测什么/怎么测/台架拓扑)
-  matrix/                性能矩阵编排层
-    run.py               主循环 + CLI(--list / --demo / --model;整轮必下发)
-    config.py            读 perf.yaml
-    perf_backends.py     simulate(离线模拟)/ chariot(真台架,子进程)后端
-    chariot_perf.py      旧 Dial.py 的 Chariot 逻辑清理版(Py2/台架用,单次测量)
-    wanup.py             切完模式后等 WAN 拨通(ping 判据 / 固定等待)
-    report.py            自包含 HTML + CSV 报告
   models/                **交付层:每台型号一个脚本**
     Tenda_AX3000.py      事实(FACTS)+ 入口;直接运行
     Mercusys_BE3600.py
     Cudy_AX.py
     _template.py         新型号照抄的注释模板
     _driver.py           所有型号共用的点击逻辑(零猜测,只吃显式事实)
-  .claude/skills/
-    adapt-router-model/  适配方法论 skill:diagnose 取证 -> 填 FACTS -> 验证
-  cli.py                 适配期入口(diagnose / setup 向导 / 失败时 auto-pin)
+    _browser.py          Playwright 启动(channel=chrome / 离线)
+  matrix/                性能矩阵编排层
+    run.py               主循环 + CLI(--list / --demo / --model;整轮必下发)
+    config.py            读 perf.yaml
+    perf_backends.py     simulate(离线模拟)/ chariot(真台架,子进程)后端
+    chariot_perf.py      旧 Dial.py 的 Chariot 逻辑清理版(Py2/台架用,单次测量)
+    wanup.py             切完模式后等 WAN 拨通(ping 判据,可按模式配目标)
+    report.py            自包含 HTML + CSV 报告
+  modes.py               每种拨号方式要哪些参数 + 按模式挑凭据
   settings.py            router.yaml 本机默认值(IP/密码/凭据;git 忽略)
   config.py              浏览器 / 超时 / 路径 等开关(处理 OS 差异)
-  engine/                适配期工具箱(启发式引擎)
-    browser.py           Playwright 启动(channel=chrome / 离线)
-    heuristics.py        多语言关键词字典 + 语义定位器
-    adapter.py           登录 -> 进 WAN 设置 -> 设模式 -> 回读
-    diagnose.py          一键取证:已验证选择器 / 控件形态 / 保存键
-    profile.py           适配期提示加载器(宽松匹配;auto-pin 写入)
-  profiles/              适配期的临时 yaml 提示(非交付物)
-  dial_modes/            每模式所需字段模板
-  tools/                 控制台粘贴用的查找脚本(手上只有浏览器时的兜底)
-  tests/                 模拟路由器页 + 离线冒烟测试(40 用例)
-  setup.bat start.bat    Windows:一次安装 + 双击即用的交互向导(见 WINDOWS.md)
-  dial.bat matrix.bat    Windows:命令行版 切模式 / 整套性能矩阵
-  run.bat smoke.bat      Windows:适配期 cli.py + 离线自检
+  tests/                 离线冒烟:mock 路由器页 + 端到端断言
+  tools/                 make_offline_bundle.py:重建 vendor/python
+  vendor/python/         **随仓库发布的 Python 3.8 运行时**(台架零安装)
+  .claude/skills/
+    adapt-router-model/  适配方法论 skill:真机逐条取证 -> 填 FACTS -> 验证
+  *.bat                  Windows 双击入口(_py.bat 决定用哪个解释器)
 ```
 
 ## 已知限制 / 后续
@@ -292,6 +224,9 @@ router_dial_switch/
   `matrix/wanup.py` 扩展,或用 `_driver.run(verify_hook=...)`。
 - WLAN(2.4G/5G、多 SSID)切换:后续结合单机脚本;引擎已预留无线客户端钩子。
 - 验证码登录、全 canvas 自绘 UI、重度混淆 SPA:需录制 profile 或人工——不强求全自动。
-- IPv6 位置因厂商而异:Mercusys BE3600 上它**不在**主"上网方式"列表里,而是在
-  Advanced → IPv6 独立分区。这类每厂商结构差异,通过在该品牌 profile 里指定
-  `wan_path` 来处理。
+- IPv6 位置因厂商而异:Tenda 和 Mercusys 上它**不在**主"上网方式"列表里,而是
+  独立的一页(More → IPv6 / Advanced → IPv6),而且整块 WAN 区要等使能开关打开
+  才渲染。这类差异写在型号脚本的 `mode_overrides` 里(换 `wan_path`、加
+  `enable_toggle`、换保存键),不需要改任何公共代码。
+- v6 吞吐:目前 v6 那几档只验证"**切换**成功";要真测 v6 吞吐,注入机和对端
+  得填 IPv6 地址、协议写成 `TCP6`/`UDP6`(代码已认这两个名字)。

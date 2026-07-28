@@ -104,7 +104,7 @@ echo   Easiest from here: double-click start.bat ^(pick a model by
 echo   number, Enter = the full round^).  Or, from the command line:
 echo.
 echo   1^) store router IP / passwords once:
-echo        run.bat setup
+echo        start.bat  ^-^> menu 4
 echo   2^) switch the dial mode on an adapted model:
 echo        dial.bat Tenda_AX3000 pppoe      ^(add --apply to really save^)
 echo        dial.bat Cudy_AX dynamic

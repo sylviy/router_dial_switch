@@ -85,9 +85,8 @@ def _switch(facts, mode, params, admin_user, admin_pass, headless):
     """真正切一次拨号方式并**下发保存**(整轮里不下发,吞吐测的就不是这档
     模式 —— 所以矩阵里没有"只切换不保存"的选项)。延迟 import _driver:
     它会拉起 Playwright,--demo 时根本不 import。"""
-    from cli import merge_params
-    from engine.adapter import MODE_REQUIRED_FIELDS
     from models import _driver
+    from modes import MODE_REQUIRED_FIELDS, merge_params
     merged = merge_params(mode, params.get("saved") or {}, params.get("explicit") or {})
 
     # 账密不全就别碰路由器。单模式入口(models/<型号>.py)早就有这个检查,
@@ -98,7 +97,7 @@ def _switch(facts, mode, params, admin_user, admin_pass, headless):
         return {"success": False, "read_back": "", "applied": False,
                 "warnings": [],
                 "message": "缺 %s 需要的参数:%s。存进 router.yaml"
-                           "(run.bat setup),或写在 perf.yaml 的 "
+                           "(start.bat 菜单 4,或 python start.py --setup),或写在 perf.yaml 的 "
                            "dial_modes[].params 里。已跳过,没有碰路由器。"
                            % (mode, ", ".join(missing))}
 

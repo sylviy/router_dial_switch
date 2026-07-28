@@ -14,11 +14,16 @@ generality):** one self-contained script per model, `models/<Brand>_<Model>.py`
 wording, apply button) + a tiny shared runtime `models/_driver.py`. Colleagues
 run `python models/Tenda_AX3000.py pppoe` — no engine knowledge needed. Target
 brands are just the group's bench: **Cudy / Tenda / Buffalo / Huawei** (done:
-Tenda, Mercusys, Cudy). The heuristics engine + `cli.py diagnose` are demoted to the
-**adaptation toolbox**, and the adaptation methodology is codified as a skill
-(`.claude/skills/adapt-router-model/SKILL.md`) so ANY Claude session can
-produce a new model script from a diagnose artifact. Don't build further
-"universal tool" surface; invest in per-model scripts + the skill.
+Tenda, Mercusys, Cudy). **The heuristics engine was DELETED 2026-07-28** (user:
+"for the testers, the simpler the better") — `engine/adapter.py`,
+`heuristics.py`, `diagnose.py`, `profile.py`, `profiles/*.yaml`,
+`dial_modes/*.yaml` and `cli.py`, ~2300 lines, all gone. They were the earlier
+"one tool drives every brand" route, and they left the repo with TWO competing
+"profile" concepts (`models/*.py` FACTS vs `profiles/*.yaml`), which was the
+real source of the perceived complexity. A new model is adapted by connecting
+Claude to the live device (Claude in Chrome) and following the skill
+(`.claude/skills/adapt-router-model/SKILL.md`). Don't rebuild a "universal
+tool" surface; invest in per-model scripts + the skill.
 
 **Current scope:** a model script confirms the dial control is *located and
 changed* (read-back == target). WAN-up + throughput belong to the full-round
@@ -53,7 +58,7 @@ chain with no router/Chariot present.
   read-back sub-selector; `mode_overrides` swaps whole keys per mode (Tenda
   ipv6 page). Facts lines not yet re-verified on the physical device are
   commented `[待真机复核]`. `verify_hook(page, result)` is the future WAN-up
-  integration point. Creds come from router.yaml via `cli.merge_params`.
+  integration point. Creds come from router.yaml via `modes.merge_params`.
 - `start.py` (+ `start.bat`) — **the zero-knowledge entry** (user ask
   2026-07-23: "python script.py → list models → choose → run, no prep").
   Interactive wizard; the DEFAULT action (plain Enter) is the tool's whole
@@ -64,9 +69,11 @@ chain with no router/Chariot present.
   the wizard or matrix — switching that isn't applied makes the throughput
   meaningless.** The no-apply safety default survives ONLY in the per-model
   CLI (`models/<X>.py <mode>`, `--apply` to save) for home/dev environments.
-  The full-round path prompts the union of MODE_REQUIRED_FIELDS across the
-  round's modes and MUST save typed creds to router.yaml (the matrix pulls
-  creds per mode from there). Friendly verdict lines instead of raw JSON.
+  The full-round path prompts **per mode** (not the union of required fields:
+  L2TP and PPTP share the field names but get different accounts) and MUST save
+  typed creds to router.yaml, under `params[<mode>]`, since the matrix pulls
+  creds per mode from there. Menu 4 = `run_setup()`, moved here from the
+  deleted cli.py so testers have exactly one entry point. Friendly verdict lines instead of raw JSON.
   Hidden `--url`/`--headless` exist ONLY so the smoke test can drive it over
   piped stdin (indexes computed, not hardcoded, so new models don't break it).
 - `matrix/` + `run_matrix.py` — **the orchestration layer (the full test loop).**
@@ -89,77 +96,35 @@ chain with no router/Chariot present.
   a skill: diagnose artifact → FACTS mapping table, selector cookbook, the
   four iron rules, verification checklist. New models go through this, never
   through guessed DOM.
-- `engine/heuristics.py` — **core of the adaptation toolbox.** Multilingual keyword dicts + semantic
-  locators. Finds the dial control three ways: native `<select>`; a custom
-  `<div role="combobox">` (Mercusys/TP-Link); or a **role-less** custom widget
-  with no id/name/role whose class repeats across fields (Tenda's Vue
-  `<div class="v-select">`) via `find_dial_mode_widget` — an in-page scan that
-  tags the one field whose *value* text reads as a dial mode. Edit here = all
-  brands benefit.
-- `engine/adapter.py` — orchestrates: login → WAN nav → set mode → fill params →
-  read-back → apply. Tries heuristics first, uses profile overrides when present.
-- `engine/profile.py` + `profiles/*.yaml` — optional per-model hints
-  (wan_path / selector overrides / mode_labels). One profile per model, covers
-  all its dial modes. `profiles/_example.yaml` is an annotated template.
-  **`selectors:` overrides are wired** (adapter: `_profile_sel` /
-  `_locate_by_selector` / `_profile_dial_control`): a profile CSS selector wins
-  over heuristics, falling back when absent, for login_user/login_pass/
-  login_button, dial_mode_select (native <select> or custom <div>, classified by
-  tag), pppoe_user/pppoe_pass/vpn_*, save_button. This is the main lever for
-  divergent UIs (e.g. Xiaomi). Covered by the xiaomi.html smoke case.
-- `engine/browser.py` — Playwright launch (default `channel="chrome"`).
-- `engine/diagnose.py` — **onboarding/triage.** One-shot evidence dump for an
-  unknown UI: all-frames inventory, per-strategy fired/why, dial-control
-  candidates each with **verified** selectors (JS proposes, Python counts via
-  `frame.locator().count()` — the same engine used at runtime — so `unique:true`
-  is real, and `:has-text()` label-anchored selectors are validated), and every
-  clickable flagged against the save-button vocab. Vocab is imported from
-  `heuristics`, never re-copied. `--diagnose` runs it on demand; a failing
-  `run()` writes the same artifact automatically. `adapter._diag()` delegates to
-  its `summarize()` (all-frames, incl. a save-button-seen flag).
-- `dial_modes/*.yaml` — which params each mode needs.
-- `cli.py` — entry point. Short UX: positional mode (`python cli.py pppoe`),
-  `setup` wizard, and **auto-pin** — on a failed run, if diagnose verified a
-  unique selector, the CLI offers (TTY prompt; `--pin` = non-interactive yes)
-  to write `profiles/auto_<ip>.yaml` + remember `brand:` in router.yaml, so
-  nobody hand-writes YAML for the common "control not recognised" case.
-  Two concepts are offered: `dial_mode_select` (control seen, pinnable), and —
-  when NOTHING dial-like is on the page but diagnose saw OFF switches —
-  `enable_toggle` (the TP-Link/Tenda IPv6 shape: section renders only after
-  its switch is ON; candidates sorted so ipv6/enable-labeled ones come first).
-  Skipping the dial offer falls through to the toggle offer (nav links whose
-  text reads as a mode can pollute the dial candidates). `write_pin`
-  (profile.py) never overwrites an existing profile. Card strips are excluded
-  (a single pin can't drive them). `tools/find_enable_toggle.js` is the
-  console-paste equivalent for finding the switch by hand (verifies plain-CSS
-  counts in-page; defers Playwright-syntax cases to `cli.py diagnose`).
+- `models/_browser.py` — Playwright launch (default `channel="chrome"`).
+- `modes.py` — `MODE_REQUIRED_FIELDS` (which params each dial mode needs) and
+  `merge_params` (pull creds out of router.yaml **per mode**, so PPPoE
+  credentials can never leak into a dynamic run). `params:` in router.yaml
+  takes an optional per-mode block that wins over the flat keys — L2TP and PPTP
+  share the field NAMES (`vpn_user`/`vpn_pass`) but the bench issues two
+  different accounts, so one flat layer silently loses one of them.
 - `settings.py` — `router.yaml` local defaults (IP/passwords/per-mode creds;
-  git-ignored). CLI flags override; saved creds are filtered per mode
-  (`cli.merge_params`) so PPPoE creds never leak into a dynamic run. Wizard
-  defaults `no_apply: true`; `--apply` overrides.
+  git-ignored). Written by `start.py --setup` (menu 4).
 - `tests/smoke_test.py` — offline e2e vs mock pages.
 
 ## Run / verify
 ```bash
 # offline logic test (no router needed) — must stay green:
-python tests/smoke_test.py            # 40/40 pass expected
+python tests/smoke_test.py            # expect "0 failed" (count shrank when
+                                      # the engine cases went with the engine)
 
 # the zero-knowledge entry (colleagues): interactive wizard, pick by number;
 # default action = FULL ROUND (all declared modes, really applied, + perf)
 python start.py                       # Windows: double-click start.bat
 
 # daily use on an adapted model (run on a machine ON the router's LAN):
-python cli.py setup                   # one time -> router.yaml (git-ignored)
+python start.py --setup               # one time -> router.yaml (git-ignored)
 python models/Tenda_AX3000.py pppoe   # add --apply to really save
 # full performance round (switch + WAN-up + throughput + HTML/CSV report):
 python run_matrix.py --demo           # offline sample report, no router needed
-python run_matrix.py --model Tenda_AX3000 --apply   # real round (perf.yaml)
-# adaptation phase (new/unscripted device): heuristics + evidence dump
-python cli.py pppoe                   # heuristic attempt
-python cli.py diagnose                # -> artifacts/diagnose_*.json
-# long form (no router.yaml needed):
-python cli.py --router-ip 192.168.1.1 --pass <pw> --mode pppoe \
-    --param pppoe_user=x --param pppoe_pass=y --no-apply   # --no-apply = don't click Save
+python run_matrix.py --model Tenda_AX3000           # real round (perf.yaml)
+# a new device: connect Claude in Chrome to it and follow the skill —
+# there is no heuristic fallback any more, and that is deliberate.
 ```
 
 ## Environment
@@ -178,10 +143,11 @@ python cli.py --router-ip 192.168.1.1 --pass <pw> --mode pppoe \
 - **A `._pth` file puts the interpreter in isolated mode, which does NOT prepend
   the script's directory to `sys.path`** (bench, 2026-07-28: `run.bat setup` ->
   `ModuleNotFoundError: No module named 'settings'`). Every entry point except
-  `cli.py` already self-bootstrapped with `sys.path.insert(0, ROOT)`, which is
-  why `smoke.bat` passed while `run.bat` died. Fixed twice over: `cli.py` now
-  inserts ROOT too, and `python38._pth` carries a `..\..` line. Any new
-  top-level entry script needs that insert — do not rely on the script dir.
+  every other entry self-bootstrapped with `sys.path.insert(0, ROOT)`, which is
+  why `smoke.bat` passed while the (now deleted) `run.bat`/`cli.py` path died.
+  Fixed twice over: the entry inserted ROOT, and `python38._pth` carries a
+  `..\..` line. **Any new top-level entry script needs that insert** — never
+  rely on the script directory being on sys.path.
 - The bench's Python 2 is an asset, not a problem: `matrix/chariot_perf.py` is
   meant to run under it (`chariot.python2`). Only the Playwright half needs 3.8.
   **That Python is ActivePython 2.6.5 (32-bit), not 2.7** (bench, 2026-07-28,
@@ -206,6 +172,10 @@ python cli.py --router-ip 192.168.1.1 --pass <pw> --mode pppoe \
 - Cross-platform: code is OS-independent; only the browser binary differs.
 
 ## Gotchas (learned the hard way)
+> Several entries below were learned inside the heuristics engine, which is
+> gone. They are kept because they are **why `models/_driver.py` behaves the
+> way it does** — every one of them is a false-success this tool once produced
+> on a real router. Delete a rule only with evidence, not with tidiness.
 - The repo path contains `[Tool]`, a glob character class. Use `glob.escape()`
   in Python and quote paths in shell, or matching silently returns nothing.
   (Fixed in `profile.py`; bit AGAIN in `matrix/run.py list_models` — PR #1
@@ -373,33 +343,31 @@ server-generated `top_menu.htm` emits `var ipv6 = 0;` (sibling vars like
 `wlan_num = 2` are injected per-device), so it never draws; the WAN page's
 `input[name='ipv6_passthru_enabled']` sits in a `display:none` row in all five
 modes (dead code).  => v6 needs a firmware upgrade/replacement on this unit;
-re-run `cli.py diagnose` afterwards before adding an ipv6 mode_override.
+re-observe the UI (Claude in Chrome) afterwards before adding an ipv6
+mode_override.
 
-**Tenda was always pinnable (we got this wrong at the time).** We concluded "no
-unique selector exists → the profile escape hatch is unusable" because plain CSS
-`div.v-select` matches 5 fields. But `_locate_by_selector` uses `frame.locator()`
-— Playwright's selector engine — which supports `:has-text()`. A label-anchored
-`selectors.dial_mode_select: 'div.v-form-item:has-text("Internet Connection Type")
-div.v-select'` is unique and stable. `--diagnose` now emits exactly this,
-pre-verified. Only plain-CSS pinning was impossible; Playwright-syntax pinning
-was always available. `_example.yaml` documents it.
-
-## Known gaps (shapes the current strategies can't drive)
-- **Card strip / segmented / radio-card picker** (no `<select>`, no role, no
-  popup; selection is a CSS class on one card). The widget path *declines* it
-  safely (see gotcha above) but nothing *handles* it — needs a new
-  "selected-among-siblings" heuristic (read `aria-checked`/`.active`/`.selected`,
-  read back by selectedness not text presence). `--diagnose` names it precisely.
-  Deferred until a real device shows up (don't guess its DOM).
-- **Widget whose value text isn't a mode word** (shows "Connected"/an icon/a
-  code): the widget scan has no signal; pin is the only route.
-- **Save-then-confirm modal**, **multi-step wizard**, **closed shadow roots**,
-  **canvas UIs**: out of scope for this change set; `--diagnose` reports what it
-  can (open shadow roots, readonly-input mode values) so the gap is visible.
+## Known gaps
+- **IPv6 throughput is not measured yet.** The v6 modes (`dhcpv6`/`pppoev6`)
+  only prove the *switch* works: Chariot pairs still use the IPv4 endpoint
+  addresses. `_protocol()` already resolves `TCP6`/`UDP6` off PyChariot's own
+  constants, so what is missing is the bench's IPv6 addressing (endpoints +
+  peers), not code. `wan_up` would also need `ping -6`.
+- **`static` has no field mapping** (`modes.py`: empty required list, and no
+  model script maps ip/mask/gateway). It is in Tenda's `modes` so
+  `all_modes()` includes it — keep it out of `dial_modes` in perf.yaml or the
+  round will switch to Static IP and fill nothing.
+- **WLAN band switching is manual.** `bands` only selects which endpoint
+  injects; nothing re-associates a client. Two bands in one round means two
+  wireless clients with different IPs.
+- **UDP reports throughput only** — no loss/jitter, matching the legacy
+  `result_judge`. PyChariot exposes `CHR_RESULTS_MLR` / `_JITTER` if that is
+  ever wanted.
+- Captcha logins, canvas-drawn UIs and heavily obfuscated SPAs are out of
+  scope: adapt by hand through the skill, or don't.
 
 ## Next steps
 - Produce `models/` scripts for the remaining group brands — **Buffalo, Huawei**
-  — via the adapt-router-model skill (one `cli.py diagnose` run per device;
+  — via the adapt-router-model skill (Claude in Chrome on the live device;
   never guess their DOM). Tenda + Cudy are done and accepted.
 - Read the Cudy shell label and rename `Cudy_AX.py` / its `model:` to the real
   model name (currently a placeholder).

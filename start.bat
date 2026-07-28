@@ -2,7 +2,7 @@
 REM ==========================================================================
 REM  start.bat  --  THE EASY BUTTON.  Double-click, pick a model by number,
 REM  pick what to do, done.  Nothing to prepare, nothing to remember.
-REM  (Power users: dial.bat / matrix.bat / run.bat still take arguments.)
+REM  (Power users: dial.bat / matrix.bat still take arguments.)
 REM ==========================================================================
 setlocal
 pushd "%~dp0"

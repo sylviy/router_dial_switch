@@ -10,7 +10,7 @@ REM    matrix.bat --model Tenda_AX3000        (real run: every declared mode,
 REM                                            each one really applied)
 REM
 REM  What/how to test lives in perf.yaml (copy perf.example.yaml); passwords
-REM  live in router.yaml (run.bat setup).  Reports land in artifacts\.
+REM  live in router.yaml (start.bat menu 4).  Reports land in artifacts\.
 REM ==========================================================================
 setlocal
 pushd "%~dp0"
