@@ -27,7 +27,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
+
+# 仓库根必须在 sys.path 上。平时"脚本所在目录"是 Python 自动加的,但仓库自带的
+# 嵌入式解释器(vendor\python,带 ._pth)跑在隔离模式下,**不会**加脚本目录 ——
+# 2026-07-28 台架实测:run.bat setup 直接 ModuleNotFoundError: No module named
+# 'settings'。其它入口(start.py / run_matrix.py / models/*.py / smoke_test.py)
+# 早就自己插了这一行,只有 cli.py 漏了。
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import settings as settings_mod
 from config import Config

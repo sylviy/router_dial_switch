@@ -14,13 +14,16 @@
 输出:最后一行是 {"mbps": <float>, "stable": <bool>, "samples": [...]},
       失败则 {"error": "..."} 且退出码非 0。
 
-兼容 Python 2/3 写法:from __future__ print_function、不用 except X, e。
+兼容 Python 2/3 写法:from __future__ print_function、不用 except X, e、
+**不用 argparse**(标准库 2.7 才收它;2026-07-28 台架实测 PATH 上的 Python
+是 2.6.5,import argparse 直接 ImportError)。
 """
 from __future__ import print_function
 
-import argparse
 import json
 import sys
+
+USAGE = "usage: chariot_perf.py --json '<topology json>'"
 
 TCP, UDP = "TCP", "UDP"
 
@@ -97,12 +100,20 @@ def measure(topo):
             "samples": [round(float(s), 2) for s in samples]}
 
 
+def _payload_from_argv(argv):
+    """手写取 --json 的值。只认这一个参数,够用,而且不依赖 argparse。"""
+    args = list(sys.argv[1:] if argv is None else argv)
+    if "--json" not in args:
+        raise ValueError(USAGE)
+    i = args.index("--json")
+    if i + 1 >= len(args):
+        raise ValueError("--json needs a JSON string after it")
+    return args[i + 1]
+
+
 def main(argv=None):
-    ap = argparse.ArgumentParser(description="single Chariot throughput sample")
-    ap.add_argument("--json", required=True, help="拓扑 + 本格参数(JSON)")
-    args = ap.parse_args(argv)
     try:
-        topo = json.loads(args.json)
+        topo = json.loads(_payload_from_argv(argv))
         result = measure(topo)
     except Exception as exc:                 # noqa: BLE001  收敛成 JSON 错误
         print(json.dumps({"error": str(exc)}))

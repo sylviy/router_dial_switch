@@ -175,8 +175,18 @@ python cli.py --router-ip 192.168.1.1 --pass <pw> --mode pppoe \
   it in Git LFS**: GitHub's "Download ZIP" would hand out pointer files and kill
   the whole point. `.gitattributes` has `vendor/** -text` so nothing is
   line-ending-mangled.
+- **A `._pth` file puts the interpreter in isolated mode, which does NOT prepend
+  the script's directory to `sys.path`** (bench, 2026-07-28: `run.bat setup` ->
+  `ModuleNotFoundError: No module named 'settings'`). Every entry point except
+  `cli.py` already self-bootstrapped with `sys.path.insert(0, ROOT)`, which is
+  why `smoke.bat` passed while `run.bat` died. Fixed twice over: `cli.py` now
+  inserts ROOT too, and `python38._pth` carries a `..\..` line. Any new
+  top-level entry script needs that insert — do not rely on the script dir.
 - The bench's Python 2 is an asset, not a problem: `matrix/chariot_perf.py` is
   meant to run under it (`chariot.python2`). Only the Playwright half needs 3.8.
+  **That Python is 2.6.5, not 2.7** (bench, 2026-07-28), so `chariot_perf.py`
+  must avoid `argparse` (stdlib only since 2.7) — it hand-parses `--json`. Keep
+  anything that runs under it to 2.6-safe stdlib.
 - Interpreter choice lives in `_py.bat`, `call`ed by every other `.bat`:
   `.venv\Scripts\python.exe` first, else `vendor\python\python.exe`. No fallback
   to a bare `python` on PATH — on those benches that IS the Python 2, and the

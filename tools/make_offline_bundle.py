@@ -36,10 +36,15 @@ import zipfile
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EMBED_URL = "https://www.python.org/ftp/python/{v}/python-{v}-embed-{arch}.zip"
 
-# `._pth` lines. Without "Lib\site-packages" the embeddable interpreter simply
-# does not look at the packages we install; without "import site" the .pth
-# files inside site-packages are never processed.
-PTH_TEMPLATE = "python{tag}.zip\n.\nLib\\site-packages\n\nimport site\n"
+# `._pth` lines, resolved relative to the folder holding python.exe.
+#   Lib\site-packages -- or the embeddable simply does not see what we install;
+#   ..\..             -- the repo root.  A `._pth` puts the interpreter in
+#                        isolated mode, which does NOT prepend the script's
+#                        directory, so without this line every `import
+#                        settings` / `import config` fails (bench, 2026-07-28);
+#   import site       -- or the .pth files inside site-packages never run.
+PTH_TEMPLATE = ("python{tag}.zip\n.\nLib\\site-packages\n..\\..\n"
+                "\nimport site\n")
 
 
 def log(msg: str) -> None:
