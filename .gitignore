@@ -1,7 +1,9 @@
-# Embedded offline runtime (150 MB) — rebuild per WINDOWS_离线部署.md:
-#   vendor/python/  = Python 3.8 Windows embeddable zip, unpacked
-#   vendor/wheels/  = pip download -r requirements.txt -d vendor/wheels
-vendor/
+# NOTE: vendor/python/ (the embedded Windows runtime, ~97 MB) IS committed on
+# purpose — the bench is offline and its only Python is an untouchable 2.x, so
+# "download the repo" has to be enough on its own.  See vendor/README.md;
+# rebuild with tools/make_offline_bundle.py.  Only build leftovers are ignored:
+vendor/wheels/
+.bundle-cache/
 
 # local run defaults incl. admin/broadband passwords (cli.py setup)
 router.yaml

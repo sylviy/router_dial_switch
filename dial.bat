@@ -15,10 +15,8 @@ REM ==========================================================================
 setlocal
 pushd "%~dp0"
 
-if not exist ".venv\Scripts\python.exe" (
-  echo [ERROR] .venv not found.  Double-click setup.bat first ^(one time^).
-  goto :fail
-)
+call "%~dp0_py.bat"
+if not defined PY goto :fail
 
 if "%~1"=="" (
   echo Usage: dial.bat ^<Model^> ^<mode^> [--apply]
@@ -48,7 +46,7 @@ shift
 goto :collect
 
 :run
-".venv\Scripts\python.exe" "models\%MODEL%.py"%ARGS%
+"%PY%" "models\%MODEL%.py"%ARGS%
 set "rc=%errorlevel%"
 popd
 endlocal

@@ -163,10 +163,28 @@ python cli.py --router-ip 192.168.1.1 --pass <pw> --mode pppoe \
 ```
 
 ## Environment
-- Python 3.8+ (isolated in-folder venv/embeddable; keep off the company 3.7).
+- **`vendor/python/` is COMMITTED (~97 MB) and that is deliberate** (user
+  constraint 2026-07-28: the bench is offline AND its only Python is a 2.x that
+  cannot be touched). It is an unpacked Windows embeddable CPython 3.8.10 with
+  the deps pre-installed into `Lib/site-packages`, so the bench does zero
+  installing: download the repo on an online PC → copy the folder → double-click
+  `start.bat`. `python38._pth` is patched (`Lib\site-packages` + `import site`)
+  or the embeddable ignores those packages. 3.8 because it is the last CPython
+  supporting Win7. Rebuild via `tools/make_offline_bundle.py` (runs on any OS —
+  `pip --platform win_amd64`), never by hand-editing site-packages. **Never put
+  it in Git LFS**: GitHub's "Download ZIP" would hand out pointer files and kill
+  the whole point. `.gitattributes` has `vendor/** -text` so nothing is
+  line-ending-mangled.
+- The bench's Python 2 is an asset, not a problem: `matrix/chariot_perf.py` is
+  meant to run under it (`chariot.python2`). Only the Playwright half needs 3.8.
+- Interpreter choice lives in `_py.bat`, `call`ed by every other `.bat`:
+  `.venv\Scripts\python.exe` first, else `vendor\python\python.exe`. No fallback
+  to a bare `python` on PATH — on those benches that IS the Python 2, and the
+  failure would look like a random SyntaxError. `setup.bat` detects a
+  ready-to-run `vendor/python` and only verifies imports (installs nothing).
 - Chrome via `channel="chrome"` (offline). Windows bench: locked Chrome 114 +
-  chromedriver 114. `pip install -r requirements.txt` (offline: pip download →
-  `--no-index --find-links`).
+  chromedriver 114. The repo ships NO browser binary — an offline bench needs
+  Chrome's full offline installer carried over.
 - Cross-platform: code is OS-independent; only the browser binary differs.
 
 ## Gotchas (learned the hard way)

@@ -70,17 +70,14 @@ Cudy 固件关掉了 IPv6 的证据链)都记在 `CLAUDE.md` 的 **Validated** �
 
 ## 环境(离线 Windows 测试台)
 
-- **Python 3.8+**,**隔离安装在本文件夹内**(Windows embeddable zip 或 venv),
-  从而完全不碰公司默认的 3.7 自动化环境和单机脚本。
+- **Python 3.8:仓库自带,不用装。** `vendor/python/` 是一份解压即用的 Windows
+  embeddable 3.8,依赖已经装在里面(约 97 MB,已提交)。台架上**零安装**:
+  下载 → 拷贝 → 双击 `start.bat`。公司那套锁死的 Python(2.x / 3.7)完全没被
+  碰过 —— 而且整轮里跑 Chariot 吞吐的那半边本来就要 Python 2,两者各跑各的。
+  依赖或版本要升级时,在联网机上 `python3 tools/make_offline_bundle.py` 重建后
+  提交;细节见 `vendor/README.md`,操作步骤见 `WINDOWS.md`。
 - **浏览器**:用 `channel="chrome"`(默认)驱动已装好的、版本锁定的 **Chrome 114**
-  —— 无需额外下载,完全离线。
-- **离线安装依赖包**:
-  ```
-  # 在联网机上
-  pip download -r requirements.txt -d wheels
-  # 把 ./wheels 拷到测试台,在隔离的 3.8 里:
-  pip install --no-index --find-links=wheels -r requirements.txt
-  ```
+  —— 仓库不带浏览器内核,所以**台架必须先装好 Chrome**(离线机要带完整安装包)。
 - **如果必须用 Playwright 自带的 Chromium(而非系统 Chrome)**:在联网机上
   `playwright install chromium`,拷贝浏览器缓存目录,运行时用 `--browsers-path`
   (PLAYWRIGHT_BROWSERS_PATH)指向它,并加 `--bundled-chromium`。

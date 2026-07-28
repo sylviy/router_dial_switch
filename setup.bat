@@ -2,14 +2,15 @@
 REM ==========================================================================
 REM  setup.bat  --  one-time setup on a Windows machine.  Double-click it.
 REM
-REM  Works in BOTH situations:
-REM    A) plain download from GitHub (no vendor\ folder)  -> uses the Python
-REM       already installed on the machine and downloads the deps with pip;
-REM    B) the offline USB bundle (vendor\python + vendor\wheels present)
-REM       -> uses the BUNDLED Python 3.8 and installs from vendor\wheels, so
-REM          the machine's locked system Python is never touched and no
-REM          internet is needed.
-REM  Either way you end up with an isolated .venv inside this folder.
+REM  Works in ALL THREE situations:
+REM    A) the repo as downloaded from GitHub -> vendor\python already carries
+REM       an embedded Python 3.8 with the dependencies pre-installed, so there
+REM       is NOTHING to install: this script only verifies it and stops.  That
+REM       is the offline-bench case (the bench's own Python 2 is never touched);
+REM    B) vendor\wheels present but no pre-installed runtime -> build a .venv
+REM       and install the deps from those wheels, still without internet;
+REM    C) no vendor\ at all (e.g. someone pruned it) -> use the Python already
+REM       installed on the machine and download the deps with pip.
 REM
 REM  Note: everything below runs from this folder (pushd), so the interpreter
 REM  is referenced by a RELATIVE path -- that keeps working even when the
@@ -20,6 +21,20 @@ pushd "%~dp0"
 
 set "PY="
 set "MODE="
+
+REM --- A) ready-to-run runtime shipped with the repo: verify and stop --------
+if exist "vendor\python\Lib\site-packages\playwright" (
+  echo === Ready-to-run runtime found in vendor\python -- nothing to install ===
+  "vendor\python\python.exe" -c "import sys, playwright.sync_api, yaml; print('imports OK on Python ' + sys.version.split()[0])"
+  if errorlevel 1 (
+    echo.
+    echo [ERROR] The bundled runtime is there but did not import.
+    echo         Usually that means the folder was copied without vendor\
+    echo         intact -- re-copy the WHOLE folder and try again.
+    goto :fail
+  )
+  goto :done
+)
 
 if exist "vendor\python\python.exe" (
   set "PY=vendor\python\python.exe"
@@ -80,9 +95,13 @@ echo === Step 3/3: verifying the imports work ===
 ".venv\Scripts\python.exe" -c "import playwright.sync_api, yaml; print('imports OK')"
 if errorlevel 1 goto :fail
 
+:done
 echo.
 echo ============================================================
 echo   SETUP COMPLETE.
+echo.
+echo   Easiest from here: double-click start.bat ^(pick a model by
+echo   number, Enter = the full round^).  Or, from the command line:
 echo.
 echo   1^) store router IP / passwords once:
 echo        run.bat setup

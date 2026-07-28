@@ -9,15 +9,15 @@ REM ==========================================================================
 setlocal
 pushd "%~dp0"
 
-if not exist ".venv\Scripts\python.exe" (
-  echo [ERROR] .venv not found.  Double-click setup.bat first ^(one time^).
+call "%~dp0_py.bat"
+if not defined PY (
   popd
   endlocal
   pause
   exit /b 1
 )
 
-".venv\Scripts\python.exe" tests\smoke_test.py %*
+"%PY%" tests\smoke_test.py %*
 set "rc=%errorlevel%"
 popd
 endlocal
