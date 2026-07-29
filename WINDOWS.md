@@ -66,7 +66,7 @@ start.bat                            :: 菜单 4 = 一次性存路由器 IP / �
 
 dial.bat Tenda_AX3000 dynamic        :: 切模式,只切换不保存(先看回读)
 dial.bat Tenda_AX3000 pppoe --apply  :: 确认无误后,真正下发保存
-dial.bat Cudy_AX l2tp --apply
+dial.bat Cudy_AX1500 l2tp --apply
 
 dial.bat                             :: 不带参数 = 列出有哪些已适配的型号
 

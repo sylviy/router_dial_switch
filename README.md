@@ -41,7 +41,7 @@ python run_matrix.py --demo                  # 整轮性能矩阵:先离线看�
 | 脚本 | 支持的模式 | 真机状态 |
 |---|---|---|
 | `models/Tenda_AX3000.py` | dynamic / pppoe / static / dhcpv6 / pppoev6(v6 精确到 flavor,无笼统 "ipv6") | **台架验收通过**(2026-07-18,含实际下发) |
-| `models/Cudy_AX.py`(老式 frameset 固件,与 AX3000 不是同一台) | dynamic / pppoe / static / l2tp / pptp | **台架验收通过**(2026-07-18,含 `--apply` 实际下发) |
+| `models/Cudy_AX1500.py`(老式 frameset 固件,与 AX3000 不是同一台) | dynamic / pppoe / static / l2tp / pptp | **台架验收通过**(2026-07-18,含 `--apply` 实际下发) |
 | `models/Cudy_AX3000.py` | dynamic / pppoe / l2tp / pptp | LuCI/OpenWrt 固件。选择器已在真机上引擎实测命中数==1;脚本机制已用 `cudy_luci.html` 离线验证(4 个 cbi.apply 的 form 锚定 / 含点号的 CBI id / XHR 重建 DOM)。**真机逐模式回读 + `--apply` 验收待做** |
 | `models/Mercusys_BE3600.py` | dynamic / pppoe / static / l2tp / pptp | 2026-07-11 真机跑通(当时走启发式);脚本形态的字段选择器仍标 `[待真机复核]` |
 
@@ -194,7 +194,7 @@ python tests/smoke_test.py --show   # 观看它点完所有模式
 登录 → 进 WAN 设置 → 定位控件 → 选中 → 填参数 → 回读 → 保存。看结尾的
 **`0 failed`**。覆盖:
 
-- **models/ 交付层**:用 `Tenda_AX3000.py` / `Cudy_AX.py` / `Mercusys_BE3600.py`
+- **models/ 交付层**:用 `Tenda_AX3000.py` / `Cudy_AX1500.py` / `Cudy_AX3000.py` / `Mercusys_BE3600.py`
   里的**真实 FACTS** 驱动对应 mock —— 原生 `<select>`、无 role 的 Vue widget
   (含 "Connect" 保存键)、IPv6 使能开关门控页、`cudy*.htm` 的老式 frameset
   (登录在主文档、菜单和表单各在子 frame,还有隐藏的 Connect/Disconnect 诱饵),
@@ -217,7 +217,8 @@ router_dial_switch/
   models/                **交付层:每台型号一个脚本**
     Tenda_AX3000.py      事实(FACTS)+ 入口;直接运行
     Mercusys_BE3600.py
-    Cudy_AX.py
+    Cudy_AX1500.py      老式 frameset 固件
+    Cudy_AX3000.py       LuCI/OpenWrt 固件(与上面不是同一台)
     _template.py         新型号照抄的注释模板
     _driver.py           所有型号共用的点击逻辑(零猜测,只吃显式事实)
     _browser.py          Playwright 启动(channel=chrome / 离线)

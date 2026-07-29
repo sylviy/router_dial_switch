@@ -6,7 +6,7 @@ REM  is passed straight through to it.
 REM
 REM    dial.bat Tenda_AX3000 dynamic          (switch only, does NOT save)
 REM    dial.bat Tenda_AX3000 pppoe --apply    (really saves)
-REM    dial.bat Cudy_AX l2tp --apply
+REM    dial.bat Cudy_AX1500 l2tp --apply
 REM    dial.bat                               (lists the available models)
 REM
 REM  Router IP / passwords come from router.yaml -- create it once from

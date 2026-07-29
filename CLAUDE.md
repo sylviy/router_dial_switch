@@ -118,7 +118,7 @@ chain with no router/Chariot present.
   skeleton. Never clicks apply; only `--nav` menu items and an `--open` trigger.
   Validated offline against the mocks: it independently reproduces the
   hand-written `Tenda_AX3000` (label-anchored `v-select` + `data-name` read-back
-  + nested-span apply) and `Cudy_AX` (frameset, native select, the pptp/l2tp
+  + nested-span apply) and `Cudy_AX1500` (frameset, native select, the pptp/l2tp
   `mode_overrides` split, `save_apply` among 8 decoy buttons).
 - `tools/check_model.py` — offline self-consistency gate for a model script
   (leftover TODOs, a mode missing `dial`/`apply` after overrides, required
@@ -286,7 +286,7 @@ python models/Tenda_AX3000.py dynamic               # per-mode live read-back
 ## Validated
 
 **Bench acceptance status (2026-07-19, user-confirmed):**
-`models/Tenda_AX3000.py` and `models/Cudy_AX.py` both **pass on the physical
+`models/Tenda_AX3000.py` and `models/Cudy_AX1500.py` both **pass on the physical
 devices, including the real `--apply` round** — dial mode changes and saves for
 every mode they declare. They are the reference examples; copy their shape.
 `models/Mercusys_BE3600.py` still carries `[待真机复核]` field selectors (the
@@ -363,7 +363,8 @@ verified live end-to-end (`applied:true`).  Still pending: the rest of the
 user's `--apply` round (pppoe → ipv6/DHCPv6 → pppoev6, i.e. the "Save" click).
 
 **Cudy (2026-07-18, live at 192.168.10.1; FW 1.0.1-20240321, SSID Cudy-554C —
-shell-label model name still to be read, script is `models/Cudy_AX.py`).**
+model confirmed 2026-07-29 as the **AX1500**, script is
+`models/Cudy_AX1500.py`).**
 Old-school **frameset** UI: login in the main document (`#pwd` +
 `input[value='Login']` — an input, text in `value=`), menus and the WAN form in
 separate child frames (`top_menu.htm` / `sub_menu_*.htm` / `tcpipwan.htm`), which
@@ -381,7 +382,7 @@ hides EIGHT `*Connect`/`*Disconnect` submits — never match apply by the text
 
 **Cudy AX3000 (2026-07-29, 192.168.10.1; LuCI/OpenWrt git-25.272.36397,
 hostname WR3000) — a SECOND, unrelated Cudy.** Not the same device or firmware
-family as `models/Cudy_AX.py` above (that one is the Realtek-SDK frameset UI);
+family as `models/Cudy_AX1500.py` above (that one is the Realtek-SDK frameset UI);
 both scripts coexist. Adapted by an agent on the live device; selectors
 engine-verified `count==1` there. Three LuCI-specific facts, all of which are
 now regression-covered offline by `tests/mock_router/cudy_luci.html`:
@@ -448,8 +449,11 @@ mode_override.
   of the same two UI families should be mostly mechanical; what still needs a
   human/agent call is `mode_overrides` (a mode living on its own page) and any
   control shape in «Known gaps».
-- Read the Cudy shell label and rename `Cudy_AX.py` / its `model:` to the real
-  model name (currently a placeholder).
+- ~~Read the Cudy shell label and rename `Cudy_AX.py`~~ **DONE 2026-07-29**
+  (user confirmed): it is the **AX1500**, now `models/Cudy_AX1500.py`. The
+  other bench Cudy is the LuCI **AX3000** — two different devices, two
+  firmware families, two scripts. Anyone with `model: Cudy_AX` in their own
+  (git-ignored) `perf.yaml` has to update it.
 - Re-verify on the bench the `[待真机复核]` lines in
   `models/Mercusys_BE3600.py` (field selectors, apply click, login button).
 - The `.bat` wrappers (`setup.bat` dual online/offline, `dial.bat`,

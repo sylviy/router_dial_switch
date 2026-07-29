@@ -174,7 +174,7 @@ python tools/check_model.py <型号>       # 至少能验语法合法性
 | 文件 | 看它学什么 |
 |---|---|
 | `models/Tenda_AX3000.py` | Vue SPA、role-less 下拉、表单行锚定、`dial.value`、IPv6 独立页 + `enable_toggle` + `mode_overrides`、嵌套 span 的保存键 |
-| `models/Cudy_AX.py` | 老式 frameset、原生 `<select>`、PPTP/L2TP 字段拆分、一堆隐藏诱饵按钮里挑保存键、"这台机没有 IPv6"的定案过程 |
+| `models/Cudy_AX1500.py` | 老式 frameset、原生 `<select>`、PPTP/L2TP 字段拆分、一堆隐藏诱饵按钮里挑保存键、"这台机没有 IPv6"的定案过程 |
 | `models/_template.py` | 空白模板 |
 
 Tenda 和 Cudy 都已在物理设备上通过验收(含 `--apply` 真实下发),照它们抄。

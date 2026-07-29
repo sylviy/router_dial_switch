@@ -107,7 +107,7 @@ echo   1^) store router IP / passwords once:
 echo        start.bat  ^-^> menu 4
 echo   2^) switch the dial mode on an adapted model:
 echo        dial.bat Tenda_AX3000 pppoe      ^(add --apply to really save^)
-echo        dial.bat Cudy_AX dynamic
+echo        dial.bat Cudy_AX1500 dynamic
 echo   3^) offline self-test ^(needs Chrome installed^):
 echo        smoke.bat
 echo ============================================================
