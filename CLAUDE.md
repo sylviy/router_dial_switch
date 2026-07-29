@@ -440,6 +440,15 @@ mode_override.
   ever wanted.
 - Captcha logins, canvas-drawn UIs and heavily obfuscated SPAs are out of
   scope: adapt by hand through the skill, or don't.
+- **When an adaptation gets stuck, first sort it into «locating» vs «control
+  shape»** — the two differ by an order of magnitude in cost and in who
+  should do them. The triage table is in the skill
+  (`adapt-router-model/SKILL.md`, 「卡住了」). Short version: if the probe
+  says it found the control, it is a locating problem and the fix must come
+  out general (neither `_driver.py` nor `probe_router.py` has a single
+  brand branch — keep it that way); if the control is visibly there but the
+  probe keeps missing it, it is probably a shape `_driver.py` has no `kind`
+  for, which is a feature with a mock, not a bug fix.
 
 ## Next steps
 - Produce `models/` scripts for the remaining group brands — **Buffalo, Huawei**
