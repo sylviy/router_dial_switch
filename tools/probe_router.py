@@ -669,6 +669,50 @@ def emit_script(path: str, facts: dict, probe_file: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+def probe(args):
+    """跑一次取证,返回 (完整证据, FACTS 建议)。
+
+    命令行入口和 adapt.py 向导都走这里 —— 两条路的探测行为必须完全一致,
+    否则"向导能过、命令行不过"这种问题没法排查。
+    """
+    cfg = Config()
+    cfg.headless = args.headless
+    report = {"url": args.url, "generated_at": datetime.datetime.now().isoformat(),
+              "nav": list(args.nav), "opened": args.open_sel}
+
+    with Browser(cfg) as br:
+        page = br.goto(args.url)
+        login = do_login(page, args, report)
+        facts_stub = {"login": login, "wan_path": list(args.nav)}
+        nav_result = {"warnings": []}
+        _driver._navigate(page, facts_stub, nav_result)
+        report["nav_warnings"] = nav_result["warnings"]
+        _driver._settle(page, 800)
+        report["final_url"] = page.url
+        report["frames"] = harvest(page)
+        if args.open_sel:
+            # 点开下拉抄选项原文。只点触发器 —— 保存键永远不碰。
+            trig = _driver._locate(page, args.open_sel)
+            if trig:
+                trig.click()
+                _driver._settle(page, 600)
+                report["opened_options"] = _harvest_options(page)
+            else:
+                report["opened_options"] = {"error": "没找到 %s" % args.open_sel}
+
+    facts = suggest_facts(report["frames"], args.brand, args.model, args.url,
+                          args.nav, login)
+    if report.get("opened_options"):
+        for opt in report["opened_options"].get("options", []):
+            key = classify_mode(opt)[0]
+            if key and key not in facts["modes"]:
+                facts["modes"][key] = opt
+        facts["modes"].pop("TODO", None)
+    report["suggested_facts"] = facts
+    return report, facts
+
+
+# ---------------------------------------------------------------------------
 def main(argv=None) -> int:
     _driver._console_safe()
     saved = settings_mod.load()
@@ -700,39 +744,7 @@ def main(argv=None) -> int:
         ap.error("没有地址:--url http://192.168.1.1,"
                  "或先跑 python start.py --setup 存进 router.yaml")
 
-    cfg = Config()
-    cfg.headless = args.headless
-    report = {"url": args.url, "generated_at": datetime.datetime.now().isoformat(),
-              "nav": list(args.nav), "opened": args.open_sel}
-
-    with Browser(cfg) as br:
-        page = br.goto(args.url)
-        login = do_login(page, args, report)
-        facts_stub = {"login": login, "wan_path": list(args.nav)}
-        nav_result = {"warnings": []}
-        _driver._navigate(page, facts_stub, nav_result)
-        report["nav_warnings"] = nav_result["warnings"]
-        _driver._settle(page, 800)
-        report["final_url"] = page.url
-        report["frames"] = harvest(page)
-        if args.open_sel:
-            # 点开下拉抄选项原文。只点触发器 —— 保存键永远不碰。
-            trig = _driver._locate(page, args.open_sel)
-            if trig:
-                trig.click()
-                _driver._settle(page, 600)
-                report["opened_options"] = _harvest_options(page)
-            else:
-                report["opened_options"] = {"error": "没找到 %s" % args.open_sel}
-
-    facts = suggest_facts(report["frames"], args.brand, args.model, args.url,
-                          args.nav, login)
-    for opt in (report.get("opened_options") or {}).get("options", []):
-        key = classify_mode(opt)[0]
-        if key and key not in facts["modes"]:
-            facts["modes"][key] = opt
-    facts["modes"].pop("TODO", None) if report.get("opened_options") else None
-    report["suggested_facts"] = facts
+    report, facts = probe(args)
 
     out = args.out or os.path.join(
         ROOT, "artifacts", "probe_%s_%s.json"

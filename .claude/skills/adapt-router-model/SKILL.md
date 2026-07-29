@@ -65,6 +65,12 @@ print(json.dumps([b for f in d['frames'] for b in f.get('buttons',[])],ensure_as
 python start.py --setup      # 存路由器 IP / 管理密码 -> router.yaml(git 忽略)
 ```
 
+**如果操作者是人而不是 agent,直接让他跑 `python adapt.py`(Windows 双击
+`adapt.bat`)** —— 那是同一条流程的向导版:问品牌/型号/地址/密码,然后自动
+走完探测 → 生成 → 体检 → 逐模式验证,每步用人话解释,找不到控件时会停下来问
+"设置页在哪个菜单"。下面这些分步命令是它内部做的事,agent 需要精细控制
+(补 `--nav`、`--open`、改选择器)时才手动用。
+
 必须在**能访问到路由器的机器**上跑(和路由器同一局域网)。沙箱环境常常能上
 互联网但到不了路由器的内网 —— 先 `curl -m 4 http://<ip>` 探一下,别凭旧结论
 下判断。真连不上就走「拿不到真机时」那一节。

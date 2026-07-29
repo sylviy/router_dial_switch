@@ -76,6 +76,14 @@ chain with no router/Chariot present.
   deleted cli.py so testers have exactly one entry point. Friendly verdict lines instead of raw JSON.
   Hidden `--url`/`--headless` exist ONLY so the smoke test can drive it over
   piped stdin (indexes computed, not hardcoded, so new models don't break it).
+- `adapt.py` (+ `adapt.bat`) — **the wizard for onboarding a new device**
+  (user, 2026-07-29: a list of flagged commands "I can't deal with, I don't
+  know why I need to do this"). Same shape as `start.py`: asks brand / model /
+  address / password, then runs probe → emit → `check_model` → per-mode live
+  read-back, narrating each step in plain language, and stops to ask "which
+  menu is the settings page under?" instead of guessing when the dial control
+  isn't found. Nothing is applied until a final explicit y. The flagged
+  commands still exist for an agent that needs `--nav`/`--open` control.
 - `matrix/` + `run_matrix.py` — **the orchestration layer (the full test loop).**
   `run.py` is the main loop: for each dial mode → `_driver.run()` switch (lazy
   import, so `--demo` needs no Playwright) → `wanup.wait_wan_up` → for each

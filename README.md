@@ -146,29 +146,33 @@ dynamic → pppoe → static → dhcpv6 → pppoev6),每档切换**必定真正�
 
 ### 适配一台新型号
 
-在能访问路由器 LAN 的机器上,四条命令:
+**最简单:一条命令,按提示答题。**
 
 ```bash
-# 1. 取证(只读:登录、抄下全部 frame 的控件、用 Playwright 引擎实测每个
-#    候选选择器的命中数;绝不点保存)。--emit 直接落一个骨架文件。
+python adapt.py        # Windows 上双击 adapt.bat
+```
+
+它会问你品牌/型号/地址/密码,然后依次:探测页面 → 生成
+`models/<品牌>_<型号>.py` → 离线体检 → **逐个拨号方式真机验证**,每一步都用
+人话讲它在做什么、看到了什么。**前三步不改路由器任何配置**,第 4 步默认也只
+切换不保存;只有最后问你"要不要真正保存"并回答 y 之后才会下发。
+
+找不到拨号控件时它会停下来问你"设置页在哪个菜单",而不是猜。
+
+想手动分步跑(或写脚本)时,下面这四条就是它内部做的事:
+
+```bash
 python tools/probe_router.py --url http://192.168.1.1 --pass <管理密码> \
     --nav "Internet Settings" --brand <品牌> --model <型号> \
-    --emit models/<品牌>_<型号>.py
-
-# 2. 离线体检(残留 TODO、缺字段、措辞撞车、选择器语法错都会被拦下)
-python tools/check_model.py <品牌>_<型号>
-
-# 3. 真机逐模式验证:success 且 read_back == 目标措辞才算过
-python models/<品牌>_<型号>.py dynamic          # 先看回读,不保存
-
-# 4. 全部对了再验收
-python models/<品牌>_<型号>.py pppoe --apply    # 真正下发
+    --emit models/<品牌>_<型号>.py        # 只读探测 + 生成骨架
+python tools/check_model.py <品牌>_<型号>  # 离线体检
+python models/<品牌>_<型号>.py dynamic     # 真机逐模式看回读,不保存
+python models/<品牌>_<型号>.py pppoe --apply   # 全对了再验收
 ```
 
 完整方法论(含判断"这台机到底有没有 IPv6"的穷尽核查法、各种诱饵陷阱)在
 `.claude/skills/adapt-router-model/SKILL.md`,FACTS 每个键的说明在同目录的
-`reference.md`。把 Claude 接到那台机上(**Claude in Chrome**)照 skill 走也可以
-—— 两条路的产出物是同一个文件。
+`reference.md`。
 
 产出物就是那**一个文件**,其它文件一律不用动 —— `_driver.py` 已经包含全部点击
 逻辑,`start.py` 会自动把新型号列进菜单,`run_matrix.py` 会自动遍历它声明的
@@ -204,8 +208,9 @@ python tests/smoke_test.py --show   # 观看它点完所有模式
 
 ```
 router_dial_switch/
-  start.bat / start.py   **唯一需要记住的入口**:列型号按数字选,回车即整轮;
+  start.bat / start.py   **日常入口**:列型号按数字选,回车即整轮;
                          菜单 4 = 存 IP/密码/宽带账号到 router.yaml
+  adapt.bat / adapt.py   **适配新机器的向导**:探测 -> 生成脚本 -> 体检 -> 验证
   run_matrix.py          整套性能矩阵:切模式 → 等WAN → 测吞吐 → 出报告
   perf.example.yaml      矩阵配置模板(复制成 perf.yaml;测什么/怎么测/台架拓扑)
   models/                **交付层:每台型号一个脚本**
