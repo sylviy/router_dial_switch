@@ -208,6 +208,23 @@ def main(argv=None) -> int:
             return 2
         _describe(facts, report)
 
+        # 登录没成功就别往下走:后面每一步都需要登录后的页面,继续只会得到
+        # 一串没有意义的"没找到"。登录是最难远程排查的一环,所以这里把登录页
+        # 当时的样子直接摊开 —— 用户不用再去猜该贴什么给别人。
+        if report.get("login", {}).get("ok") is False:
+            print("\n登录没成功,后面几步做不了。")
+            for line in probe_router.format_login_diag(report):
+                print("  " + line)
+            print("\n先自己试三件事(都不用改代码):")
+            print("  1. 用浏览器手工登一次,确认密码没错、没被改过;")
+            print("  2. 把浏览器里已经登录着的页签**全部退出** —— 不少机型"
+                  "同一时间只允许一个 Web 会话;")
+            print("  3. 看一眼上面那张截图:如果它停在「设置向导」/「修改密码」"
+                  "/「选择地区」这类页面,要先在浏览器里把首次配置走完。")
+            print("\n还不行,就把上面「登录页诊断」那一段贴给 agent,问它:"
+                  "该用什么 --login-pass / --login-btn。")
+            return 1
+
         found = not str((facts.get("dial") or {}).get("selector", "")).startswith("TODO")
         if found and report.get("dial_visible"):
             break

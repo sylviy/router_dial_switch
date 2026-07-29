@@ -433,7 +433,7 @@ def do_login(page, args, report: dict) -> None:
 
     ok = _driver._login(page, {"login": login}, args.user, args.password)
     if not ok and not args.login_btn:
-        for sel in _login_button_candidates(page):
+        for sel in _login_button_candidates(page, login["password"]):
             el = _driver._locate(page, sel)
             if not el:
                 continue
@@ -442,7 +442,8 @@ def do_login(page, args, report: dict) -> None:
             except Exception:
                 continue
             gone = _driver._poll(
-                page, lambda: _driver._locate(page, args.login_pass) is None, 8000)
+                page,
+                lambda: _driver._locate(page, login["password"]) is None, 8000)
             if gone:
                 login["button"] = sel
                 ok = True
@@ -450,14 +451,112 @@ def do_login(page, args, report: dict) -> None:
                 break
     report["login"] = dict(login, ok=ok)
     if not ok:
-        print("[X] 还停在登录页 —— 密码不对、登录键没找对(用 --login-btn 指定),"
-              "或这台机只允许一个 Web 会话(先关掉浏览器里登录着的页签)。")
+        # 登录失败是最难远程排查的一类:光说"还停在登录页"等于没说,用户没有
+        # 任何东西可以贴给别人。所以这里把登录页**当时的样子**抄下来 ——
+        # 密码框/用户名框/按钮/表单/frame,外加一张截图。这几十行就是排查
+        # 登录问题需要的全部输入,不用再去翻那份几百 KB 的完整证据。
+        report["login_diag"] = _login_diagnosis(page)
+        try:
+            shot = os.path.join(ROOT, "artifacts", "login_page.png")
+            os.makedirs(os.path.dirname(shot), exist_ok=True)
+            page.screenshot(path=shot, full_page=True)
+            report["login_diag"]["screenshot"] = shot
+        except Exception:
+            pass
+        print("[X] 登录没成功 —— 下面是登录页当时的样子(排查登录就看这一段)。")
     return login
 
 
-def _login_button_candidates(page):
-    """页面上文字像"登录"的可见按钮,按"属性锚点优先"给出选择器(命中数==1)。"""
+def _login_diagnosis(page) -> dict:
+    """登录失败时,抄下登录页上所有和"登录"有关的控件。刻意做得很小:
+    这是要贴给别人看的东西,不是完整证据。"""
+    out = {"url": "", "frames": len(page.frames), "password": [], "text": [],
+           "buttons": [], "forms": [], "title": ""}
+    try:
+        out["url"] = page.url
+        out["title"] = page.title()
+    except Exception:
+        pass
+    for fr in page.frames:
+        try:
+            data = fr.evaluate(HARVEST_JS)
+        except Exception:
+            continue
+        # HARVEST_JS 只抄 DOM;pin(候选选择器 + 命中数)是 Python 这边算的,
+        # 所以这里要自己算一遍 —— 不能拿 harvest() 才会补上的键。
+        for inp in data.get("inputs") or []:
+            if inp.get("type") not in ("password", "text", "tel", "email"):
+                continue
+            pin = _pin(fr, page, inp, "input")
+            row = {"type": inp.get("type"), "id": inp.get("id"),
+                   "name": inp.get("name"), "label": (inp.get("label") or "")[:40],
+                   "placeholder": inp.get("placeholder"),
+                   "visible": inp.get("visible"),
+                   "pin": pin["recommended"] or "(没有唯一选择器)"}
+            if inp.get("type") == "password":
+                out["password"].append(row)
+            else:
+                out["text"].append(row)
+        for b in data.get("buttons") or []:
+            sel = _apply_selector(b)
+            out["buttons"].append(
+                {"text": (b.get("text") or "")[:30], "value": b.get("value"),
+                 "visible": b.get("visible"), "pin": sel,
+                 "count": _count(fr, sel)})
+        try:
+            out["forms"] += fr.evaluate(
+                "() => Array.from(document.querySelectorAll('form'))"
+                ".map(f => ({action: f.getAttribute('action') || '',"
+                " id: f.id || '', onsubmit: !!f.getAttribute('onsubmit')}))")
+        except Exception:
+            pass
+    return out
+
+
+def format_login_diag(report: dict) -> list:
+    """把登录诊断排成可以直接贴走的十几行。"""
+    d = report.get("login_diag") or {}
+    if not d:
+        return []
+    out = ["--- 登录页诊断(把这一段贴给 agent 就够)---",
+           "URL: %s" % d.get("url", ""),
+           "标题: %r  frame 数: %s" % (d.get("title", ""), d.get("frames"))]
+    if not d.get("password"):
+        out.append("密码框: **一个都没有** —— 这台机的登录框可能不是 "
+                   "<input type=password>,或者页面还没渲染出来")
+    for r in d.get("password", [])[:4]:
+        out.append("密码框: pin=%s  id=%r name=%r 可见=%s label=%r"
+                   % (r["pin"], r["id"], r["name"], r["visible"], r["label"]))
+    for r in d.get("text", [])[:4]:
+        out.append("文本框: pin=%s  id=%r name=%r label=%r placeholder=%r"
+                   % (r["pin"], r["id"], r["name"], r["label"], r["placeholder"]))
+    for b in d.get("buttons", [])[:6]:
+        out.append("按钮:   %r value=%r 可见=%s  pin=%s(命中 %s)"
+                   % (b["text"], b["value"], b["visible"], b["pin"], b["count"]))
+    for f in d.get("forms", [])[:4]:
+        out.append("表单:   action=%r id=%r 自带onsubmit=%s"
+                   % (f["action"], f["id"], f["onsubmit"]))
+    if d.get("screenshot"):
+        out.append("截图:   %s(先自己看一眼,常常一眼就明白)"
+                   % os.path.relpath(d["screenshot"], ROOT))
+    return out
+
+
+def _login_button_candidates(page, pw_sel: str = ""):
+    """登录键的候选,两种来源:
+
+    1. 文字像"登录"的可见按钮;
+    2. **密码框所在那个 form 里的提交键** —— 不看文字。首次开机的机型常把它
+       写成 "Let's Get Started" / "开始设置" 这类,词表永远追不全,但"密码框
+       自己那个表单的提交键"这个关系是稳的。
+    """
     out = []
+    if pw_sel:
+        for fr in page.frames:
+            for tail in ("button", "input[type=submit]", "[type=submit]"):
+                sel = "form:has(%s) %s" % (pw_sel, tail)
+                if _count(fr, sel) == 1 and sel not in out:
+                    out.append(sel)
     for fr in page.frames:
         try:
             data = fr.evaluate(HARVEST_JS)
@@ -956,6 +1055,8 @@ def _harvest_options(page) -> dict:
 
 def _summary(report: dict, out: str) -> None:
     print("\n===== 取证摘要 =====")
+    for line in format_login_diag(report):
+        print(line)
     print("落点 URL:%s" % report.get("final_url", ""))
     for w in report.get("nav_warnings") or []:
         print("  [!] %s" % w)
