@@ -26,7 +26,7 @@ if ROOT not in sys.path:
 
 import settings as settings_mod
 from modes import MODE_REQUIRED_FIELDS, merge_params
-from matrix.run import list_models
+from matrix.run import list_models, planned_modes
 
 # 字段问起来时给同事看的中文说明
 _FIELD_HINT = {
@@ -156,7 +156,7 @@ def main(argv=None) -> int:
         print("models/ 里没有型号脚本 —— 先按 skill 适配一台(见 README)。")
         return 1
 
-    print("支持的型号(括号里 = 整轮会遍历的拨号方式,按轮次顺序):")
+    print("支持的型号(括号里 = 该型号声明的拨号方式,按轮次顺序):")
     facts_all = {}
     for i, name in enumerate(names, 1):
         facts_all[name] = _load_facts(name)
@@ -164,12 +164,21 @@ def main(argv=None) -> int:
               % (i, name, "/".join(all_modes(facts_all[name]))))
     name = names[_pick("选型号", len(names)) - 1]
     facts = facts_all[name]
-    round_modes = all_modes(facts)
+    declared = all_modes(facts)
+    # 整轮跑哪几档由 perf.yaml 说了算(没写才是全部)—— 菜单要说实话,
+    # 不然写了 dial_modes 的台架会以为工具漏测了
+    round_modes = planned_modes(facts)
 
     print("要做什么:")
-    print("  1. 整轮性能测试(默认):遍历全部拨号方式 %s,"
-          % " → ".join(round_modes))
+    print("  1. 整轮性能测试(默认):依次跑 %s," % " → ".join(round_modes))
     print("     每档真切换 → 等WAN → 测吞吐 → 出报告")
+    if round_modes != declared:
+        print("     (这几档来自 perf.yaml 的 dial_modes;该型号声明的是 %s)"
+              % "/".join(declared))
+    unknown = [m for m in round_modes if m not in declared]
+    if unknown:
+        print("     [!] perf.yaml 里的 %s 这台机没有声明,整轮跑到会失败 ——"
+              " 先从 dial_modes 里去掉。" % "/".join(unknown))
     print("  2. 只切一个拨号方式(单步调试;同样直接下发)")
     print("  3. 整轮离线演示(不碰路由器,出样例报告)")
     print("  4. 设置:存路由器 IP / 管理密码 / 宽带账号(存一次,以后全回车)")
@@ -236,7 +245,9 @@ def main(argv=None) -> int:
         return matrix_main(cmd)
 
     # ---- 2:只切一个拨号方式(单步调试)------------------------------------
-    modes = round_modes
+    # 单步调试不受 perf.yaml 的 dial_modes 限制:那是"整轮测哪几档"的配置,
+    # 手工切一档时该型号声明的每一档都得能选
+    modes = declared
     print("该型号支持的模式:")
     for i, m in enumerate(modes, 1):
         print("  %d. %s" % (i, m))

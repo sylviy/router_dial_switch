@@ -81,6 +81,21 @@ def all_modes(facts: dict) -> list:
     return modes
 
 
+def planned_modes(facts: dict) -> list:
+    """整轮**实际**会跑的拨号方式:perf.yaml 写了 dial_modes 就以它为准
+    (子集 / 改顺序 / 带参数),没写才是该型号声明的全部。
+
+    向导必须显示这个而不是 all_modes():perf.yaml 一旦限定了 dial_modes,
+    菜单还写着"遍历全部拨号方式 dynamic → pppoe → static → …",跑完却少了
+    几档 —— 在台架上看起来像漏测,而不是像配置。
+    """
+    try:
+        cfg = perf_config.load()
+    except Exception:                 # perf.yaml 坏了:run.py 会给出真正的报错
+        return all_modes(facts)
+    return [s.mode for s in cfg.dial_modes] or all_modes(facts)
+
+
 def _switch(facts, mode, params, admin_user, admin_pass, headless):
     """真正切一次拨号方式并**下发保存**(整轮里不下发,吞吐测的就不是这档
     模式 —— 所以矩阵里没有"只切换不保存"的选项)。延迟 import _driver:
