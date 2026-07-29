@@ -467,11 +467,65 @@ def do_login(page, args, report: dict) -> None:
     return login
 
 
+CLICKABLE_JS = r"""
+() => {
+  const txt = el => (el.innerText || el.textContent || '').replace(/\s+/g,' ').trim();
+  const vis = el => {
+    const r = el.getBoundingClientRect();
+    const s = getComputedStyle(el);
+    return !!(r.width && r.height) && s.visibility !== 'hidden' && s.display !== 'none';
+  };
+  const out = [], seen = new Set();
+  const sel = "a, [role=button], [onclick], [class*='btn'], [class*='button'],"
+            + " [class*='submit'], [class*='login']";
+  for (const el of document.querySelectorAll(sel)) {
+    if (seen.has(el) || !vis(el)) continue;
+    seen.add(el);
+    const t = txt(el);
+    if (t.length > 30) continue;
+    out.push({tag: el.tagName.toLowerCase(), text: t, id: el.id || '',
+              cls: (typeof el.className === 'string' ? el.className.trim() : ''),
+              onclick: !!el.getAttribute('onclick'),
+              outer: el.outerHTML.slice(0, 160)});
+    if (out.length >= 20) break;
+  }
+  return out;
+}
+"""
+
+
+def _clickables(page) -> list:
+    """登录页上所有**看起来能点**的东西 —— 不限于 <button>。
+
+    老机型的登录键常常是 `<a class="button">` 或 `<div onclick=...>`,一般的
+    按钮采集(button / input[type=submit])一个都收不到,于是诊断里"按钮"
+    一栏空空如也,用户手上什么线索都没有。
+    """
+    out = []
+    for i, fr in enumerate(page.frames):
+        try:
+            for c in fr.evaluate(CLICKABLE_JS):
+                c["frame"] = i
+                if c["id"]:
+                    c["pin"] = "#%s" % c["id"]
+                elif c["cls"]:
+                    c["pin"] = "%s.%s" % (c["tag"], c["cls"].split()[0])
+                elif c["text"]:
+                    c["pin"] = '%s:text-is("%s")' % (c["tag"], c["text"])
+                else:
+                    c["pin"] = ""
+                c["count"] = _count(fr, c["pin"]) if c["pin"] else 0
+                out.append(c)
+        except Exception:
+            continue
+    return out
+
+
 def _login_diagnosis(page) -> dict:
     """登录失败时,抄下登录页上所有和"登录"有关的控件。刻意做得很小:
     这是要贴给别人看的东西,不是完整证据。"""
     out = {"url": "", "frames": len(page.frames), "password": [], "text": [],
-           "buttons": [], "forms": [], "title": ""}
+           "buttons": [], "forms": [], "title": "", "clickables": []}
     try:
         out["url"] = page.url
         out["title"] = page.title()
@@ -510,6 +564,7 @@ def _login_diagnosis(page) -> dict:
                 " id: f.id || '', onsubmit: !!f.getAttribute('onsubmit')}))")
         except Exception:
             pass
+    out["clickables"] = _clickables(page)
     return out
 
 
@@ -520,7 +575,13 @@ def format_login_diag(report: dict) -> list:
         return []
     out = ["--- 登录页诊断(把这一段贴给 agent 就够)---",
            "URL: %s" % d.get("url", ""),
+           "首个响应: HTTP %s" % report.get("http_status"),
            "标题: %r  frame 数: %s" % (d.get("title", ""), d.get("frames"))]
+    if report.get("http_status") in (401, 403):
+        out.append("** HTTP %s = 这台机用 HTTP Basic 认证(浏览器原生弹窗),"
+                   "DOM 里不会有密码框。工具已自动带凭据重试,还是 401 就是"
+                   "用户名不对 —— 用 --user 指定(默认 admin)。**"
+                   % report.get("http_status"))
     if not d.get("password"):
         out.append("密码框: **一个都没有** —— 这台机的登录框可能不是 "
                    "<input type=password>,或者页面还没渲染出来")
@@ -536,6 +597,12 @@ def format_login_diag(report: dict) -> list:
     for f in d.get("forms", [])[:4]:
         out.append("表单:   action=%r id=%r 自带onsubmit=%s"
                    % (f["action"], f["id"], f["onsubmit"]))
+    if not d.get("buttons"):
+        out.append("(页面上没有 <button>/<input type=submit> —— 老机型的登录键"
+                   "常是 <a> 或 <div>,见下面「可点元素」)")
+    for c in (d.get("clickables") or [])[:8]:
+        out.append("可点元素: <%s> %r  pin=%s(命中 %s)"
+                   % (c["tag"], c["text"], c["pin"], c["count"]))
     if d.get("screenshot"):
         out.append("截图:   %s(先自己看一眼,常常一眼就明白)"
                    % os.path.relpath(d["screenshot"], ROOT))
@@ -569,6 +636,12 @@ def _login_button_candidates(page, pw_sel: str = ""):
             sel = _apply_selector(b)
             if _count(fr, sel) == 1 and sel not in out:
                 out.append(sel)
+    # 老 UI 的登录键可能是 <a> 或 <div>,上面的按钮采集收不到它们
+    for c in _clickables(page):
+        if not any(w in _norm(c.get("text")) for w in LOGIN_WORDS):
+            continue
+        if c.get("count") == 1 and c["pin"] not in out:
+            out.append(c["pin"])
     return out
 
 
@@ -831,11 +904,17 @@ def probe(args):
     """
     cfg = Config()
     cfg.headless = args.headless
+    if args.password:
+        cfg.http_user, cfg.http_pass = (args.user or "admin"), args.password
     report = {"url": args.url, "generated_at": datetime.datetime.now().isoformat(),
               "nav": list(args.nav), "opened": args.open_sel}
 
     with Browser(cfg) as br:
         page = br.goto(args.url)
+        try:
+            report["http_status"] = br.last_response.status if br.last_response else None
+        except Exception:
+            report["http_status"] = None
         login = do_login(page, args, report)
         facts_stub = {"login": login, "wan_path": list(args.nav)}
         nav_result = {"warnings": []}

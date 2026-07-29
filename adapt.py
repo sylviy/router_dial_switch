@@ -190,13 +190,14 @@ def main(argv=None) -> int:
 
     # ---- 第 1 步:探测 ----------------------------------------------------
     nav: list = []
+    login_btn = ""          # 登录键选择器;登录失败时问用户按钮上的文字再补
     facts = report = None
     while True:
         _rule("[1/4] 探测页面(只看不改)")
         print("正在登录并抄下页面控件…(会开 Chrome,别动它)")
         args = _probe_args(url=url, user=saved.get("user", ""), password=password,
                            nav=list(nav), brand=brand, model=model,
-                           headless=cli.headless)
+                           login_btn=login_btn, headless=cli.headless)
         try:
             report, facts = probe_router.probe(args)
         except Exception as exc:
@@ -215,6 +216,20 @@ def main(argv=None) -> int:
             print("\n登录没成功,后面几步做不了。")
             for line in probe_router.format_login_diag(report):
                 print("  " + line)
+            # 最常见的一种:密码框对了,但这台机的登录键只认鼠标点击,回车不
+            # 提交,而按钮文字又不在词表里。这个问题用户看着屏幕就能回答 ——
+            # 和"设置页在哪个菜单"一样,问一句比猜十次强。
+            if not login_btn and (report.get("login_diag") or {}).get("password"):
+                print("\n密码框是找到了的,那多半是**登录按钮没点到**"
+                      "(有些机型回车不提交)。")
+                print("上面「按钮:」那几行里,哪个是登录键?把它**按钮上的文字**"
+                      "原样告诉我。")
+                txt = _ask("登录按钮上的文字(直接回车 = 跳过): ")
+                if txt:
+                    login_btn = ('button:text-is("%s"), input[value="%s"], '
+                                 'a:text-is("%s")' % (txt, txt, txt))
+                    print("好,这次用 %s 再试一遍。" % login_btn)
+                    continue
             print("\n先自己试三件事(都不用改代码):")
             print("  1. 用浏览器手工登一次,确认密码没错、没被改过;")
             print("  2. 把浏览器里已经登录着的页签**全部退出** —— 不少机型"

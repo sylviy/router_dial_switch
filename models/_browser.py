@@ -27,12 +27,20 @@ class Browser:
         self._browser = None
         self._context = None
         self.page = None
+        self.last_response = None
 
     def __enter__(self):
         self.cfg.apply_env()
         self._pw = sync_playwright().start()
         self._browser = self._launch()
-        self._context = self._browser.new_context(ignore_https_errors=True)
+        ctx_kwargs = {"ignore_https_errors": True}
+        if self.cfg.http_pass:
+            # 老机型的登录可能是 HTTP Basic(浏览器原生弹窗,DOM 里没有密码框)。
+            # 带上凭据后 Playwright 会自动应答 401;不是 Basic 的机器不受影响。
+            ctx_kwargs["http_credentials"] = {
+                "username": self.cfg.http_user or "admin",
+                "password": self.cfg.http_pass}
+        self._context = self._browser.new_context(**ctx_kwargs)
         self._context.set_default_timeout(self.cfg.default_timeout_ms)
         self._context.set_default_navigation_timeout(self.cfg.nav_timeout_ms)
         self.page = self._context.new_page()
@@ -56,7 +64,9 @@ class Browser:
         return chromium.launch(**launch_kwargs)
 
     def goto(self, url: str):
-        self.page.goto(url, wait_until="domcontentloaded")
+        # 记住首个响应:HTTP 401 是"这台机用 Basic 认证"的铁证,而那种页面
+        # DOM 里不会有任何密码框 —— 不记下来的话排查时只会看到"没有密码框"。
+        self.last_response = self.page.goto(url, wait_until="domcontentloaded")
         return self.page
 
     def __exit__(self, exc_type, exc, tb):

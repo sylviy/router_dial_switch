@@ -469,6 +469,10 @@ def run(facts: dict, mode: str, params: Optional[Dict[str, str]] = None,
     cfg = config or Config()
     if headless is not None:
         cfg.headless = headless
+    # 管理密码同时给 HTTP Basic 用:老机型的登录可能是浏览器原生弹窗
+    # (DOM 里没有密码框,填选择器永远填不到)。不是 Basic 的机器不受影响。
+    if admin_pass and not cfg.http_pass:
+        cfg.http_user, cfg.http_pass = (admin_user or "admin"), admin_pass
     with Browser(cfg) as br:
         page = br.goto(url or facts["url"])
         if not _login(page, facts, admin_user, admin_pass):

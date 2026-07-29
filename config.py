@@ -23,6 +23,11 @@ class Config:
     # Folder holding a pre-staged Playwright browser bundle for fully-offline
     # installs.  When set, exported as PLAYWRIGHT_BROWSERS_PATH before launch.
     browsers_path: Optional[str] = None
+    # HTTP Basic 认证(老机型常见:登录是浏览器原生弹窗,**DOM 里根本没有
+    # 密码框**,所以任何选择器都救不了)。填了就交给 Playwright 应答 401 挑战;
+    # 服务器不要求认证时它不会发出去,填了也无害。
+    http_user: Optional[str] = None
+    http_pass: Optional[str] = None
 
     # --- timing (milliseconds) ---------------------------------------------
     default_timeout_ms: int = 15000     # per-action auto-wait ceiling
