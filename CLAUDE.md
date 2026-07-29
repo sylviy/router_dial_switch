@@ -379,6 +379,33 @@ hides EIGHT `*Connect`/`*Disconnect` submits — never match apply by the text
 (read_back + fills, no-apply); `--apply` acceptance still pending.  Mock:
 `cudy*.htm` frameset set.
 
+**Cudy AX3000 (2026-07-29, 192.168.10.1; LuCI/OpenWrt git-25.272.36397,
+hostname WR3000) — a SECOND, unrelated Cudy.** Not the same device or firmware
+family as `models/Cudy_AX.py` above (that one is the Realtek-SDK frameset UI);
+both scripts coexist. Adapted by an agent on the live device; selectors
+engine-verified `count==1` there. Three LuCI-specific facts, all of which are
+now regression-covered offline by `tests/mock_router/cudy_luci.html`:
+  * **CBI ids contain dots** (`cbid.network.wan.proto`), so `#cbid.network.wan.proto`
+    parses as "id=cbid + three classes" and hits 0 — every selector uses
+    `[id='...']` instead;
+  * **`button[name='cbi.apply']` hits 4** on /admin/setup (WAN / 2.4G / VPN /
+    system, one form each). Only `form:has([id='cbid.network.wan.proto'])
+    button[name='cbi.apply']` hits 1. The mock's decoy forms shout
+    "WRONG FORM" through the toast if the wrong one is clicked;
+  * **selecting a proto re-renders the whole section over XHR** (the `<select>`
+    itself is replaced), so the read-back only survives because `_locate`
+    returns a Locator that re-resolves — an ElementHandle would go stale. The
+    credential inputs mount on that same XHR, which `_fill_params` polls for.
+  * login is LuCI's salted-hash challenge: fill the visible `#luci_password2`
+    and press Enter, and the form's own onsubmit JS does the hashing (no
+    `login.button` in FACTS, so the driver presses Enter).
+  * PPPoE/L2TP/PPTP **share one pair of DOM ids** (`...wan.username` /
+    `...wan.password`); only `server` is tunnel-only. Safe because
+    `_fill_params` picks concepts per mode.
+**Live per-mode read-back and the `--apply` acceptance are still PENDING** —
+what is proven today is that the FACTS shape drives correctly (all four modes,
+correct read-back, apply landing on the WAN form) against the mock.
+
 **IPv6 is compiled OFF on this Cudy build — proven, not assumed** (the first
 pass only checked visible menu links, which was under-evidenced; the user
 pushed back and the exhaustive re-check confirmed the conclusion but found the

@@ -41,7 +41,8 @@ python run_matrix.py --demo                  # 整轮性能矩阵:先离线看�
 | 脚本 | 支持的模式 | 真机状态 |
 |---|---|---|
 | `models/Tenda_AX3000.py` | dynamic / pppoe / static / dhcpv6 / pppoev6(v6 精确到 flavor,无笼统 "ipv6") | **台架验收通过**(2026-07-18,含实际下发) |
-| `models/Cudy_AX.py` | dynamic / pppoe / static / l2tp / pptp | **台架验收通过**(2026-07-18,含 `--apply` 实际下发) |
+| `models/Cudy_AX.py`(老式 frameset 固件,与 AX3000 不是同一台) | dynamic / pppoe / static / l2tp / pptp | **台架验收通过**(2026-07-18,含 `--apply` 实际下发) |
+| `models/Cudy_AX3000.py` | dynamic / pppoe / l2tp / pptp | LuCI/OpenWrt 固件。选择器已在真机上引擎实测命中数==1;脚本机制已用 `cudy_luci.html` 离线验证(4 个 cbi.apply 的 form 锚定 / 含点号的 CBI id / XHR 重建 DOM)。**真机逐模式回读 + `--apply` 验收待做** |
 | `models/Mercusys_BE3600.py` | dynamic / pppoe / static / l2tp / pptp | 2026-07-11 真机跑通(当时走启发式);脚本形态的字段选择器仍标 `[待真机复核]` |
 
 各机型的具体怪癖(Tenda 的嵌套 span 按钮、Cudy 的 frameset + 隐藏诱饵按钮、

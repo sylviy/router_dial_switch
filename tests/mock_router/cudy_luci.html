@@ -1,0 +1,160 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Cudy AX3000 (LuCI) — mock</title>
+<!--
+  LuCI / OpenWrt CBI 页面的离线复刻,用来验证 models/Cudy_AX3000.py 的 FACTS
+  形态能被 _driver.py 正确驱动。**结构照 LuCI CBI 的通行写法做,不是从那台
+  真机 dump 下来的** —— 它证明的是"驱动吃得下这种页面",不是"真机长这样"。
+  真机验收看 models/Cudy_AX3000.py 的运行结果。
+
+  刻意复刻的四个坑:
+    1. CBI 的 id 含点号(cbid.network.wan.proto)—— CSS 里 #cbid.network.wan.proto
+       会被当成 "id=cbid + 三个 class",命中 0,必须用 [id='...'];
+    2. 页面上有 4 个 name=cbi.apply 的保存键(WAN / 2.4G / VPN / 系统),
+       只能靠 form:has(拨号控件) 锚定到正确的那个;
+    3. 选完 proto 后 LuCI 走 XHR **重建整段 DOM**(这里连 <select> 一起换掉),
+       旧的元素句柄会失效 —— 驱动必须靠 locator 重新解析才能读回值;
+    4. VPN 段里有一个 "PPTP"/"L2TP" 的服务器类型下拉,是同文字诱饵。
+-->
+<style>
+  body { font-family: sans-serif; margin: 0; }
+  .hidden { display: none; }
+  nav a { display: inline-block; padding: 8px 14px; }
+  form { border: 1px solid #ccc; margin: 10px; padding: 10px; }
+  .row { margin: 6px 0; }
+  #toast { padding: 6px; color: #060; }
+</style>
+
+<!-- ===== 登录页 ===== -->
+<div id="login-view">
+  <h3>Authorization Required</h3>
+  <form id="login-form" onsubmit="doLogin(); return false;">
+    <input type="hidden" name="luci_password" id="luci_password">
+    <input type="hidden" name="_csrf" value="deadbeef">
+    <div class="row">
+      <label for="luci_password2">Password</label>
+      <input type="password" id="luci_password2">
+    </div>
+    <button type="submit">Login</button>
+  </form>
+</div>
+
+<!-- ===== 登录后 ===== -->
+<div id="app-view" class="hidden">
+  <nav>
+    <a href="#" onclick="show('status');return false;">System Status</a>
+    <a href="#" onclick="show('setup');return false;">General Settings</a>
+  </nav>
+
+  <div id="status-panel"><h3>System Status</h3><p>Uptime 1d</p></div>
+
+  <div id="setup-panel" class="hidden">
+    <!-- ---- WAN 段:唯一真正的拨号表单 ---- -->
+    <form id="wan-form">
+      <h4>WAN Mode</h4>
+      <div id="wan-section"></div>
+      <button name="cbi.apply" onclick="save('WAN');return false;">Save &amp; Apply</button>
+      <div id="toast"></div>
+    </form>
+
+    <!-- ---- 诱饵 1:可见的 2.4G 段,也有 cbi.apply ---- -->
+    <form id="wifi24-form">
+      <h4>2.4G Wireless</h4>
+      <div class="row">
+        <label for="cbid.wireless.24g.ssid">SSID</label>
+        <input type="text" id="cbid.wireless.24g.ssid" value="Cudy-554C">
+      </div>
+      <button name="cbi.apply" onclick="save('2.4G');return false;">Save &amp; Apply</button>
+    </form>
+
+    <!-- ---- 诱饵 2:VPN 段,有同文字的 PPTP/L2TP 下拉 ---- -->
+    <form id="vpn-form">
+      <h4>VPN Server</h4>
+      <div class="row">
+        <label for="cbid.vpn.server.type">Server Type</label>
+        <select id="cbid.vpn.server.type">
+          <option>PPTP</option>
+          <option>L2TP</option>
+        </select>
+      </div>
+      <div class="row">
+        <label for="cbid.vpn.server.username">Username</label>
+        <input type="text" id="cbid.vpn.server.username">
+      </div>
+      <button name="cbi.apply" onclick="save('VPN');return false;">Save &amp; Apply</button>
+    </form>
+
+    <!-- ---- 诱饵 3:系统段 ---- -->
+    <form id="sys-form">
+      <h4>System</h4>
+      <button name="cbi.apply" onclick="save('System');return false;">Save &amp; Apply</button>
+    </form>
+  </div>
+</div>
+
+<script>
+  var proto = "dhcp";
+  var PROTOS = [
+    ["dhcp",   "DHCP(Dynamic IP)"],
+    ["static", "Static IP"],
+    ["pppoe",  "PPPoE"],
+    ["l2tp",   "L2TP"],
+    ["pptp",   "PPTP"]
+  ];
+
+  function doLogin() {
+    // LuCI 真实行为:onsubmit 的 JS 把可见框的值哈希后填进隐藏域再提交。
+    // 这里只要验证"填可见框 + 回车"这条路走得通。
+    var v = document.getElementById("luci_password2").value;
+    if (!v) { return; }
+    document.getElementById("luci_password").value = "hash(" + v + ")";
+    document.getElementById("login-view").classList.add("hidden");
+    document.getElementById("app-view").classList.remove("hidden");
+  }
+
+  function show(which) {
+    document.getElementById("status-panel").classList.toggle("hidden", which !== "status");
+    document.getElementById("setup-panel").classList.toggle("hidden", which !== "setup");
+  }
+
+  // LuCI 选完 proto 后走 XHR 重建整段 —— 连 <select> 一起换掉,旧句柄失效。
+  function render() {
+    var html = '<div class="row"><label for="cbid.network.wan.proto">Protocol</label>'
+             + '<select id="cbid.network.wan.proto" onchange="onProto(this.value)">';
+    for (var i = 0; i < PROTOS.length; i++) {
+      html += '<option value="' + PROTOS[i][0] + '"'
+            + (PROTOS[i][0] === proto ? ' selected' : '') + '>'
+            + PROTOS[i][1] + '</option>';
+    }
+    html += '</select></div>';
+
+    if (proto === "pppoe" || proto === "l2tp" || proto === "pptp") {
+      html += '<div class="row"><label for="cbid.network.wan.username">Username</label>'
+            + '<input type="text" id="cbid.network.wan.username"></div>'
+            + '<div class="row"><label for="cbid.network.wan.password">Password</label>'
+            + '<input type="password" id="cbid.network.wan.password"></div>';
+    }
+    if (proto === "l2tp" || proto === "pptp") {
+      html += '<div class="row"><label for="cbid.network.wan.server">Server</label>'
+            + '<input type="text" id="cbid.network.wan.server"></div>';
+    }
+    document.getElementById("wan-section").innerHTML = html;
+  }
+
+  function onProto(v) {
+    proto = v;
+    // 模拟 XHR 往返:字段不是同步出现的,驱动必须轮询等
+    setTimeout(render, 350);
+  }
+
+  function save(which) {
+    var label = "";
+    for (var i = 0; i < PROTOS.length; i++) {
+      if (PROTOS[i][0] === proto) { label = PROTOS[i][1]; }
+    }
+    document.getElementById("toast").textContent =
+      which === "WAN" ? ("Saved & Applied: " + label) : ("WRONG FORM: " + which);
+  }
+
+  render();
+</script>

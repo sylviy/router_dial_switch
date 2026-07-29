@@ -81,6 +81,7 @@ def main():
     from models.Tenda_AX3000 import FACTS as TENDA_FACTS
     from models.Mercusys_BE3600 import FACTS as MERCUSYS_FACTS
     from models.Cudy_AX import FACTS as CUDY_FACTS
+    from models.Cudy_AX3000 import FACTS as CUDY3K_FACTS
 
     def read_toast(page, _res):
         # 跨 frame 找 toast(Cudy mock 的 toast 在 WAN 子 frame 里)
@@ -136,6 +137,20 @@ def main():
          {"vpn_server": "10.0.0.9", "vpn_user": "u", "vpn_pass": "p"}, True,
          dict(read_back="L2TP",
               filled={"vpn_server", "vpn_user", "vpn_pass"},
+              applied=True, verify="Saved & Applied: L2TP")),
+        # Cudy AX3000 = LuCI/OpenWrt,和上面那台 frameset 的 Cudy 完全两种 UI。
+        # 这两条守的是 LuCI 特有的三个坑:CBI 的 id 含点号(只能 [id='...'],
+        # 用 #... 会被当成 id+class 命中 0)、页面上 4 个 name=cbi.apply 必须靠
+        # form:has(拨号控件) 锚定(点错 form 的话 toast 会喊 WRONG FORM)、
+        # 以及选完 proto 后整段 DOM 被 XHR 重建(旧句柄失效,回读得重新解析)。
+        ("cudy-ax3000 pppoe (LuCI, 4 个 cbi.apply)", CUDY3K_FACTS,
+         "cudy_luci.html", "pppoe", {"pppoe_user": "u", "pppoe_pass": "p"}, True,
+         dict(read_back="PPPoE", filled={"pppoe_user", "pppoe_pass"},
+              applied=True, verify="Saved & Applied: PPPoE")),
+        ("cudy-ax3000 l2tp (AJAX 挂载的字段)", CUDY3K_FACTS,
+         "cudy_luci.html", "l2tp",
+         {"vpn_server": "10.0.0.9", "vpn_user": "vu", "vpn_pass": "vp"}, True,
+         dict(read_back="L2TP", filled={"vpn_server", "vpn_user", "vpn_pass"},
               applied=True, verify="Saved & Applied: L2TP")),
     ]
     for name, facts, page_file, mode, params, do_apply, want in model_cases:
