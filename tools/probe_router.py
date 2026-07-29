@@ -790,6 +790,8 @@ def _summary(report: dict, out: str) -> None:
     print("\n----- FACTS 建议(TODO = 没观察到,别猜,补证据)-----")
     print(_fmt_facts(facts))
     print("\n完整证据:%s" % out)
+    print("  (存档用,给人查的。**agent 不要整份读进上下文** —— 上面这份摘要"
+          "已经够写 FACTS 了;\n   只查某个选择器时用 python -c 取那一段。)")
 
 
 if __name__ == "__main__":

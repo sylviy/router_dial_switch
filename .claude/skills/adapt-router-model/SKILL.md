@@ -31,6 +31,32 @@ description: 为一台新路由器型号产出专属拨号切换脚本 models/<�
 4. **凭据不进仓库。** 管理密码/宽带账号进 `router.yaml`(git 已忽略)。
    probe 产物含表单值和 URL,可能带会话 token,回传前先过一眼。
 
+## 先省钱:这条流程的大部分不需要 agent
+
+`probe_router.py --emit` 和 `check_model.py` 是**确定性命令**,产出跟谁来跑没有
+关系。**型号脚本由工具写出来,不要让模型逐字生成**(那是纯粹的输出 token 浪费,
+而且更容易写错选择器)。
+
+agent 真正该介入的只有三处:探针留下的 `TODO`、需要 `mode_overrides` 的模式
+(某档住在自己的页面上)、以及真机跑失败后的判断。其余照着命令跑就行。
+
+**永远不要整份读进上下文的东西**(读一次就可能吃掉几万 token):
+
+| 别读 | 改用 |
+|---|---|
+| `artifacts/probe_*.json`(完整证据,给人存档的) | 探针 **stdout 的摘要**,已经含 FACTS 建议 |
+| `artifacts/*.png`(每次运行都会截图) | 只在失败且文字信息不够时才看 |
+| `models/_driver.py`(574 行) | 不用读。它的行为本文件已经写全 |
+| `vendor/`(97 MB 运行时) | 永远不要 |
+| `CLAUDE.md` 全文 | 只在需要历史结论时查特定一节 |
+
+某个选择器有疑问时,从 JSON 里**取那一段**,不要整份读:
+
+```bash
+python -c "import json;d=json.load(open('artifacts/probe_x.json'));\
+print(json.dumps([b for f in d['frames'] for b in f.get('buttons',[])],ensure_ascii=False,indent=1))"
+```
+
 ## 流程
 
 ### 第 0 步:准备
@@ -78,12 +104,14 @@ python tools/probe_router.py --url ... --pass ... --brand Tenda --model AX3000 \
 典型节奏:**先裸跑一次** → 看摘要里 `dial` 有没有找到 → 没找到就补 `--nav`
 → 找到了但 modes 只有一个,就用它给出的选择器 `--open` 再跑一次 → `--emit`。
 
-读摘要时重点看三件事:
+读摘要时重点看两件事:
 
 - 每个 frame 的控件计数(老式 frameset 的表单在子 frame 里,这里能看出来);
-- FACTS 建议里还剩几个 `TODO`(那就是还没拿到的证据);
-- `artifacts/probe_*.json` 里每个候选的 `pin.tried` —— 它记了**试过哪些选择器、
-  各自命中几个**,改选择器时照着挑,不要自己现编。
+- FACTS 建议里还剩几个 `TODO`(那就是还没拿到的证据)。
+
+改某个具体选择器时,JSON 里每个候选都记了 `pin.tried`(**试过哪些写法、各自
+命中几个**),照着挑,不要自己现编 —— 但**按上面「先省钱」那节的办法只取那
+一段**,别把整份读进来。
 
 ### 第 2 步:补全 FACTS
 

@@ -130,6 +130,17 @@ chain with no router/Chariot present.
   git-ignored). Written by `start.py --setup` (menu 4).
 - `tests/smoke_test.py` — offline e2e vs mock pages.
 
+## Working cheaply (context budget)
+Adapting a model is mostly **deterministic commands**, not model output —
+`probe_router.py --emit` writes the script, `check_model.py` grades it. Don't
+hand-generate a model script token by token, and don't explore to re-derive
+what is already written down. Never read whole: `artifacts/probe_*.json` (the
+probe's stdout summary already carries the FACTS suggestion; slice the JSON
+with `python -c` when one selector is in question), `artifacts/*.png` (a
+screenshot is written on every run), `vendor/` (97 MB), `models/_driver.py`
+(the skill documents its behaviour). This file is ~29 KB — read the section
+you need, not all of it.
+
 ## Run / verify
 ```bash
 # offline logic test (no router needed) — must stay green:
