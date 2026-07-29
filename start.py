@@ -142,9 +142,12 @@ def main(argv=None) -> int:
     ap.add_argument("--headless", action="store_true", help=argparse.SUPPRESS)
     ap.add_argument("--setup", action="store_true",
                     help="直接进设置(等同菜单里的 4)")
+    # 裸的 `setup` 也认:接上原来 `run.bat setup` 的肌肉记忆,而且存密码这件事
+    # 跟型号无关 —— 不该逼人先选一台机器才能进设置。
+    ap.add_argument("command", nargs="?", default="", help=argparse.SUPPRESS)
     args = ap.parse_args(argv)
 
-    if args.setup:
+    if args.setup or args.command.lower() == "setup":
         return run_setup()
 
     from models import _driver as model_driver

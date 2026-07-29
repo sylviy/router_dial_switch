@@ -61,8 +61,9 @@
 命令行版(想脚本化/传参数时):
 
 ```bat
-start.bat                            :: 菜单 4 = 一次性存路由器 IP / 管理密码 /
-                                     ::   宽带账号(写进 router.yaml,不进仓库)
+start.bat setup                      :: 一次性:存路由器 IP / 管理密码 / 宽带账号
+                                     ::   (写进 router.yaml,本机文件,不进仓库)
+                                     ::   双击 start.bat 后选菜单 4 也一样
 
 dial.bat Tenda_AX3000 dynamic        :: 切模式,只切换不保存(先看回读)
 dial.bat Tenda_AX3000 pppoe --apply  :: 确认无误后,真正下发保存
@@ -116,7 +117,7 @@ smoke.bat
 | 报 `imports OK` 之外的导入错误 | `vendor\` 拷坏了(常见于用杀毒软件"清理"过 `node.exe`,或压缩包只解压了一部分)。删掉 `vendor\` 重拷一份。 |
 | `dial.bat` 报 `No such model script` | 型号名拼错了。不带参数跑 `dial.bat` 看可用列表。 |
 | 运行后卡在登录页 / `login failed` | ① 管理密码不对;② 有些机型(Tenda/Mercusys)**同一时间只允许一个 Web 会话** —— 先把浏览器里登录着的路由器页签退出。 |
-| 提示缺少宽带账号密码 | 先用 `start.bat` 菜单 4 存进 router.yaml,或本次加 `--param pppoe_user=账号 --param pppoe_pass=密码`。 |
+| 提示缺少宽带账号密码 | 先跑 `start.bat setup` 存进 router.yaml,或本次加 `--param pppoe_user=账号 --param pppoe_pass=密码`。 |
 | `matrix.bat` 真跑时吞吐格全是 `err` | 台架没装 IxChariot / `perf.yaml` 的 `chariot.python2` 没指到台架的 Python 2。先用 `--demo` 或 `simulate` 后端确认链路,再配台架。 |
 | 换一台 Windows | 整个文件夹拷过去直接双击 `start.bat`(自带运行时是可搬的)。**但 `.venv` 不要跨机拷** —— 里面写死了原机器的绝对路径,拷过去反而会被优先选中然后失败;删掉它即可。 |
 
