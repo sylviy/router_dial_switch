@@ -104,7 +104,7 @@ chain with no router/Chariot present.
   share the field NAMES (`vpn_user`/`vpn_pass`) but the bench issues two
   different accounts, so one flat layer silently loses one of them.
 - `settings.py` — `router.yaml` local defaults (IP/passwords/per-mode creds;
-  git-ignored). Written by `start.py setup` / `start.bat setup` (menu 4).
+  git-ignored). Written by `start.py --setup` (menu 4).
 - `tests/smoke_test.py` — offline e2e vs mock pages.
 
 ## Run / verify
@@ -118,7 +118,7 @@ python tests/smoke_test.py            # expect "0 failed" (count shrank when
 python start.py                       # Windows: double-click start.bat
 
 # daily use on an adapted model (run on a machine ON the router's LAN):
-python start.py setup                 # one time -> router.yaml (git-ignored)
+python start.py --setup               # one time -> router.yaml (git-ignored)
 python models/Tenda_AX3000.py pppoe   # add --apply to really save
 # full performance round (switch + WAN-up + throughput + HTML/CSV report):
 python run_matrix.py --demo           # offline sample report, no router needed

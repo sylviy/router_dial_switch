@@ -100,7 +100,7 @@ python start.py        # Windows 双击 start.bat
 (该文件已被 `.gitignore` 忽略,不会进仓库;`start.py` 里存过就不用再跑):
 
 ```bash
-python start.py setup          # Windows: start.bat setup(或双击后选菜单 4)
+python start.py --setup        # Windows 上:双击 start.bat,选菜单 4
 ```
 
 之后切换一台**已适配**的机器只要一条命令(凭据按模式自动取用,PPPoE 账号
