@@ -81,7 +81,7 @@ def _probe_args(**kw):
     """probe() 要的参数包。默认值和命令行入口保持一致。"""
     base = dict(url="", user="", password="", login_pass="input[type=password]",
                 login_btn="", nav=[], open_sel="", brand="", model="",
-                headless=False)
+                probe_modes=False, headless=False)
     base.update(kw)
     return types.SimpleNamespace(**base)
 
@@ -208,9 +208,14 @@ def main(argv=None) -> int:
             return 2
         _describe(facts, report)
 
-        if not str((facts.get("dial") or {}).get("selector", "")).startswith("TODO"):
+        found = not str((facts.get("dial") or {}).get("selector", "")).startswith("TODO")
+        if found and report.get("dial_visible"):
             break
-        print("\n没找到拨号控件。最常见的原因是:**还停在首页,没进到 WAN 设置页**。")
+        if found:
+            # 找到了、但它是隐藏的 —— 十有八九是设置面板还没展开。继续问菜单,
+            # 别拿着一个隐藏面板往下走:保存键和账密框都会认不出来。
+            print("  [!] 拨号控件是隐藏的 —— 多半是设置页还没打开。")
+        print("\n还没能用上拨号控件。最常见的原因是:**还停在首页,没进到 WAN 设置页**。")
         print("请看着刚才那个 Chrome 窗口(或自己用浏览器登进去),找到设置")
         print("拨号方式的那个页面,把要点的菜单名字**一字不差**地告诉我。")
         print("例:Internet Settings / 上网设置 / Network(多级菜单就一层一层加)")
@@ -220,6 +225,27 @@ def main(argv=None) -> int:
             print("**不要**让它去读 artifacts/ 里的 JSON —— 那很贵,摘要就够了。")
             return 1
         nav.append(item)
+
+    # 原生 <select>:再走一遍,逐档选一次把该档才挂出来的账密框抄下来。
+    # (只动控件、不点保存 —— 和 python models/<型号>.py <mode> 一个安全级别。)
+    # 不这么做的话,像 LuCI 那种"选完 proto 才用 XHR 挂载输入框"的界面,
+    # fields 永远是空的:脚本切得动模式,却填不进账号。
+    if (facts.get("dial") or {}).get("kind") == "select":
+        print("\n再走一遍每个拨号方式,看各档要填哪些框…(只切换,不保存)")
+        args = _probe_args(url=url, user=saved.get("user", ""), password=password,
+                           nav=list(nav), brand=brand, model=model,
+                           probe_modes=True, headless=cli.headless)
+        try:
+            report, facts = probe_router.probe(args)
+            found = report.get("mode_fields") or {}
+            if found:
+                for mode, concepts in found.items():
+                    print("  %-9s 要填:%s" % (mode, "/".join(concepts)))
+            else:
+                print("  没发现需要填的框(这台机可能各档都不用账号)。")
+        except Exception as exc:
+            print("[!] 逐档探测失败(%s),先按已知的继续。"
+                  % str(exc).strip().splitlines()[0])
 
     # 自定义下拉:再点开一次抄全部选项原文
     if "TODO" in (facts.get("modes") or {}):

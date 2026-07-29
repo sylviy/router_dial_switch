@@ -46,6 +46,7 @@ if ROOT not in sys.path:
 from config import Config
 from models._browser import Browser
 from models import _driver
+from modes import MODE_REQUIRED_FIELDS
 import settings as settings_mod
 
 # ---------------------------------------------------------------------------
@@ -108,6 +109,39 @@ def classify_mode(text: str):
             if re.search(r"(^|[^a-z0-9])%s([^a-z0-9]|$)" % re.escape(w), n):
                 return key, False
     return None, False
+
+
+# 字段"种类"的通用词。**user/pass 必须排在 server 前面**:LuCI 的
+# cbid.vpn.server.username 里 "server" 是段名不是字段名,先匹配 server 会把
+# 用户名认成服务器地址(2026-07-29 在 LuCI mock 上实测到的误判)。
+# 不收裸 "name":hostname 之类会被误当成用户名。
+_FIELD_KIND = [
+    ("user",   ["user", "acct", "account", "账号", "用户"]),
+    ("pass",   ["pass", "pwd", "密码"]),
+    ("server", ["server", "ipaddr", "addr", "host", "domain", "地址", "服务器"]),
+]
+
+
+def concept_for_mode(mode: str, name: str, ident: str, label: str):
+    """在**已知当前是哪一档模式**的前提下,把一个输入框定成 FACTS 的概念名。
+
+    这是按名字猜不出来的场合的正解:LuCI 的账密框叫
+    `cbid.network.wan.username` —— 里面没有 pppoe/l2tp 任何字样,光看名字
+    永远归不了类。但如果它是在"选中 PPPoE 之后"才挂出来的,那它就是
+    pppoe_user;同一个框在 L2TP 下就是 vpn_user。模式给了名字给不了的上下文。
+    """
+    hay = _norm(" ".join([name or "", ident or "", label or ""]))
+    kind = None
+    for k, words in _FIELD_KIND:
+        if any(w in hay for w in words):
+            kind = k
+            break
+    if not kind:
+        return None
+    for concept in MODE_REQUIRED_FIELDS.get(mode, []):
+        if concept.endswith(kind):
+            return concept
+    return None
 
 
 def classify_field(name: str, ident: str, label: str):
@@ -278,8 +312,16 @@ def _candidates(info: dict, kind: str):
     """按"属性锚点优先于文字锚点"的顺序给出候选选择器。"""
     a = info.get("attrs") or {}
     out = []
-    if info.get("id"):
-        out.append("#%s" % info["id"])
+    ident = info.get("id") or ""
+    if ident and "'" not in ident:
+        # `#id` 只在 id 是普通标识符时可用。LuCI 的 CBI id 长这样:
+        #   cbid.network.wan.proto
+        # 里面有点号,`#cbid.network.wan.proto` 会被解析成
+        # "id=cbid + 三个 class",命中 0(2026-07-29 台架实测)。属性写法没有
+        # 这个问题,所以两种都给出去,让命中数去挑。
+        if re.match(r"^[A-Za-z_-][\w-]*$", ident):
+            out.append("#%s" % ident)
+        out.append("[id='%s']" % ident)
     if a.get("name"):
         out.append("[name='%s']" % a["name"])
     for k, v in a.items():
@@ -477,7 +519,7 @@ def harvest(page) -> list:
 
 
 def suggest_facts(probe: dict, brand: str, model: str, url: str,
-                  nav: list, login: dict) -> dict:
+                  nav: list, login: dict, meta: dict = None) -> dict:
     """把证据整理成一份 FACTS 建议。**只写观察到且命中数==1 的东西**;
     其余一律留 "TODO: ..." —— tools/check_model.py 会把 TODO 当错误拦下,
     所以骨架永远不会伪装成"已经填好了"。"""
@@ -494,12 +536,23 @@ def suggest_facts(probe: dict, brand: str, model: str, url: str,
     }
 
     # --- 拨号控件:先看原生 <select>(选项能归到 >=2 个模式的那个)---------
-    best_sel, best_hits = None, 0
+    # **可见的优先**。命中数是数得到隐藏元素的,而没导航到设置页时,整个面板
+    # 都是 display:none —— 那时照样能"找到"拨号控件,于是向导不会问菜单,
+    # 后面的保存键和账密框却全在隐藏面板里,一个都认不出来
+    # (2026-07-29 在 LuCI mock 上实测到的假成功)。被美化插件藏起来的原生
+    # select 仍然可用,所以隐藏的只是降级备选,不是直接淘汰。
+    best_sel, best_hits, best_vis = None, 0, False
     for fr in probe:
         for s in fr.get("selects") or []:
             keys = {m["key"] for m in s.get("modes") or [] if m["key"]}
-            if len(keys) >= 2 and len(keys) > best_hits and s["pin"]["unique"]:
-                best_sel, best_hits = s, len(keys)
+            if len(keys) < 2 or not s["pin"]["unique"]:
+                continue
+            vis = bool(s.get("visible"))
+            better = (vis and not best_vis) or (vis == best_vis and len(keys) > best_hits)
+            if best_sel is None or better:
+                best_sel, best_hits, best_vis = s, len(keys), vis
+    if meta is not None and best_sel:
+        meta["dial_visible"] = best_vis
     if best_sel:
         facts["dial"] = {"kind": "select",
                          "selector": best_sel["pin"]["recommended"]}
@@ -524,6 +577,8 @@ def suggest_facts(probe: dict, brand: str, model: str, url: str,
                 text = (value or {}).get("text") or d.get("text") or ""
                 key, exact = classify_mode(text)
                 facts["dial"] = dial
+                if meta is not None:
+                    meta["dial_visible"] = True    # 自定义下拉本来就只收可见的
                 if key and exact:
                     facts["modes"][key] = text.strip()
                 else:
@@ -700,8 +755,14 @@ def probe(args):
             else:
                 report["opened_options"] = {"error": "没找到 %s" % args.open_sel}
 
-    facts = suggest_facts(report["frames"], args.brand, args.model, args.url,
-                          args.nav, login)
+        meta = {}
+        facts = suggest_facts(report["frames"], args.brand, args.model,
+                              args.url, args.nav, login, meta)
+        report["dial_visible"] = meta.get("dial_visible")
+        _refine_apply(page, report["frames"], facts)
+        if getattr(args, "probe_modes", False):
+            _probe_mode_fields(page, facts, report)
+
     if report.get("opened_options"):
         for opt in report["opened_options"].get("options", []):
             key = classify_mode(opt)[0]
@@ -710,6 +771,112 @@ def probe(args):
         facts["modes"].pop("TODO", None)
     report["suggested_facts"] = facts
     return report, facts
+
+
+def _refine_apply(page, probe, facts) -> None:
+    """保存键不唯一时,用"拨号控件所在的那个容器"把它收窄。
+
+    LuCI 的 /admin/setup 上有 4 个 `button[name='cbi.apply']`(WAN / 2.4G /
+    VPN / 系统各一个 form),按 name 锚定命中 4,直接就没法用了。但
+    `form:has(<拨号控件>) button[name='cbi.apply']` 命中 1 —— 拨号控件在哪个
+    form 里,那个 form 的保存键就是对的。这个思路对任何"一页多段、每段一个
+    保存键"的 UI 都成立。"""
+    if not str(facts.get("apply", "")).startswith("TODO"):
+        return
+    dial = str((facts.get("dial") or {}).get("selector") or "")
+    if not dial or dial.startswith("TODO"):
+        return
+    frames = {i: fr for i, fr in enumerate(page.frames)}
+    for fr_info in probe:
+        fr = frames.get(fr_info.get("index"))
+        if fr is None:
+            continue
+        for b in fr_info.get("buttons") or []:
+            if not (b.get("is_save_candidate") and b.get("visible")):
+                continue
+            for scope in ("form", "fieldset", "section"):
+                sel = "%s:has(%s) %s" % (scope, dial, b["suggested"])
+                if _count(fr, sel) == 1:
+                    facts["apply"] = sel
+                    return
+
+
+def _probe_mode_fields(page, facts, report) -> None:
+    """逐个模式选一遍,把每档才挂载出来的账密框抄下来。**不点保存。**
+
+    有些 UI(LuCI 是典型)选完 proto 才用 XHR 把该模式的输入框挂上来 ——
+    初始状态是 DHCP,页面上根本没有 username/password,只探一次必然
+    `fields` 为空,写出来的脚本切得动模式却填不了账号。
+
+    两个精度要点:
+      * **只认拨号控件所在那个 form 里的输入框**。同一页上别的段(LuCI 的
+        VPN Server 段就有 username/password)会冒充,而且它们的名字里带
+        "vpn"、"server" 这些词,比真字段更像。
+      * **按当前模式定概念**,不按名字猜 —— 见 concept_for_mode。
+
+    安全边界和 `python models/<型号>.py <mode>`(不带 --apply)完全一样:
+    只动控件,绝不点保存键;抄完把控件恢复成进来时的值。
+    """
+    dial = (facts.get("dial") or {})
+    if dial.get("kind") != "select" or not facts.get("modes"):
+        return                      # 自定义下拉的逐档探测留给人工,别乱点
+    dial_sel = dial["selector"]
+    sel = _driver._locate(page, dial_sel, require_visible=False)
+    if not sel:
+        return
+    try:
+        original = sel.evaluate(
+            "el => el.options[el.selectedIndex]"
+            " ? el.options[el.selectedIndex].text : ''") or ""
+    except Exception:
+        original = ""
+
+    # 逐档探到的结果比"按名字猜"的可信得多:清空重建,别让先前的误判留下
+    facts["fields"] = {}
+    seen = {}
+    for mode, label in list(facts["modes"].items()):
+        if mode == "TODO" or not MODE_REQUIRED_FIELDS.get(mode):
+            continue
+        try:
+            _driver._locate(page, dial_sel, require_visible=False) \
+                .select_option(label=label, force=True)
+        except Exception:
+            continue
+        _driver._settle(page, 900)          # 等 XHR 把这一档的字段挂上来
+        for fr in page.frames:
+            # 把搜索范围收窄到拨号控件所在的 form —— 同页别的段会冒充
+            scope = ""
+            for cand in ("form:has(%s)" % dial_sel, "fieldset:has(%s)" % dial_sel):
+                if _count(fr, cand) == 1:
+                    scope = cand + " "
+                    break
+            try:
+                data = fr.evaluate(HARVEST_JS)
+            except Exception:
+                continue
+            for inp in data.get("inputs") or []:
+                concept = concept_for_mode(mode, inp.get("name"), inp.get("id"),
+                                           inp.get("label"))
+                if not (concept and inp.get("visible")):
+                    continue
+                if concept in facts["fields"]:
+                    continue
+                pin = _pin(fr, page, inp, "input")
+                if not pin["unique"]:
+                    continue
+                cand = scope + pin["recommended"]
+                if _count(fr, cand) != 1:
+                    continue
+                facts["fields"][concept] = cand
+                seen.setdefault(mode, []).append(concept)
+    if original:                            # 恢复原样,别把机器留在别的模式上
+        try:
+            _driver._locate(page, dial_sel, require_visible=False) \
+                .select_option(label=original, force=True)
+            _driver._settle(page, 600)
+        except Exception:
+            pass
+    report["mode_fields"] = seen
 
 
 # ---------------------------------------------------------------------------
@@ -737,6 +904,8 @@ def main(argv=None) -> int:
     ap.add_argument("--emit", default="",
                     help="把 FACTS 建议写成型号脚本,如 models/Tenda_AX3000.py")
     ap.add_argument("--out", default="", help="产物 JSON 路径(默认 artifacts/)")
+    ap.add_argument("--probe-modes", action="store_true",
+                    help="逐个模式选一遍,抄出各档才挂载的账密框(不点保存)")
     ap.add_argument("--headless", action="store_true", help="无窗口运行")
     args = ap.parse_args(argv)
 
