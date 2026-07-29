@@ -181,9 +181,16 @@ def main(argv=None) -> int:
             % (report_mod.report_slug(cfg.model), run_stamp))
 
     backend = make_backend(cfg)
+    problem = backend.preflight()
+    if problem:
+        raise SystemExit("性能后端 %s 还不能用,整轮不开始:\n  %s"
+                         % (cfg.backend, problem))
+
     print(_color("===== WAN 性能矩阵 =====", _C_DIM))
     print("型号=%s  后端=%s  模式=%s  频段=%s  方向=%s  协议=%s%s"
-          % (cfg.model or "(demo)", cfg.backend,
+          % (cfg.model or "(demo)",
+             cfg.backend + ("(%s)" % cfg.chariot.python2
+                            if cfg.backend == "chariot" else ""),
              "/".join(s.mode for s in cfg.dial_modes), "/".join(cfg.bands),
              "/".join(cfg.directions), "/".join(cfg.protocols),
              "  [demo]" if args.demo else "  (每档切换都会真正下发)"))

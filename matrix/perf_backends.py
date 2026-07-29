@@ -42,6 +42,15 @@ class PerfBackend:
                 proto: str) -> Measurement:
         raise NotImplementedError
 
+    def preflight(self) -> str:
+        """开跑前自检。返回空串 = 就绪;返回文字 = 不能跑的原因。
+
+        整轮要几十分钟,而且每一格失败前都会**真正切一次拨号方式**。后端根本
+        没配好的话,那就是花半小时把路由器来回切一遍、拿回一份全是 err 的报告
+        (台架 2026-07-28 实测就这么浪费了一轮)。宁可开跑前一秒钟就拦住。
+        """
+        return ""
+
 
 # --------------------------------------------------------------------------
 class SimulatorBackend(PerfBackend):
@@ -99,6 +108,14 @@ def _last_json(text: str) -> Optional[dict]:
     return None
 
 
+_PY2_HINT = """
+  perf.yaml 的 chariot.python2 必须指向**装了 PyChariot 的那个解释器的绝对
+  路径**(台架上是 C:\\Python26\\python.exe)。默认值是裸的 "python",它跟着
+  PATH 走,很容易落到别的 Python 上 —— 而 ModuleNotFoundError 这种写法本身
+  就说明跑它的是 Python 3,不是台架那套 Python 2。
+  确认办法:C:\\Python26\\python.exe -c "import PyChariot; print('ok')" """
+
+
 class ChariotBackend(PerfBackend):
     """真台架:子进程调用 chariot_perf.py(Py2/Windows,内部 import Chariot)。
     每次测量传入拓扑(内外网 IP、注入机、脚本、对数、时长)作为一个 JSON,
@@ -110,6 +127,20 @@ class ChariotBackend(PerfBackend):
         self.cfg = chariot_cfg
         self.script = chariot_cfg.script or os.path.join(
             os.path.dirname(os.path.abspath(__file__)), "chariot_perf.py")
+
+    def preflight(self) -> str:
+        py = self.cfg.python2
+        try:
+            out = subprocess.run([py, "-c", "import PyChariot"],
+                                 capture_output=True, text=True,
+                                 errors="replace", timeout=120)
+        except Exception as exc:
+            return ("解释器 %r 跑不起来:%s" % (py, exc)) + _PY2_HINT
+        if out.returncode != 0:
+            lines = (out.stderr or out.stdout or "").strip().splitlines()
+            return ("解释器 %r 里没有 PyChariot:%s"
+                    % (py, lines[-1] if lines else "(无输出)")) + _PY2_HINT
+        return ""
 
     def measure(self, mode, band, direction, proto) -> Measurement:
         payload = {
