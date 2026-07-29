@@ -32,6 +32,14 @@ class Config:
     # --- artefacts ----------------------------------------------------------
     screenshot_dir: str = "artifacts"
 
+    def __post_init__(self) -> None:
+        # 环境变量兜底:台架/CI 上 Chrome 不在标准位置时,不必改代码。
+        # ROUTER_BROWSER_PATH 指向 chrome/chromium 可执行文件,优先于 channel。
+        self.executable_path = self.executable_path or os.environ.get(
+            "ROUTER_BROWSER_PATH") or None
+        self.browsers_path = self.browsers_path or os.environ.get(
+            "ROUTER_BROWSERS_DIR") or None
+
     def apply_env(self) -> None:
         """Export env vars Playwright reads at launch time."""
         if self.browsers_path:

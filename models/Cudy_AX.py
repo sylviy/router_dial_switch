@@ -7,7 +7,8 @@
     python models/Cudy_AX.py l2tp --param vpn_server=1.2.3.4 \
         --param vpn_user=u --param vpn_pass=p
 
-事实来源:2026-07-18 真机取证(cli.py diagnose + 两轮 Playwright 只读探针,
+事实来源:2026-07-18 真机取证(只读探针两轮,现在的等价工具是
+`python tools/probe_router.py`;
 所有选择器命中数已用运行时引擎验证)。
 UI 形态:老式 **frameset** —— 登录在主文档,菜单和 WAN 表单在各自子 frame 里
 (_driver 全 frame 查找),控件是带 id/name 的原生 HTML,非常好伺候。
@@ -22,7 +23,7 @@ UI 形态:老式 **frameset** —— 登录在主文档,菜单和 WAN 表单在�
   * WAN 页有个 `input[name='ipv6_passthru_enabled']`,但它所在的 `<tr>` 是
     `display:none`,五种拨号方式下都不显形 —— 死代码。
 => 这台机当前固件(1.0.1-20240321)**无法通过 Web UI 配置 IPv6**。若测试需要
-v6,只能先升级/更换固件(升级后重跑 `python cli.py diagnose` 复核),届时照
+v6,只能先升级/更换固件(升级后重跑 `python tools/probe_router.py` 复核),届时照
 Tenda_AX3000.py 的 mode_overrides 补一个 ipv6 模式即可。
 """
 import os

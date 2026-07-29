@@ -1,7 +1,7 @@
 # perf.example.yaml —— WAN 性能矩阵的配置模板。
 #
 # 复制成 perf.yaml(已被 .gitignore 忽略)再改。描述的是"测什么、怎么测";
-# 密码(管理密码/宽带账密)不在这里,走 router.yaml(python cli.py setup)。
+# 密码(管理密码/宽带账密)不在这里,走 router.yaml(python start.py --setup)。
 #
 # 任何一项都可省略,省了就用内置默认;**没有 perf.yaml 也能直接跑**
 # (python run_matrix.py --model <型号> = 遍历该型号的全部拨号方式)。

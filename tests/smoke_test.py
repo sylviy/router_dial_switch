@@ -75,7 +75,7 @@ def main():
 
     # --- models/ 层:FACTS + _driver(2026-07-16 起的交付形态) ----------------
     # 每台型号一个脚本、事实全显式、运行期零猜测。这里用真实脚本里的 FACTS
-    # 驱动对应的 mock,证明"照 diagnose 填 FACTS -> 直接能跑"这条交付路成立。
+    # 驱动对应的 mock,证明"照探针产物填 FACTS -> 直接能跑"这条交付路成立。
     print("\n=== models/ (FACTS + _driver, per-model delivery layer) ===")
     from models import _driver as model_driver
     from models.Tenda_AX3000 import FACTS as TENDA_FACTS
@@ -241,6 +241,16 @@ def main():
     if not ok:
         print(swp.stdout[-800:])
         print(swp.stderr[-400:])
+    passed += ok
+    failed += not ok
+
+    # ④ 型号脚本体检:仓库里每个 models/*.py 都必须自洽(没有残留 TODO、
+    #    每个模式覆盖后都有 dial/apply、要填的字段有选择器、措辞不撞车、
+    #    选择器语法合法)。适配新型号时这一条会先于真机拦下低级错误。
+    print("\n=== tools/check_model.py (每个型号脚本自洽) ===")
+    from tools.check_model import main as check_main
+    ok = check_main(["--all"]) == 0
+    print("[%s] check_model --all" % ("PASS" if ok else "FAIL"))
     passed += ok
     failed += not ok
 

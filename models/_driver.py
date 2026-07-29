@@ -516,7 +516,7 @@ def _console_safe() -> None:
 def run_cli(facts: dict, argv: Optional[List[str]] = None) -> int:
     """型号脚本的 main:python models/<型号>.py <mode> [--apply] [--param k=v]。
 
-    管理密码 / 宽带账密默认取 router.yaml(python cli.py setup 生成),
+    管理密码 / 宽带账密默认取 router.yaml(python start.py --setup 生成),
     并按模式过滤 —— PPPoE 账密绝不会带进 dynamic 运行。
     """
     _console_safe()
@@ -547,7 +547,7 @@ def run_cli(facts: dict, argv: Optional[List[str]] = None) -> int:
     # 不要开着浏览器白跑一趟再"卡在登录页"。
     if facts.get("login") and not args.password:
         parser.error(
-            "没有管理密码:先跑一次 `python cli.py setup` 把路由器 IP/密码存进 "
+            "没有管理密码:先跑一次 `python start.py --setup` 把路由器 IP/密码存进 "
             "router.yaml(git 已忽略,不会进仓库),或本次直接加 --pass <管理密码>。")
 
     explicit: Dict[str, str] = {}
@@ -560,7 +560,7 @@ def run_cli(facts: dict, argv: Optional[List[str]] = None) -> int:
                if f not in params]
     if missing:
         parser.error("模式 %s 还缺参数:%s(用 --param k=v 提供,"
-                     "或先跑 python cli.py setup 存进 router.yaml)"
+                     "或先跑 python start.py --setup 存进 router.yaml)"
                      % (args.mode, ", ".join(missing)))
 
     res = run(facts, args.mode, params=params, apply=args.apply,

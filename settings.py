@@ -1,7 +1,7 @@
 """Local run defaults (router.yaml) so the daily command shrinks to
-`python cli.py pppoe`.
+`python models/<型号>.py pppoe`.
 
-router.yaml lives next to this file, is created by `python cli.py setup`
+router.yaml lives next to this file, is created by `python start.py --setup`
 (or by hand) and is git-ignored -- it holds the router's admin password and
 broadband credentials, which must never be committed.
 
@@ -36,7 +36,7 @@ SETTINGS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                              "router.yaml")
 
 _HEADER = (
-    "# router.yaml -- local run defaults for cli.py (created by `cli.py setup`).\n"
+    "# router.yaml -- local run defaults (created by `python start.py --setup`).\n"
     "# Contains credentials: git-ignored, do NOT commit or paste into tickets.\n"
     "# Any CLI flag overrides the value here.\n"
 )

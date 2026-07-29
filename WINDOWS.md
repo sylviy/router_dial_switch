@@ -90,11 +90,18 @@ matrix.bat --model Tenda_AX3000      :: 整轮真跑:自动遍历该型号的全
 
 ### 还没适配过的路由器
 
-把 Claude 接到那台机上(Claude in Chrome),照
-`.claude\skills\adapt-router-model\SKILL.md` 的方法产出一个
-`models\<品牌>_<型号>.py` —— 一个文件写清这台机的全部事实(登录、菜单路径、
-控件选择器、各模式措辞、保存按钮)。拷进 `models\` 就能用 `dial.bat` 和
-`start.bat` 了,不需要改任何其它文件。
+在能访问路由器的机器上跑取证探针,它会把选择器都验证一遍并直接生成骨架:
+
+```bat
+_py.bat & %PY% tools\probe_router.py --url http://192.168.1.1 --pass <管理密码> ^
+    --brand <品牌> --model <型号> --emit models\<品牌>_<型号>.py
+_py.bat & %PY% tools\check_model.py <品牌>_<型号>
+```
+
+完整方法论照 `.claude\skills\adapt-router-model\SKILL.md`(把 Claude 接到那台
+机上走一遍也行)。产出就是**一个文件**:`models\<品牌>_<型号>.py`,写清这台机
+的全部事实(登录、菜单路径、控件选择器、各模式措辞、保存按钮)。拷进
+`models\` 就能用 `dial.bat` 和 `start.bat` 了,不需要改任何其它文件。
 
 ### 自检(可选,不需要路由器)
 
@@ -124,5 +131,5 @@ smoke.bat
 
 - `router.yaml` 存着管理密码和宽带账号,`perf.yaml` 的 `dial_modes.params`
   里也可能有宽带账密 —— **都已被 git 忽略**,不要提交、不要贴进工单。
-- `artifacts\diagnose_*.json` 可能含会话 token 和表单值,也已被 git 忽略;
+- `artifacts\probe_*.json`(适配新型号时产生)可能含会话 token 和表单值,也已被 git 忽略;
   回传给别人前先过一眼。

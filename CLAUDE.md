@@ -92,11 +92,34 @@ chain with no router/Chariot present.
   lazily). A failed switch skips that mode's measurements and is recorded, not
   silently swallowed (the legacy script's bare `except: continue` even had its
   error write commented out).
-- `.claude/skills/adapt-router-model/SKILL.md` — the onboarding methodology as
-  a skill: diagnose artifact → FACTS mapping table, selector cookbook, the
-  four iron rules, verification checklist. New models go through this, never
-  through guessed DOM.
-- `models/_browser.py` — Playwright launch (default `channel="chrome"`).
+- `.claude/skills/` — **the portability layer** (2026-07-29): the repo has to be
+  workable by an agent that has never seen it, without the author present.
+  - `adapt-router-model/SKILL.md` (+ `reference.md`) — onboarding a new model:
+    probe → FACTS mapping table → offline check → per-mode live verify →
+    `--apply` acceptance → mock+smoke regression, plus the four iron rules and
+    the "prove the feature is absent" method. `reference.md` is the complete
+    FACTS key-by-key spec and selector cookbook.
+  - `run-perf-round/SKILL.md` — running a bench round and triaging it
+    (config split, per-mode `wan_up.hosts`/creds/`nofrag_bytes`, matrix sizing,
+    and the failure catalogue: preflight, `err` cells, GBK console, `._pth`).
+- `tools/probe_router.py` — **read-only evidence probe; replaces the deleted
+  `cli.py diagnose`.** Logs in, harvests every control across all frames, and
+  **verifies each candidate selector's hit count with the Playwright engine**
+  (the browser console can't validate `:text-is()`/`:has()` — the 2026-07-18
+  Tenda lesson), then prints a FACTS suggestion and can `--emit` a model-script
+  skeleton. Never clicks apply; only `--nav` menu items and an `--open` trigger.
+  Validated offline against the mocks: it independently reproduces the
+  hand-written `Tenda_AX3000` (label-anchored `v-select` + `data-name` read-back
+  + nested-span apply) and `Cudy_AX` (frameset, native select, the pptp/l2tp
+  `mode_overrides` split, `save_apply` among 8 decoy buttons).
+- `tools/check_model.py` — offline self-consistency gate for a model script
+  (leftover TODOs, a mode missing `dial`/`apply` after overrides, required
+  creds with no field selector, two modes sharing one wording, invalid selector
+  syntax, missing CLI entry). Runs inside `smoke_test.py` via `--all`. It
+  cannot answer "how many does this selector hit on the real device" — passing
+  it is not acceptance.
+- `models/_browser.py` — Playwright launch (default `channel="chrome"`;
+  `ROUTER_BROWSER_PATH` env var overrides with an explicit binary).
 - `modes.py` — `MODE_REQUIRED_FIELDS` (which params each dial mode needs) and
   `merge_params` (pull creds out of router.yaml **per mode**, so PPPoE
   credentials can never leak into a dynamic run). `params:` in router.yaml
@@ -123,8 +146,14 @@ python models/Tenda_AX3000.py pppoe   # add --apply to really save
 # full performance round (switch + WAN-up + throughput + HTML/CSV report):
 python run_matrix.py --demo           # offline sample report, no router needed
 python run_matrix.py --model Tenda_AX3000           # real round (perf.yaml)
-# a new device: connect Claude in Chrome to it and follow the skill —
-# there is no heuristic fallback any more, and that is deliberate.
+
+# adapting a NEW device (follow .claude/skills/adapt-router-model/SKILL.md;
+# there is no heuristic fallback any more, and that is deliberate):
+python tools/probe_router.py --url http://192.168.1.1 --pass <admin> \
+    --nav "Internet Settings" --brand Tenda --model AX3000 \
+    --emit models/Tenda_AX3000.py     # read-only; verifies hit counts
+python tools/check_model.py Tenda_AX3000            # offline gate
+python models/Tenda_AX3000.py dynamic               # per-mode live read-back
 ```
 
 ## Environment
@@ -367,8 +396,12 @@ mode_override.
 
 ## Next steps
 - Produce `models/` scripts for the remaining group brands — **Buffalo, Huawei**
-  — via the adapt-router-model skill (Claude in Chrome on the live device;
-  never guess their DOM). Tenda + Cudy are done and accepted.
+  — via the adapt-router-model skill: `tools/probe_router.py` on the live
+  device (or Claude in Chrome), never guessed DOM. Tenda + Cudy are done and
+  accepted. The probe reconstructs both of those from scratch, so a new brand
+  of the same two UI families should be mostly mechanical; what still needs a
+  human/agent call is `mode_overrides` (a mode living on its own page) and any
+  control shape in «Known gaps».
 - Read the Cudy shell label and rename `Cudy_AX.py` / its `model:` to the real
   model name (currently a placeholder).
 - Re-verify on the bench the `[待真机复核]` lines in

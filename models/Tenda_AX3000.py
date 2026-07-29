@@ -11,7 +11,7 @@
 —— 会自动遍历本脚本声明的全部模式并跑吞吐。
 测试轮次(2026-07-18 与台架约定):复位后默认即 dynamic,先确认 → pppoe
 → IPv6 页遍历 DHCPv6 / PPPoEv6。
-管理密码/宽带账密可先 `python cli.py setup` 写进 router.yaml,之后不用带参数。
+管理密码/宽带账密可先 `python start.py --setup` 写进 router.yaml,之后不用带参数。
 注意:这台机同一时间只允许一个 Web 会话 —— 跑脚本前先退出浏览器里登录着的页签。
 
 事实来源:2026-07-18 真机直连逐项核验(Claude in Chrome,192.168.1.1;

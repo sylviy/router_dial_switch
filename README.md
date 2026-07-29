@@ -27,9 +27,14 @@ python run_matrix.py --demo                  # 整轮性能矩阵:先离线看�
   (登录、菜单路径、控件选择器、各模式措辞、保存按钮),同事直接运行即可,
   不需要理解引擎。组内目标品牌:Cudy / Tenda / Buffalo / Huawei。
 - `models/_driver.py` —— 所有型号共用的点击逻辑(约 500 行,修一处全体受益)。
-- `.claude/skills/adapt-router-model/` —— **适配方法论**:面对一台新型号,把
-  Claude 接到那台机上(Claude in Chrome)照这个 skill 走一遍,产出它的
-  `models/<品牌>_<型号>.py`。不猜 DOM,每一条事实都来自真机观察。
+- `tools/probe_router.py` —— **只读取证探针**:登录后抄下整页(含所有子
+  frame)的控件,并**用 Playwright 引擎实测每个候选选择器的命中数**,产出
+  证据 JSON + 一份 FACTS 建议(可 `--emit` 直接落成型号脚本骨架)。
+- `tools/check_model.py` —— 型号脚本的**离线体检**,不需要路由器。
+- `.claude/skills/` —— **让别人(和别的 agent)能接手**:
+  `adapt-router-model/` 是适配一台新型号的完整方法论(+ `reference.md`:
+  FACTS 逐键说明和选择器手册),`run-perf-round/` 是跑整轮和排查失败。
+  不猜 DOM,每一条事实都来自真机观察。
 
 ### 已适配的型号
 
@@ -141,22 +146,33 @@ dynamic → pppoe → static → dhcpv6 → pppoev6),每档切换**必定真正�
 
 ### 适配一台新型号
 
-把 Claude 接到那台路由器上(**Claude in Chrome**,从你自己那台能访问路由器
-LAN 的机器发起),然后照
-`.claude/skills/adapt-router-model/SKILL.md` 走:在页面上逐条确认登录框、菜单
-路径、拨号控件、各模式的**逐字措辞**、各模式要填的字段、保存按钮,每条都用
-`querySelectorAll(...).length === 1` 验证唯一性,写进一个新的
-`models/<品牌>_<型号>.py`。
-
-产出物就是那**一个文件**。拷进 `models/` 之后:
+在能访问路由器 LAN 的机器上,四条命令:
 
 ```bash
+# 1. 取证(只读:登录、抄下全部 frame 的控件、用 Playwright 引擎实测每个
+#    候选选择器的命中数;绝不点保存)。--emit 直接落一个骨架文件。
+python tools/probe_router.py --url http://192.168.1.1 --pass <管理密码> \
+    --nav "Internet Settings" --brand <品牌> --model <型号> \
+    --emit models/<品牌>_<型号>.py
+
+# 2. 离线体检(残留 TODO、缺字段、措辞撞车、选择器语法错都会被拦下)
+python tools/check_model.py <品牌>_<型号>
+
+# 3. 真机逐模式验证:success 且 read_back == 目标措辞才算过
 python models/<品牌>_<型号>.py dynamic          # 先看回读,不保存
-python models/<品牌>_<型号>.py pppoe --apply    # 确认无误再下发
+
+# 4. 全部对了再验收
+python models/<品牌>_<型号>.py pppoe --apply    # 真正下发
 ```
 
-其它文件一律不用动 —— `_driver.py` 已经包含全部点击逻辑,`start.py` 会自动
-把新型号列进菜单,`run_matrix.py` 会自动遍历它声明的全部模式。
+完整方法论(含判断"这台机到底有没有 IPv6"的穷尽核查法、各种诱饵陷阱)在
+`.claude/skills/adapt-router-model/SKILL.md`,FACTS 每个键的说明在同目录的
+`reference.md`。把 Claude 接到那台机上(**Claude in Chrome**)照 skill 走也可以
+—— 两条路的产出物是同一个文件。
+
+产出物就是那**一个文件**,其它文件一律不用动 —— `_driver.py` 已经包含全部点击
+逻辑,`start.py` 会自动把新型号列进菜单,`run_matrix.py` 会自动遍历它声明的
+全部模式,**没有任何注册表要改**。
 
 **不要靠猜写 FACTS。** 这个仓库里所有"假成功"的教训(点了个同名的诱饵元素、
 把卡片条的第一张当成当前值、`:text-is()` 匹配不到文字在内层 span 的按钮)都是
@@ -210,10 +226,13 @@ router_dial_switch/
   settings.py            router.yaml 本机默认值(IP/密码/凭据;git 忽略)
   config.py              浏览器 / 超时 / 路径 等开关(处理 OS 差异)
   tests/                 离线冒烟:mock 路由器页 + 端到端断言
-  tools/                 make_offline_bundle.py:重建 vendor/python
+  tools/                 probe_router.py:只读取证探针(适配新型号用)
+                         check_model.py:型号脚本离线体检
+                         make_offline_bundle.py:重建 vendor/python
   vendor/python/         **随仓库发布的 Python 3.8 运行时**(台架零安装)
   .claude/skills/
-    adapt-router-model/  适配方法论 skill:真机逐条取证 -> 填 FACTS -> 验证
+    adapt-router-model/  适配新型号:取证 -> 填 FACTS -> 体检 -> 真机验收
+    run-perf-round/      跑整轮性能矩阵 + 失败排查
   *.bat                  Windows 双击入口(_py.bat 决定用哪个解释器)
 ```
 

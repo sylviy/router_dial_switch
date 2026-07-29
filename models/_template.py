@@ -1,11 +1,20 @@
 """型号脚本模板 —— 复制成 models/<品牌>_<型号>.py 后逐项填 FACTS。
 
-产出流程(完整方法论见 .claude/skills/adapt-router-model/SKILL.md):
-  1. 在能访问路由器的机器上跑 `python cli.py diagnose`(或一次失败的裸跑,
-     会自动生成同样的产物)→ artifacts/diagnose_*.json;
-  2. 从产物抄"已验证命中数==1"的选择器进下面的 FACTS;
-  3. `python models/<新型号>.py dynamic`(默认不点保存)验证回读;
-  4. 每个模式过一遍,最后带 --apply 验收。
+**多数情况下不用手抄这个模板**:探针能直接生成填好的骨架 ——
+    python tools/probe_router.py --url http://<ip> --pass <管理密码> \\
+        --brand <品牌> --model <型号> --emit models/<品牌>_<型号>.py
+手写时照下面逐项填。完整方法论见 .claude/skills/adapt-router-model/SKILL.md,
+每个键的详细说明见同目录的 reference.md。
+
+产出流程:
+  1. `python tools/probe_router.py ...` 取证 → artifacts/probe_*.json
+     (只读:登录、抄控件、**用 Playwright 引擎实测每个候选选择器的命中数**,
+      绝不点保存);
+  2. 从产物抄"命中数==1"的选择器进下面的 FACTS;
+  3. `python tools/check_model.py <型号>` 离线体检(残留 TODO、缺字段、
+     措辞撞车、选择器语法错都会被拦下);
+  4. `python models/<新型号>.py dynamic`(默认不点保存)验证回读;
+  5. 每个模式过一遍,最后带 --apply 验收。
 
 铁律(别删):
   * 只有真实回读==目标措辞才算 success —— 驱动已内置,别绕过它;
@@ -46,8 +55,9 @@ FACTS = {
     # kind: "select"   原生 <select>(被美化插件隐藏也行,驱动会 force)
     #       "dropdown" 自定义下拉:点 trigger 弹出选项再点(combobox/Vue 皆是)
     #       "radio"    单选组:此时 modes 的值填每个模式各自 radio 的选择器
+    #       value: 可选的回读子选择器(触发器文字常混着下拉小箭头等杂质)
     "dial": {"kind": "dropdown",
-             "selector": "<diagnose 产物 pin.recommended 里的选择器>"},
+             "selector": "<探针产物 pin.recommended 里的选择器>"},
 
     # -- 各模式在界面上的原文(逐字照抄,失败信息会列出它看到的选项)---------
     "modes": {

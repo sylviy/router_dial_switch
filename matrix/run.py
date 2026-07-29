@@ -18,7 +18,7 @@
 —— 不下发吞吐就没有意义,所以这里没有 --apply 开关。"只切换看回读"的
 安全演练属于单模式入口(models/<型号>.py 默认不保存,加 --apply 才下发)。
 
-凭据(管理密码/宽带账密)取自 router.yaml(python cli.py setup 生成),
+凭据(管理密码/宽带账密)取自 router.yaml(python start.py --setup 生成),
 按模式过滤 —— PPPoE 账密不会带进 dynamic 运行。
 """
 from __future__ import annotations
@@ -175,7 +175,7 @@ def main(argv=None) -> int:
     facts = _load_facts(cfg.model) if (cfg.model and not args.demo) else None
     if facts and cfg.model and not args.demo and facts.get("login") \
             and not args.password:
-        raise SystemExit("缺管理密码:先 `python cli.py setup` 存进 router.yaml,"
+        raise SystemExit("缺管理密码:先 `python start.py --setup` 存进 router.yaml,"
                          "或本次加 --pass <密码>。(只想看样例报告加 --demo)")
 
     # perf.yaml 没写 dial_modes = 工具的本意:遍历该型号声明的**全部**拨号方式
