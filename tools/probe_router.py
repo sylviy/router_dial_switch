@@ -1091,7 +1091,14 @@ def main(argv=None) -> int:
         ap.error("没有地址:--url http://192.168.1.1,"
                  "或先跑 python start.py --setup 存进 router.yaml")
 
-    report, facts = probe(args)
+    try:
+        report, facts = probe(args)
+    except Exception as exc:
+        from tools import crashlog
+        crashlog.report(exc, "探测页面",
+                        {"url": args.url, "nav": args.nav,
+                         "login_btn": args.login_btn})
+        return 2
 
     out = args.out or os.path.join(
         ROOT, "artifacts", "probe_%s_%s.json"

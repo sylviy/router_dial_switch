@@ -26,7 +26,7 @@ if ROOT not in sys.path:
 
 import settings as settings_mod
 from modes import MODE_REQUIRED_FIELDS, merge_params
-from tools import probe_router
+from tools import crashlog, probe_router
 from tools.check_model import check_facts, _open_engine
 
 _FIELD_HINT = {
@@ -201,11 +201,12 @@ def main(argv=None) -> int:
         try:
             report, facts = probe_router.probe(args)
         except Exception as exc:
-            # 只给第一行:Playwright 失败时会吐几十行浏览器日志,对测试员没用,
-            # 淹掉了真正该看的那句话。
-            print("[X] 探测失败:%s" % str(exc).strip().splitlines()[0])
-            print("    常见原因:地址不对、这台机器连不到路由器、Chrome 没装。")
-            print("    完整报错可以贴给 agent 看。")
+            # 崩溃(而不是"没找到")走统一出口:先认已知病症,认不出来才落一份
+            # 小报告。Playwright 的原始报错有几十行浏览器日志,直接打出来没人
+            # 看得懂,贴给 agent 也是纯烧 token。
+            crashlog.report(exc, "探测页面",
+                            {"url": url, "brand": brand, "model": model,
+                             "nav": nav, "login_btn": login_btn})
             return 2
         _describe(facts, report)
 
@@ -348,7 +349,10 @@ def main(argv=None) -> int:
                              admin_user=saved.get("user", ""),
                              admin_pass=password, headless=cli.headless)
         except Exception as exc:
-            _done("  %-9s [X] 跑不起来:%s" % (m, str(exc).splitlines()[0]))
+            _done("  %-9s [X] 跑不起来" % m)
+            crashlog.report(exc, "验证模式 %s" % m,
+                            {"url": url, "model": name, "mode": m},
+                            log=lambda s: print("     " + s))
             results[m] = False
             continue
         if res["success"]:
