@@ -13,7 +13,11 @@ perf.yaml
 
 # 运行产物:截图/诊断证据。都是每次跑动现场生成的,不进仓库
 # (diagnose 产物可能含会话 token / 表单里的账号密码 —— 回传前先脱敏)
-artifacts/
+# artifacts/ 整个忽略,但**目录本身要留着** —— skill 让 agent 把控件清单、
+# 进度文件、崩溃报告写在这里;新克隆里没有这个目录的话,第一条重定向
+# 命令就会失败(2026-07-30 实测)。所以用 artifacts/* + 放行 .gitkeep。
+artifacts/*
+!artifacts/.gitkeep
 recordings/
 
 __pycache__/

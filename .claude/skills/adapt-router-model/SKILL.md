@@ -12,8 +12,10 @@ description: 为一台新路由器型号产出专属拨号切换脚本 models/<�
 
 **你的上下文随时可能被压缩清空。进度存在磁盘上,不在你脑子里。**
 
-```bash
-cat artifacts/progress_<品牌>_<型号>.md      # 没有就是全新开始
+**读这个文件**(用你手上的读文件工具即可,别纠结 shell 命令):
+
+```
+artifacts/progress_<品牌>_<型号>.md          # 不存在 = 全新开始
 ```
 
 **每做完一步,立刻追加一行**(十几个字,几乎不花 token),格式固定:
@@ -21,7 +23,7 @@ cat artifacts/progress_<品牌>_<型号>.md      # 没有就是全新开始
 ```
 # Mercusys MR80X  url=http://192.168.1.1  pass=见用户消息
 nav=Internet
-py=vendor\python\python.exe
+py=vendor/python/python.exe
 dump=artifacts/inventory_Mercusys_MR80X.txt  OK
 facts=已写入 models/Mercusys_MR80X.py
 count=dial 1 / apply 1 / pppoe_user 1     全部==1
@@ -39,18 +41,22 @@ next=修 l2tp 的措辞,其余已完成
 也没装 Playwright —— 直接敲只会得到 `No module named 'playwright'`,而那**不是
 适配问题**。
 
-```bash
-# Windows(优先 .venv,否则用仓库自带的)
-if exist ".venv\Scripts\python.exe" (set PY=.venv\Scripts\python.exe) ^
-else (set PY=vendor\python\python.exe)
-%PY% -c "import playwright, sys; print(sys.version)"
-# Linux/macOS:  PY=$([ -x .venv/bin/python ] && echo .venv/bin/python || echo python3)
+**一条一条试,谁先打印出版本号就用谁**(不要写 if/else —— 你可能在 cmd、
+PowerShell 或 bash 里,分支语法各不相同):
+
+```
+vendor/python/python.exe -c "import playwright,sys;print(sys.version)"
+.venv/Scripts/python.exe -c "import playwright,sys;print(sys.version)"
+.venv/bin/python          -c "import playwright,sys;print(sys.version)"
+python3                   -c "import playwright,sys;print(sys.version)"
 ```
 
-打印出版本号才算就绪,并把 `py=` 记进进度文件。下面所有 `python xxx` 都用 `%PY%`
-/ `$PY` 代替。**「不要读 `vendor/`」指的是不要读它里面的文件(97 MB),
-但它的 `python.exe` 正是你要用的解释器** —— 两件事不冲突。
-两个都没有就如实报告,**不要自己 pip install**(台架离线,装不上)。
+选定后**把它记进进度文件的 `py=` 行**。下文所有命令里的 `<PY>` 都替换成它
+(这是一个占位符,不是 shell 变量 —— 直接写全路径最保险)。
+
+**「不要读 `vendor/`」指的是不要读它里面的文件(97 MB),但它的 `python.exe`
+正是你要用的解释器** —— 两件事不冲突。四条都失败就如实报告,
+**不要自己 pip install**(台架离线,装不上)。
 
 ## 成本纪律
 
@@ -73,22 +79,47 @@ else (set PY=vendor\python\python.exe)
 
 ## 流程(合并成三轮命令跑完)
 
-**先判断走哪条**:已知 UI 家族(Vue 类 / 老式 frameset / LuCI-CBI)可以碰运气用
-`--emit`;**全新样子的 UI 直接跳过它,从 `--dump` 开始** —— 对新 UI 猜测多半失败,
-再去修猜测结果是纯浪费。
+**先判断走哪条**:长得像已知家族(Vue 类 / 老式 frameset / LuCI-CBI)就先白试一次
+自动生成 —— 它不花 token,成了就直接跳到第 3 轮:
+
+```
+<PY> tools/probe_router.py --url http://<ip> --pass <密码> --nav "<菜单文字>" --probe-modes --brand <品牌> --model <型号> --emit models/<品牌>_<型号>.py
+```
+
+摘要里没有 `TODO` = 这台机不用你判断任何东西。**留了 TODO 就往下走,别去修它的
+猜测逻辑。全新样子的 UI 直接跳过这条,从第 1 轮的 `--dump` 开始** —— 对没见过的
+UI 猜测多半失败,再去修猜测结果是纯浪费。
 
 **第 1 轮:探到页面 + 抄下来**(一次跑完这几条,一起汇报)
 
-```bash
-curl -m 4 http://<ip>
-%PY% tools\probe_router.py --dump --url http://<ip> --pass <密码> ^
-    --nav "<设置页菜单文字>" > artifacts\inventory_<品牌>_<型号>.txt
-type artifacts\inventory_<品牌>_<型号>.txt
+**每条命令写成一行**(别用 `^` 或 `\` 续行 —— 各 shell 不一样):
+
 ```
+curl -m 4 http://<ip>
+<PY> tools/probe_router.py --dump --url http://<ip> --pass <密码> --nav "<设置页菜单文字>" > artifacts/inventory_<品牌>_<型号>.txt
+```
+
+然后**读** `artifacts/inventory_<品牌>_<型号>.txt`。
+(重定向不好使就照常打到屏幕上,再用写文件工具存成同名文件 —— 存盘这一步
+不能省,它是被压缩之后唯一的依据。)
 
 清单每行一个控件(`vis=` 是否可见),**只读这份,别去看页面源码**。
 拨号控件没出现 = 多半还停在首页,补 `--nav "<菜单文字>"`(前缀 `sel:` 表示用
 选择器)重跑这一轮。登录失败见下面「卡住了」。
+
+**账密框在清单里看不到是正常的** —— 很多 UI 要**选完拨号方式才挂载**它们
+(LuCI 就是:`wan.username` 在初始的 DHCP 档下根本不存在)。而清单里那些**看得见
+的输入框未必是拨号用的**:同一页别的段(VPN Server、无线)也有 Username/Password,
+**填错了就是假成功**。所以字段这样拿:
+
+```
+<PY> tools/probe_router.py --url http://<ip> --pass <密码> --nav "<菜单文字>" --probe-modes --brand <品牌> --model <型号> --emit models/<品牌>_<型号>.py
+```
+
+`--probe-modes` 会逐档选一次(**只切换,不保存**),把每档真正挂载出来的框抄下来,
+并按"当前是哪一档"定概念。摘要里会写清每档要填什么。
+它不适用于自定义下拉(非原生 `<select>`)——那种就自己在页面上切一档再 `--dump`
+一次,对比多出来哪些框。
 
 **存进度**:`dump=... OK` 和 `nav=...`。
 
@@ -97,9 +128,8 @@ type artifacts\inventory_<品牌>_<型号>.txt
 照 `reference.md` 的键写(或复制 `models/Cudy_AX3000.py` 改),写进
 `models/<品牌>_<型号>.py`,然后**一条命令验完所有选择器**:
 
-```bash
-%PY% tools\probe_router.py --url http://<ip> --pass <密码> --nav "..." ^
-    --count "<拨号控件>" --count "<保存键>" --count "<账密框1>" --count "<账密框2>"
+```
+<PY> tools/probe_router.py --url http://<ip> --pass <密码> --nav "..." --count "<拨号控件>" --count "<保存键>" --count "<账密框1>" --count "<账密框2>"
 ```
 
 **命中数不是 1 就不能用**(`button:text-is("Connect")` 常命中 0,文字在里层
@@ -115,10 +145,10 @@ div.<行class>:has-text("<标签文字>") <控件>     # 类名不唯一,用标�
 
 **第 3 轮:体检 + 逐模式真机验证**
 
-```bash
-%PY% tools\check_model.py <品牌>_<型号>
-%PY% models\<品牌>_<型号>.py dynamic
-%PY% models\<品牌>_<型号>.py pppoe
+```
+<PY> tools/check_model.py <品牌>_<型号>
+<PY> models/<品牌>_<型号>.py dynamic
+<PY> models/<品牌>_<型号>.py pppoe
 ```
 
 `success:true` 且 `read_back` 正是目标措辞才算过。失败信息里会**列出它当时看到
