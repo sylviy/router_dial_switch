@@ -120,6 +120,17 @@ chain with no router/Chariot present.
   hand-written `Tenda_AX3000` (label-anchored `v-select` + `data-name` read-back
   + nested-span apply) and `Cudy_AX1500` (frameset, native select, the pptp/l2tp
   `mode_overrides` split, `save_apply` among 8 decoy buttons).
+  Two verbs exist for the agent-driven path, added 2026-07-30 after the user
+  pointed out that piling more heuristics into the probe was the wrong division
+  of labour: **`--dump`** prints a heuristics-free control inventory, one line
+  per control (LuCI page: 943 bytes vs 6 KB of raw mock HTML, and a real page
+  is 100-500 KB) — the agent reads that and decides, no MODE_WORDS needed;
+  **`--count "<sel>"`** reports per-frame hit counts for selectors the agent
+  proposes, which is the one thing an agent cannot do by reading and is the
+  origin of every false success here. Judgement to the agent, verification to
+  the engine. `--emit` stays as the zero-token fast path for UI families
+  already seen; when it leaves TODOs the answer is `--dump`, **not another
+  heuristic patch**.
 - `tools/check_model.py` — offline self-consistency gate for a model script
   (leftover TODOs, a mode missing `dial`/`apply` after overrides, required
   creds with no field selector, two modes sharing one wording, invalid selector

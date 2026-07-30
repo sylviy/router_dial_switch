@@ -895,6 +895,80 @@ def emit_script(path: str, facts: dict, probe_file: str) -> None:
         fh.write(text)
 
 
+def dump_inventory(page, log=print) -> None:
+    """把页面上的控件按"每行一个"打出来,**不做任何判断**。
+
+    这是给 agent 用的:它读得懂 label 和选项原文,不需要 MODE_WORDS 那种词表来
+    替它归类。程序在这里的价值只有一个 —— **压缩**:原始 HTML 几十万字符,
+    这份清单一千字符出头(LuCI 实测 1057 字节),差两个数量级。
+
+    判断交给 agent,验证交给 --count。这里既不猜也不写文件。
+    """
+    for i, fr in enumerate(page.frames):
+        try:
+            d = fr.evaluate(HARVEST_JS)
+        except Exception as exc:
+            log("### frame %d %s  (抄不了: %s)" % (i, getattr(fr, "url", ""), exc))
+            continue
+        log("### frame %d %s" % (i, getattr(fr, "url", "")))
+        for s in d.get("selects") or []:
+            log("select id=%r name=%r vis=%s label=%r options=%s"
+                % (s["id"], s["name"], s["visible"], s["label"], s["options"]))
+        for x in d.get("inputs") or []:
+            if x.get("type") == "hidden":
+                continue                      # 隐藏域填不了,占篇幅
+            log("input  type=%s id=%r name=%r vis=%s label=%r"
+                % (x["type"], x["id"], x["name"], x["visible"], x["label"]))
+        for b in d.get("buttons") or []:
+            log("button tag=%s text=%r value=%r vis=%s id=%r name=%r"
+                % (b["tag"], b["text"], b["value"], b["visible"], b["id"],
+                   (b.get("attrs") or {}).get("name")))
+        # 自定义下拉(Vue/React 的 div 组合件):没有 <select> 的机型全靠它
+        for c in (d.get("dropdowns") or [])[:14]:
+            if not c.get("visible"):
+                continue
+            row = c.get("row") or {}
+            log("widget tag=%s class=%r text=%r label=%r row=%r"
+                % (c["tag"], (c.get("cls") or "")[:40], c.get("text"),
+                   (row.get("label") or c.get("label") or "")[:30],
+                   row.get("cls", "")))
+        for g in (d.get("toggles") or [])[:6]:
+            if not g.get("visible"):
+                continue
+            log("toggle tag=%s id=%r class=%r label=%r checked=%s"
+                % (g["tag"], g["id"], (g.get("cls") or "")[:40],
+                   (g.get("label") or "")[:30], g.get("checked")))
+
+
+def count_selectors(page, selectors: list, log=print) -> None:
+    """数每个选择器在每个 frame 里命中几个、其中几个可见。
+
+    **这是 agent 光靠读页面永远做不到的一件事**,也是本仓库所有"假成功"的
+    根源:`button:text-is("Connect")` 看着没错,真机命中 0(文字在里层 span);
+    `#cbid.network.wan.proto` 看着没错,命中 0(id 含点号);
+    `button[name='cbi.apply']` 看着没错,命中 4。
+    所以流程是:**agent 提选择器,这条命令判对错。**
+    """
+    for sel in selectors:
+        parts = []
+        for i, fr in enumerate(page.frames):
+            n = _count(fr, sel)
+            if n <= 0:
+                if n < 0:
+                    parts.append("frame%d 语法错" % i)
+                continue
+            vis = 0
+            try:
+                loc = fr.locator(sel)
+                for k in range(min(n, 25)):
+                    if loc.nth(k).is_visible():
+                        vis += 1
+            except Exception:
+                vis = -1
+            parts.append("frame%d 命中%d(可见%s)" % (i, n, vis))
+        log("%-70s %s" % (sel, "  ".join(parts) or "命中 0"))
+
+
 # ---------------------------------------------------------------------------
 def probe(args):
     """跑一次取证,返回 (完整证据, FACTS 建议)。
@@ -922,6 +996,15 @@ def probe(args):
         report["nav_warnings"] = nav_result["warnings"]
         _driver._settle(page, 800)
         report["final_url"] = page.url
+        if getattr(args, "dump", False) or getattr(args, "count", None):
+            # 只抄/只数:不做建议、不写产物。这条路是给 agent 用的,越小越好。
+            if getattr(args, "dump", False):
+                print("落点 URL: %s" % page.url)
+                dump_inventory(page)
+            if getattr(args, "count", None):
+                print("--- 选择器命中数(真引擎实测)---")
+                count_selectors(page, args.count)
+            return report, None
         report["frames"] = harvest(page)
         if args.open_sel:
             # 点开下拉抄选项原文。只点触发器 —— 保存键永远不碰。
@@ -1082,6 +1165,10 @@ def main(argv=None) -> int:
     ap.add_argument("--emit", default="",
                     help="把 FACTS 建议写成型号脚本,如 models/Tenda_AX3000.py")
     ap.add_argument("--out", default="", help="产物 JSON 路径(默认 artifacts/)")
+    ap.add_argument("--dump", action="store_true",
+                    help="只打印控件清单(每行一个,不猜、不写文件)—— 给 agent 读")
+    ap.add_argument("--count", action="append", default=[], metavar="SELECTOR",
+                    help="数这个选择器命中几个,可重复 —— 验证 agent 给的选择器")
     ap.add_argument("--probe-modes", action="store_true",
                     help="逐个模式选一遍,抄出各档才挂载的账密框(不点保存)")
     ap.add_argument("--headless", action="store_true", help="无窗口运行")
@@ -1090,6 +1177,16 @@ def main(argv=None) -> int:
     if not args.url:
         ap.error("没有地址:--url http://192.168.1.1,"
                  "或先跑 python start.py --setup 存进 router.yaml")
+
+    if args.dump or args.count:
+        # 这两个动词只输出到 stdout,不落产物、不生成脚本
+        try:
+            probe(args)
+        except Exception as exc:
+            from tools import crashlog
+            crashlog.report(exc, "抄页面", {"url": args.url, "nav": args.nav})
+            return 2
+        return 0
 
     try:
         report, facts = probe(args)
