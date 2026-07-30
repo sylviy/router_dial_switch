@@ -5,147 +5,146 @@ description: 为一台新路由器型号产出专属拨号切换脚本 models/<�
 
 # 适配一台新路由器型号
 
-**产出**:一个文件 `models/<品牌>_<型号>.py` —— 只有这台机的事实(FACTS),
-点击逻辑全在共用的 `models/_driver.py` 里。放进 `models/` 就完事,
-`start.py` / `run_matrix.py` 扫目录自动发现,**没有注册表要改**。
+**产出**:一个文件 `models/<品牌>_<型号>.py`(只有这台机的 FACTS)。放进
+`models/` 就完事,`start.py` / `run_matrix.py` 自动发现,没有注册表要改。
 
-## 成本纪律(先读这一节)
+## ⚠ 开工第一件事:读进度文件
 
-**一台设备的预算:输入 ~1500 token,输出 ~500。** 超出说明走错路了。
-
-**不要做**(这些是真实烧掉过用户余额的动作):
-
-- **不要探索。** 别为了"搞清楚驱动怎么工作"去读 `models/_driver.py`(574 行)
-  —— 它的行为下面和 `reference.md` 已经写全。
-- **不要整份读**:`artifacts/probe_*.json`(真机上几百 KB)、`artifacts/*.png`、
-  `vendor/`(97 MB)、`CLAUDE.md` 全文。要查某一段就 `python -c` 切出来。
-- **不要写 mock、不要改 `tools/`、不要改 `_driver.py`。** 那些是真机验收之后
-  才谈的事,不属于适配一台机器。
-- **不要逐行生成代码。** 脚本要么由 `--emit` 写出来,要么你只输出一个
-  FACTS dict —— 别把 100 行脚本一个字一个字打出来。
-
-## 铁律(违反任何一条 = 返工)
-
-1. **不猜没观察过的 DOM。** 每个选择器都要有出处,而且**命中数必须实测==1**
-   (`--count`)。宁可留 `TODO` 让它诚实失败,也不写"大概是这样"。
-2. **只有真实回读 == 目标措辞才算成功。** 驱动已内置(精确相等)。
-   **永远不要**放宽成子串 —— "PPPoEv6" 会被认成 "PPPoE"。
-3. **默认不点保存。** 验证阶段不带 `--apply`;全部回读正确才验收。
-   切错模式会断网,别在承载真实上网的路由器上验收。
-4. **凭据不进仓库。** 密码走 `router.yaml`(git 已忽略)。
-
-## 流程 A:你能连到这台路由器(主路)
+**你的上下文随时可能被压缩清空。进度存在磁盘上,不在你脑子里。**
 
 ```bash
-curl -m 4 http://<ip>            # 先确认真连得上,别凭旧结论
+cat artifacts/progress_<品牌>_<型号>.md      # 没有就是全新开始
 ```
 
-**第 1 步:先白试一次自动生成(0 token)。**
+**每做完一步,立刻追加一行**(十几个字,几乎不花 token),格式固定:
+
+```
+# Mercusys MR80X  url=http://192.168.1.1  pass=见用户消息
+nav=Internet
+py=vendor\python\python.exe
+dump=artifacts/inventory_Mercusys_MR80X.txt  OK
+facts=已写入 models/Mercusys_MR80X.py
+count=dial 1 / apply 1 / pppoe_user 1     全部==1
+check=PASS
+live=dynamic OK / pppoe OK / l2tp FAIL(read_back='')
+next=修 l2tp 的措辞,其余已完成
+```
+
+被压缩之后:**读这个文件 → 从 `next=` 那一行继续,不要重新探测**。
+已经 OK 的步骤**一律不重跑**(重跑 `--dump` 只是浪费,重跑 `--apply` 会改设备)。
+
+## 第二件事:确定用哪个 python
+
+**永远不要直接敲 `python`。** PATH 上那个在台架上是不能动的 Python 2,别处通常
+也没装 Playwright —— 直接敲只会得到 `No module named 'playwright'`,而那**不是
+适配问题**。
 
 ```bash
-python tools/probe_router.py --url http://<ip> --pass <密码> \
-    --nav "<设置页菜单文字>" --probe-modes \
-    --brand <品牌> --model <型号> --emit models/<品牌>_<型号>.py
+# Windows(优先 .venv,否则用仓库自带的)
+if exist ".venv\Scripts\python.exe" (set PY=.venv\Scripts\python.exe) ^
+else (set PY=vendor\python\python.exe)
+%PY% -c "import playwright, sys; print(sys.version)"
+# Linux/macOS:  PY=$([ -x .venv/bin/python ] && echo .venv/bin/python || echo python3)
 ```
 
-摘要里没有 `TODO` 就直接跳到第 4 步 —— 这台机不需要你判断任何东西。
-**留了 TODO 就不要去改探针的猜测逻辑**,往下走。
+打印出版本号才算就绪,并把 `py=` 记进进度文件。下面所有 `python xxx` 都用 `%PY%`
+/ `$PY` 代替。**「不要读 `vendor/`」指的是不要读它里面的文件(97 MB),
+但它的 `python.exe` 正是你要用的解释器** —— 两件事不冲突。
+两个都没有就如实报告,**不要自己 pip install**(台架离线,装不上)。
 
-**第 2 步:让它把页面抄给你(约 300 token)。**
+## 成本纪律
+
+**一台设备预算:输入 ~1500 token,输出 ~500。超了就是走错路。**
+
+不要探索、不要整份读(`artifacts/*.json`、`*.png`、`vendor/` 里的文件、
+`CLAUDE.md`、`models/_driver.py`)、不要写 mock、不要改 `tools/` 或 `_driver.py`、
+不要逐行打印脚本(只输出 FACTS dict)。**`adapt.py` 是给人用的向导,不是给你的
+—— 别调用它,也别去修它。**
+
+**每轮尽量多跑几条命令再汇报**,别一条一问 —— 轮数越少,被压缩的机会越小。
+
+## 铁律(违反 = 返工)
+
+1. **不猜没观察过的 DOM**,每个选择器都要 `--count` 实测 ==1。宁可留 `TODO`。
+2. **只有真实回读 == 目标措辞才算成功**,永远不放宽成子串
+   ("PPPoEv6" 会被认成 "PPPoE")。
+3. **默认不点保存**,全部回读正确才 `--apply`;切错会断网。
+4. **凭据不进仓库**(走 `router.yaml`,已 git 忽略)。
+
+## 流程(合并成三轮命令跑完)
+
+**先判断走哪条**:已知 UI 家族(Vue 类 / 老式 frameset / LuCI-CBI)可以碰运气用
+`--emit`;**全新样子的 UI 直接跳过它,从 `--dump` 开始** —— 对新 UI 猜测多半失败,
+再去修猜测结果是纯浪费。
+
+**第 1 轮:探到页面 + 抄下来**(一次跑完这几条,一起汇报)
 
 ```bash
-python tools/probe_router.py --dump --url http://<ip> --pass <密码> \
-    --nav "<设置页菜单文字>" | tee artifacts/inventory_<品牌>_<型号>.txt
+curl -m 4 http://<ip>
+%PY% tools\probe_router.py --dump --url http://<ip> --pass <密码> ^
+    --nav "<设置页菜单文字>" > artifacts\inventory_<品牌>_<型号>.txt
+type artifacts\inventory_<品牌>_<型号>.txt
 ```
 
-**一定要 `tee` 存下来。** 这份清单一千字节,却是后面每一步的全部输入;
-存了它,后面任何一步崩掉都不用重新探测,也随时能贴给别人。
+清单每行一个控件(`vis=` 是否可见),**只读这份,别去看页面源码**。
+拨号控件没出现 = 多半还停在首页,补 `--nav "<菜单文字>"`(前缀 `sel:` 表示用
+选择器)重跑这一轮。登录失败见下面「卡住了」。
 
-每行一个控件(`vis=` 是否可见),没有任何猜测。原始 HTML 几十万字符,这份
-清单一千字符出头 —— **只读这份,不要去看页面源码**。
+**存进度**:`dump=... OK` 和 `nav=...`。
 
-看不到拨号控件时:大概率还停在首页,补 `--nav "<菜单文字>"` 再抄一次
-(前缀 `sel:` 表示用选择器点)。
+**第 2 轮:写 FACTS + 一次性验证全部选择器**
 
-**第 3 步:自己写 FACTS,然后让引擎判对错。**
-
-照 `reference.md` 的键写(或复制 `models/Cudy_AX3000.py` 改)。写完把每个
-选择器都数一遍:
+照 `reference.md` 的键写(或复制 `models/Cudy_AX3000.py` 改),写进
+`models/<品牌>_<型号>.py`,然后**一条命令验完所有选择器**:
 
 ```bash
-python tools/probe_router.py --url http://<ip> --pass <密码> --nav "..." \
-    --count "<拨号控件>" --count "<保存键>" --count "<账密框>"
+%PY% tools\probe_router.py --url http://<ip> --pass <密码> --nav "..." ^
+    --count "<拨号控件>" --count "<保存键>" --count "<账密框1>" --count "<账密框2>"
 ```
 
-**命中数不是 1 就不能用。** 这一步是本仓库所有"假成功"的唯一防线 ——
-`button:text-is("Connect")` 看着没错但命中 0(文字在里层 span);
-`#cbid.network.wan.proto` 看着没错但命中 0(id 含点号);
-`button[name='cbi.apply']` 看着没错但命中 4。**只有真引擎数得出来。**
-
-不唯一时的两条常用收窄法(先试这两个,再想别的):
+**命中数不是 1 就不能用**(`button:text-is("Connect")` 常命中 0,文字在里层
+span;含点号的 id 只能写 `[id='...']`;`cbi.apply` 那类常命中 4)。不唯一时先试
+这两条收窄法:
 
 ```
-form:has(<拨号控件>) <按钮>                        # 一页多段、每段一个保存键
-div.<行class>:has-text("<标签文字>") <控件>        # 类名不唯一,用标签锚定
+form:has(<拨号控件>) <按钮>                     # 一页多段、每段一个保存键
+div.<行class>:has-text("<标签文字>") <控件>     # 类名不唯一,用标签锚定
 ```
 
-**第 4 步:体检 + 真机逐模式验证(0 token)。**
+**存进度**:`facts=...` 和 `count=... 全部==1`。
+
+**第 3 轮:体检 + 逐模式真机验证**
 
 ```bash
-python tools/check_model.py <品牌>_<型号>     # 残留 TODO / 缺字段 / 措辞撞车
-python models/<品牌>_<型号>.py <每一个模式>    # 看 success + read_back
+%PY% tools\check_model.py <品牌>_<型号>
+%PY% models\<品牌>_<型号>.py dynamic
+%PY% models\<品牌>_<型号>.py pppoe
 ```
 
-`success:true` 且 `read_back` 正是目标措辞才算过。失败信息会**列出它当时
-实际看到的东西**(下拉里有哪些选项、页面上有哪些按钮)—— 照着改,别重新猜。
+`success:true` 且 `read_back` 正是目标措辞才算过。失败信息里会**列出它当时看到
+的东西**(有哪些选项、有哪些按钮)—— 照着改,别重新猜。
 
-**第 5 步:验收 + 交待。** 全部过了,每档带 `--apply` 跑一次确认
-`applied:true`。然后告诉用户台架还要在 `perf.yaml` 配:`dial_modes`
-(**排除 `static`**,它没有字段映射)、`wan_up.hosts`(按模式配 ping 目标)、
-`chariot.nofrag_bytes`(测 UDP 不分片档才要),以及 `router.yaml` 的
-`params[<模式>]`(L2TP / PPTP 字段名相同但账号不同,必须分模式存)。
+**存进度**:`check=` 和 `live=每档结果`。
 
-## 流程 B:你连不到这台路由器
+**收尾**:全过之后问用户是否验收,同意再逐档 `--apply`。然后告诉用户
+`perf.yaml` 还要配 `dial_modes`(**排除 `static`**)、`wan_up.hosts`(按模式配
+ping 目标)、`chariot.nofrag_bytes`,以及 `router.yaml` 的 `params[<模式>]`
+(L2TP/PPTP 字段名相同但账号不同,必须分模式存)。
 
-让用户在能访问的机器上跑第 2 步那条 `--dump`,把输出贴给你;你出 FACTS,
-再让用户跑第 3 步的 `--count` 把命中数贴回来。**其余完全一样。**
-提醒用户产物里可能有会话 token,回传前过一眼。
-
-## 某条命令崩了 / 没产出文件
-
-**不要卡在这里等人修工具。** 这五条命令彼此独立,而且**你永远不需要工具替你
-生成脚本** —— 你手上有 `--dump` 的清单和 `reference.md` 的 FACTS 格式,
-自己写一个 dict 存成 `models/<品牌>_<型号>.py` 就行。这条路没有任何环节会崩。
-
-| 崩在哪 | 绕过去 |
-|---|---|
-| `--emit`(自动生成) | 用 `--dump` 的清单自己写 FACTS。本来就只有见过的 UI 家族才指望它 |
-| `--probe-modes`(逐档探字段) | 自己切一档再 `--dump` 一次,看多出来哪些框;或照 `reference.md` 的字段表写,再用 `--count` 验 |
-| `adapt.py`(向导) | **那是给人用的,不是给你用的。** 走本文件的五条命令,别去修它 |
-| 浏览器起不来 / 连不上 / 超时 | 环境问题,不是适配问题。`artifacts/crash_*.txt` 里已有结论,照做或如实报告 |
-
-崩溃**不代表前面白跑**:只要 `--dump` 的输出 `tee` 存过,判断所需的一切都还在。
-
-**别去改 `tools/` 或 `_driver.py` 来"让它不崩"** —— 那是在把适配一台机器变成
-改工具。适配的产出永远只有一个文件:`models/<品牌>_<型号>.py`。
-
-## 卡住了:先分三类
+## 卡住了:先分四类
 
 | 症状 | 类别 | 怎么办 |
 |---|---|---|
-| 抛异常退出 | **崩溃** | 看 `artifacts/crash_*.txt`(20 行,已滤掉浏览器日志)。多数是环境问题,`tools/crashlog.py` 直接给结论 |
-| 登录不进去 | **登录** | 探针会打印登录页诊断:密码框/文本框/按钮/可点元素 + 截图。老 UI 的登录键常是 `<a>`/`<div>`,不是 `<button>` |
-| `--dump` 里看得见控件,但选择器不唯一/回读不对 | **定位** | 便宜。用上面两条收窄法,`--count` 验证。**修法必须通用 —— `_driver.py` 和 `probe_router.py` 里没有一行按品牌分支的代码,保持这样** |
-| 页面上明明有,`--dump` 却压根没有这个形态 | **形态** | 贵。见「边界」:要给 `_driver.py` 加新 `dial.kind` + 配 mock,那是单独立项的功能开发,**不是适配某台机的顺手活** |
+| 抛异常退出 | 崩溃 | 看 `artifacts/crash_*.txt`(20 行)。多数是环境问题 |
+| 登录不进去 | 登录 | 探针会打印登录页诊断 + 截图。老 UI 的登录键常是 `<a>`/`<div>` 而非 `<button>`,且回车不提交 |
+| 清单里看得见控件,但选择器不唯一/回读不对 | 定位 | 便宜。用上面两条收窄法 + `--count`。**修法必须通用,`_driver.py` 和 `probe_router.py` 里没有一行按品牌分支的代码** |
+| 页面上有,但清单里压根没有这种形态 | 形态 | 贵。卡片条/分段选择器/确认弹窗/shadow DOM/验证码/canvas —— 现有三种 `dial.kind` 吃不下,**如实报告,别硬凑 FACTS** |
 
-## 边界(现有三种 `dial.kind` 吃不下的)
+**任何一条命令崩了都不要卡住**:五条命令彼此独立,而且你**永远不需要工具替你
+生成脚本** —— 有 `--dump` 的清单 + `reference.md` 的格式,自己写 dict 就行,
+这条路没有环节会崩。只要清单存过盘,前面就没有白跑。
 
-卡片条 / 分段选择器(一排 `动态IP | 静态IP | PPPoE` 方块)、值文本不是模式词的
-控件、保存前的确认弹窗、closed shadow DOM、验证码登录、canvas 自绘 UI。
+## 更细的东西在 `reference.md`(按需读,别预加载)
 
-遇到**先如实报告**它长什么样,不要硬凑一个 FACTS 交差。
-
-## 要更细的东西时再看 `reference.md`
-
-FACTS 逐键说明、选择器手册、**陷阱清单**(每条都是真机上的假成功)、
-定位问题的通用修法实例、判定"这台机真的没有某功能"的穷尽核查法、参考实现对照表。
+FACTS 逐键说明、选择器手册、陷阱清单、定位问题的通用修法、判定"这台机真的没有
+某功能"的穷尽核查法、参考实现对照表。
