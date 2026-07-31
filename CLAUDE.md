@@ -323,7 +323,9 @@ every mode they declare. They are the reference examples; copy their shape.
 
 **BUFFALO WSR-6000AX8 (2026-07-31, 192.168.11.1) — the first model that drives
 itself.** Adapted by an agent via `probe_router.py --dump/--count`; all six
-modes verified live **including `--apply`** (`artifacts/progress_BUFFALO_WSR6000AX8.md`).
+modes verified live **including `--apply`** (evidence: the adaptation's progress
+file `artifacts/progress_BUFFALO_WSR6000AX8.md` — git-ignored, it carries the
+admin password in clear, so it stays local and is not pasted into tickets).
 Modes are IPv4 radios on one page and include the Japanese IPoE set —
 transix / v6プラス / OCN バーチャルコネクト / v6 コネクト — which is why this
 device exists on the bench (the JP-dial comparison). Three facts forced a
