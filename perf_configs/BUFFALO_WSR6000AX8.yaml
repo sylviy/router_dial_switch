@@ -1,0 +1,87 @@
+# perf_configs/BUFFALO_WSR6000AX8.yaml —— Buffalo WSR-6000AX8 的性能测试参数。
+#
+# 这台机存在的理由是**日本 IPoE 的拨号对比**:transix / v6プラス /
+# OCN バーチャルコネクト / v6 コネクト,四档都在 wan.html 同一页上。
+#
+# 已经填好的是用户 2026-07-31 给的台架口径;还写着 FILL_ME 的是我拿不到的,
+# 开跑前检查会拦住并指到这里。密码不在这里(在 router.yaml)。
+
+model: BUFFALO_WSR6000AX8
+backend: chariot
+
+# 测哪几档。默认(不写 dial_modes)= 这台机声明的全部六档:
+#   dynamic / pppoe / transix / v6plus / ocnvc / v6connect
+#
+# **pppoe 这一档有个前提**:这台机的 PPPoE 账号密码在另一个页面
+# (pppoe_reg.html),脚本不去那页。跑 pppoe 之前先在路由器 Web UI 里把
+# 账号建好,否则切过去也拨不通。不想现在测就把下面几行的注释去掉,
+# 只留其它五档。
+# dial_modes:
+#   - mode: dynamic
+#   - mode: transix
+#   - mode: v6plus
+#   - mode: ocnvc
+#   - mode: v6connect
+
+bands:      [lan]
+directions: [up, down, bi]
+protocols:  [TCP]
+
+wan_up:
+  method: ping
+  host: 192.168.202.66
+  hosts:
+    # JP 四档和 dhcp(这里叫 dynamic)都是直连侧,ping 202.66;
+    # pppoe 拨通后拿到的是隧道网段,要打 203.1。
+    dynamic:   192.168.202.66
+    transix:   192.168.202.66
+    v6plus:    192.168.202.66
+    ocnvc:     192.168.202.66
+    v6connect: 192.168.202.66
+    pppoe:     192.168.203.1
+  timeout_s: 60
+  settle_s: 15
+
+chariot:
+  duration_s: 20
+
+  # 客户端侧注入机(e1):装了 Chariot Endpoint、接在被测机 LAN 口上的那台
+  # 电脑的 IP。还没给到我。
+  endpoints:
+    lan: FILL_ME
+
+  public_ip:   192.168.202.66   # 直连侧对端(dynamic + JP 四档)
+  internet_ip: 192.168.203.1    # 隧道侧对端(pppoe)
+
+  # 按档写死对端。**这四行不能省**:默认规则是从模式名字猜路,transix /
+  # v6plus / ocnvc / v6connect 既不叫 dynamic 也不含 "public",会被猜成隧道档
+  # 打到 203.1 —— 而它们其实是原生直连。猜错不会报错,只会给一份打错了口、
+  # 数字却很正常的报告。
+  e2_ip:
+    transix:   192.168.202.66
+    v6plus:    192.168.202.66
+    ocnvc:     192.168.202.66
+    v6connect: 192.168.202.66
+
+  scripts:
+    up:   Throughput.scr
+    down: Throughput_w2l.scr
+  pairs: {TCP: 50, UDP: 100}
+
+  # 只有 protocols 里加了 -nofrag 才需要。JP 四档的 MTU 还没量过,
+  # 现在加 -nofrag 会直接报错(故意的,不猜)。
+  nofrag_bytes: {}
+
+  stability_ratio: 0.9
+  save_tests: true
+
+  # 跑 JP 拨号的这套 Chariot 拓扑是 Python 3 的 —— PyChariot 装在跑本工具的
+  # 同一个 python 里就留空。确认一次:python -c "import PyChariot; print('ok')"
+  # 若那个 PyChariot 在别的 python 里,把它的绝对路径写在这儿。
+  python: ""
+
+reset_mode: dynamic
+
+report:
+  dir: artifacts
+  title: WAN 性能矩阵 BUFFALO WSR-6000AX8(含日本 IPoE)

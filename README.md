@@ -143,7 +143,8 @@ dynamic → pppoe → static → dhcpv6 → pppoev6),每档切换**必定真正�
 "只切换不保存"的安全演练留在单模式入口(`models/<型号>.py`)。
 
 - **测什么、怎么测**(拨号方式矩阵、频段/方向/协议、台架拓扑、WAN 拨通判据)写在
-  `perf.yaml`(复制 `perf.example.yaml` 改;git 忽略);**密码**仍走 `router.yaml`。
+  `perf_configs/<型号>.yaml`(一台机一份,向导可代生成);**密码**仍走
+  `router.yaml`。开跑前会把参数逐条核对,配错的当场拦住并告诉你改哪一行。
 - **两个性能后端**:`simulate`(纯 Python 模拟,给演示/CI/看报告长啥样)和
   `chariot`(真台架,子进程调用 `matrix/chariot_perf.py`,保持在它原生的
   Python 2 / Chariot 环境里)。
@@ -219,18 +220,24 @@ router_dial_switch/
                          菜单 4 = 存 IP/密码/宽带账号到 router.yaml
   adapt.bat / adapt.py   **适配新机器的向导**:探测 -> 生成脚本 -> 体检 -> 验证
   run_matrix.py          整套性能矩阵:切模式 → 等WAN → 测吞吐 → 出报告
-  perf.example.yaml      矩阵配置模板(复制成 perf.yaml;测什么/怎么测/台架拓扑)
+  perf_configs/          **每台机一份测试参数**:<型号>.yaml(注入机/对端 IP、
+                         每档打谁、测多久)。选到哪台就自动用哪份;没有的话
+                         向导会问你要不要生成。密码不在这里。
+  perf.example.yaml      全局配置模板(老写法,作为没有按型号配时的回落)
   models/                **交付层:每台型号一个脚本**
     Tenda_AX3000.py      事实(FACTS)+ 入口;直接运行
     Mercusys_BE3600.py
     Cudy_AX1500.py      老式 frameset 固件
     Cudy_AX3000.py       LuCI/OpenWrt 固件(与上面不是同一台)
+    Cudy_BE6500.py       同为 LuCI/OpenWrt
+    BUFFALO_WSR6000AX8.py 日本 IPoE 六档;**自带 run()**(iframe 特例)
     _template.py         新型号照抄的注释模板
     _driver.py           所有型号共用的点击逻辑(零猜测,只吃显式事实)
     _browser.py          Playwright 启动(channel=chrome / 离线)
   matrix/                性能矩阵编排层
     run.py               主循环 + CLI(--list / --demo / --model;整轮必下发)
-    config.py            读 perf.yaml
+    config.py            按型号找参数文件(perf_configs/<型号>.yaml 优先)
+    check_config.py      开跑前把参数核一遍:错的拦住,并摊开每档打谁
     perf_backends.py     simulate(离线模拟)/ chariot(真台架,子进程)后端
     chariot_perf.py      旧 Dial.py 的 Chariot 逻辑清理版(Py2/台架用,单次测量)
     wanup.py             切完模式后等 WAN 拨通(ping 判据,可按模式配目标)
@@ -251,7 +258,7 @@ router_dial_switch/
 
 ## 已知限制 / 后续
 
-- WAN 拨通验证:`run_matrix.py` 已内置一个 ping 判据(`perf.yaml` 的 `wan_up`),
+- WAN 拨通验证:`run_matrix.py` 已内置一个 ping 判据(参数文件的 `wan_up`),
   切完模式后 ping 通台架地址再开测;更强的"真·拨通"判据(调单机脚本)可从
   `matrix/wanup.py` 扩展,或用 `_driver.run(verify_hook=...)`。
 - WLAN(2.4G/5G、多 SSID)切换:后续结合单机脚本;引擎已预留无线客户端钩子。

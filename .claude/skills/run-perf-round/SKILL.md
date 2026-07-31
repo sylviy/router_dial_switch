@@ -1,6 +1,6 @@
 ---
 name: run-perf-round
-description: 在测试台上跑一整轮 WAN 性能矩阵(逐档切拨号方式 → 等 WAN 拨通 → 测吞吐 → 出 HTML/CSV 报告),以及排查这一轮里的失败。触发场景:跑整轮 / 跑性能测试 / run the matrix / run_matrix.py 报错 / 某一格吞吐是 err / 报告里有 err / Chariot 跑不起来 / 配 perf.yaml / 切换成功但吞吐没数 / WAN 一直等不到拨通。
+description: 在测试台上跑一整轮 WAN 性能矩阵(逐档切拨号方式 → 等 WAN 拨通 → 测吞吐 → 出 HTML/CSV 报告),以及排查这一轮里的失败。触发场景:跑整轮 / 跑性能测试 / run the matrix / run_matrix.py 报错 / 某一格吞吐是 err / 报告里有 err / Chariot 跑不起来 / 配 perf.yaml / 配 perf_configs / 切换成功但吞吐没数 / WAN 一直等不到拨通。
 ---
 
 # 跑一整轮 WAN 性能矩阵
@@ -36,13 +36,36 @@ Windows 上是 `start.bat` / `matrix.bat`。解释器选择在 `_py.bat` 里:
 
 | 文件 | 管什么 | 谁写 |
 |---|---|---|
-| `perf.yaml` | 测什么、怎么测:矩阵、台架拓扑、WAN 拨通判据、报告位置 | 复制 `perf.example.yaml` 改 |
+| `perf_configs/<型号>.yaml` | **一台机一份**:测什么、怎么测、台架接线、WAN 拨通判据 | 向导代生成(`_template.yaml`),再填 `FILL_ME` |
 | `router.yaml` | 密码:管理密码、各模式的宽带/VPN 账号 | `python start.py --setup` |
 
-两个都被 git 忽略。`perf.yaml` 不存在也能跑(全默认 + 遍历该型号全部模式)。
+选到哪台机就自动用哪份参数。`perf_configs/*.yaml` **没有密码,是提交进仓库的**
+—— 它们就是"我们组台架怎么接的"这份共同知识。`router.yaml` 被 git 忽略。
+
+优先级:`--config <路径>` > `perf_configs/<型号>.yaml` > `perf.yaml`(老的全局
+写法,已配好的台架不用动) > `perf.example.yaml`。一份都没有也能跑(全默认 +
+遍历该型号全部模式),开跑前检查会告诉你在用哪份。
+
+### 开跑前检查:先读它,再动手
+
+整轮开始前会把参数核一遍。`[X]` 会直接拦住,`[!]` 照跑但要看,`i` 是它**实际
+解析出来的结果**。**最该用眼睛过的是每档的对端**:
+
+```
+  dynamic    对端(e2)= 192.168.202.66   <- public_ip (direct)
+  v6plus     对端(e2)= 192.168.202.66   <- e2_ip[v6plus] (显式指定)
+  pppoe      对端(e2)= 192.168.203.1    <- internet_ip (tunnel)
+```
+
+检查器能发现"没填",发现不了"填成了另一个真实存在的 IP" —— 后者不会报错,
+只会给一份打错了口、数字却很正常的报告。
 
 ### 必须按模式分开配的三件事
 
+0. **`chariot.e2_ip`** —— 对端默认是**从模式名字猜**的:`dynamic`/`static`/
+   名字含 `public` 的走 `public_ip`,其余走 `internet_ip`。名字不在这几类里的
+   档必须显式写死,否则会被猜成隧道档。已知要写的:日本 IPoE 的 `transix` /
+   `v6plus` / `ocnvc` / `v6connect`(它们其实是原生直连)。
 1. **`wan_up.hosts`** —— 直连档和隧道档对端在不同网段。台架实测:`dynamic`
    打 `192.168.202.99`,`pppoe/l2tp/pptp` 拨通后要打 `192.168.203.1`。只配一个
    全局 `host`,另一半会白等满 `timeout_s` 才开测(不失败,但一档浪费一分钟)。
@@ -132,7 +155,7 @@ err 的报告"(2026-07-28 台架真这么浪费过一轮)。照它给的原因�
 - **IPv6 吞吐还没测**。`dhcpv6`/`pppoev6` 只证明**切换**成功,Chariot 那边仍用
   IPv4 端点地址。缺的是台架的 v6 编址(endpoints + peers)和 `ping -6`,
   不是代码 —— `_protocol()` 已经能解析 `TCP6`/`UDP6`。
-- **`static` 没有字段映射**:切过去但不填任何地址。`perf.yaml` 的 `dial_modes`
+- **`static` 没有字段映射**:切过去但不填任何地址。参数文件的 `dial_modes`
   里要排除它,否则那一档必然测了个断网。
 - **无线频段不会自动切换**。`bands` 只决定用哪台注入机,没有任何东西去重新
   关联客户端。一轮里测两个频段 = 两台无线客户端、两个 IP。

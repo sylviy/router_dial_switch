@@ -72,6 +72,40 @@ def _load_facts(name: str) -> dict:
     return importlib.import_module("models.%s" % name).FACTS
 
 
+def _ensure_perf_config(name: str) -> bool:
+    """确认这台机有自己的参数文件 perf_configs/<型号>.yaml;没有就问要不要生成。
+
+    返回 True = 可以往下跑。返回 False = 刚生成了一份、还全是占位值,
+    先去把 IP 填了再来 —— 带着占位值开跑,只会拿到一份全是 err 的报告。
+    """
+    from matrix import config as perf_config
+    path = perf_config.path_for_model(name)
+    rel = os.path.relpath(path, ROOT)
+    if os.path.exists(path):
+        print("参数文件:%s" % rel)
+        return True
+
+    print("这台机还没有自己的参数文件(%s)。" % rel)
+    print("  它记的是**你台架怎么接的**:注入机 IP、对端 IP、每档打谁、测多久。")
+    print("  一台机一份,以后选这台就自动用它,不用再动别的文件。")
+    if not os.path.exists(perf_config.TEMPLATE_PATH):
+        print("  [!] 模板 perf_configs/_template.yaml 也不在,跳过。")
+        return True
+    if _ask("现在生成一份带注释的模板给你填吗?(Y/n) ", "y").lower() in ("n", "no"):
+        print("  跳过 —— 这一轮会回落到 perf.yaml 或示例值,开跑前检查会告诉你哪里不对。")
+        return True
+
+    with open(perf_config.TEMPLATE_PATH, "r", encoding="utf-8") as fh:
+        text = fh.read()
+    os.makedirs(perf_config.CONFIG_DIR, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(text.replace("__MODEL__", name))
+    print("已生成 %s" % rel)
+    print("  用记事本打开它,把写着 FILL_ME 的地方换成你台架的真实 IP,")
+    print("  存盘后再跑一次本程序 —— 开跑前检查会逐条告诉你还差什么。")
+    return False
+
+
 def _console_safe() -> None:
     """台架 Windows 控制台是 GBK(cp936),管道时 Python 也按 GBK 编码输出。
     路由器回读的文字里只要有一个 GBK 编不出的字符,print 就会抛
@@ -166,17 +200,17 @@ def main(argv=None) -> int:
     declared = all_modes(facts)
     # 整轮跑哪几档由 perf.yaml 说了算(没写才是全部)—— 菜单要说实话,
     # 不然写了 dial_modes 的台架会以为工具漏测了
-    round_modes = planned_modes(facts)
+    round_modes = planned_modes(facts, name)
 
     print("要做什么:")
     print("  1. 整轮性能测试(默认):依次跑 %s," % " → ".join(round_modes))
     print("     每档真切换 → 等WAN → 测吞吐 → 出报告")
     if round_modes != declared:
-        print("     (这几档来自 perf.yaml 的 dial_modes;该型号声明的是 %s)"
+        print("     (这几档来自参数文件的 dial_modes;该型号声明的是 %s)"
               % "/".join(declared))
     unknown = [m for m in round_modes if m not in declared]
     if unknown:
-        print("     [!] perf.yaml 里的 %s 这台机没有声明,整轮跑到会失败 ——"
+        print("     [!] 参数文件里的 %s 这台机没有声明,整轮跑到会失败 ——"
               " 先从 dial_modes 里去掉。" % "/".join(unknown))
     print("  2. 只切一个拨号方式(单步调试;同样直接下发)")
     print("  3. 整轮离线演示(不碰路由器,出样例报告)")
@@ -196,6 +230,8 @@ def main(argv=None) -> int:
     # ---- 1:整轮 —— 工具的本体 ---------------------------------------------
     if action == 1:
         from matrix.run import main as matrix_main
+        if not _ensure_perf_config(name):
+            return 0
         pw = ""
         if facts.get("login"):
             pw = _ask_secret("管理密码%s: " % ("(回车=用 router.yaml 存的)"
@@ -236,8 +272,8 @@ def main(argv=None) -> int:
                 cur_blk.update(kv)
             settings_mod.save(saved)
             print("已存进 router.yaml(仅本机,git 忽略)。")
-        print("开始整轮:每档拨号方式都会真正下发;频段/台架拓扑取 perf.yaml"
-              "(没有就用内置默认)。")
+        print("开始整轮:每档拨号方式都会真正下发。开跑前会先把参数逐条核一遍,"
+              "有问题会拦住并告诉你改哪一行。")
         cmd = ["--model", name, "--pass", pw]
         if args.headless:
             cmd.append("--headless")

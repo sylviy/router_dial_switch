@@ -284,6 +284,37 @@ def main():
     passed += ok
     failed += not ok
 
+    # ②d 每台机一份参数(perf_configs/<型号>.yaml)+ 开跑前检查。
+    #     两件事都属于"配错了不报错,只是测的不是那条路":
+    #       - JP 四档(transix/v6plus/…)不叫 dynamic 也不含 public,老规则会
+    #         把它们猜成隧道档打到内网口;chariot.e2_ip 是那条显式出口;
+    #       - 参数文件里留着 FILL_ME 就开跑,只会拿回一份全是 err 的报告,
+    #         而路由器已经被真切了一遍 —— 所以必须在碰路由器之前拦住。
+    from matrix import check_config
+    from matrix import config as perf_config
+    from matrix.chariot_perf import _e2_ip
+    from matrix.run import _load_facts as _mfacts, all_modes as _mall
+    bcfg = perf_config.load(model="BUFFALO_WSR6000AX8")
+    bfacts = _mfacts("BUFFALO_WSR6000AX8")
+    btopo = {"public_ip": bcfg.chariot.public_ip,
+             "internet_ip": bcfg.chariot.internet_ip,
+             "e2_ip": bcfg.chariot.e2_ip}
+    found = check_config.check(bcfg, bfacts, _mall(bfacts))
+    ok = (bcfg.source == perf_config.path_for_model("BUFFALO_WSR6000AX8")
+          # JP 档走直连侧,pppoe 走隧道侧 —— 前者只有 e2_ip 覆盖才成立
+          and _e2_ip(btopo, "v6plus") == "192.168.202.66"
+          and _e2_ip(btopo, "pppoe") == "192.168.203.1"
+          and _e2_ip({"public_ip": "1.1.1.1", "internet_ip": "2.2.2.2"},
+                     "v6plus") == "2.2.2.2"      # 没覆盖就是老规则(猜错的那种)
+          # FILL_ME 的注入机必须是 blocking,不能只是提醒
+          and any(f.blocking and "FILL_ME" in f.msg for f in found)
+          and bcfg.wan_up.host_for("v6plus") == "192.168.202.66"
+          and bcfg.wan_up.host_for("pppoe") == "192.168.203.1")
+    print("[%s] perf_configs/<model>.yaml + e2_ip override + preflight check"
+          % ("PASS" if ok else "FAIL"))
+    passed += ok
+    failed += not ok
+
     # ③ start.py 交互式入口:管道喂按键,选型号→操作2(单切)→选模式→切换。
     #    台架语义(2026-07-23 用户定):切了就真正下发 —— 断言 apply 发生了。
     print("\n=== start.py (interactive wizard) ===")

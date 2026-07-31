@@ -99,8 +99,26 @@ chain with no router/Chariot present.
   only ever called `_driver.run`, so such a device could only be driven by hand
   and would never enter a perf round. Keep the bar high — a new FACTS key that
   every model benefits from (`apply_settle_ms`) beats a second bespoke script.
-  `config.py` reads `perf.yaml` (optional; `dial_modes:` only to subset/
-  reorder/add params). `perf_backends.py`: `SimulatorBackend` (deterministic
+  `config.py` resolves **one config file per device**: `--config` >
+  `perf_configs/<model>.yaml` > `perf.yaml` > `perf.example.yaml`, recorded on
+  `PerfConfig.source` (2026-07-31, user: copying and re-editing one global
+  `perf.yaml` per DUT "is so complex" — the bench has six devices with
+  different wiring, and a global file means re-editing on every switch with no
+  way to notice a mistake). `perf_configs/*.yaml` hold wiring only, never
+  passwords, so they are committed — that folder *is* the group's shared "how
+  our bench is cabled". `start.py` offers to generate one from
+  `perf_configs/_template.yaml` when a model has none.
+  `matrix/check_config.py` runs **before the round touches the router**:
+  `X` blocks, `!` warns, and `i` spreads out what the tool actually resolved —
+  above all the per-mode e2 endpoint, because the checker can catch "not filled
+  in" but never "filled in with a different real IP", and that error produces a
+  perfectly plausible report of the wrong path.
+  `chariot.e2_ip: {mode: ip}` pins the far endpoint per mode; without it
+  `_e2_ip` guesses from the mode *name* (`dynamic`/`static`/`*public*` → public
+  side, everything else → tunnel side) and the Japanese IPoE modes — transix /
+  v6plus / ocnvc / v6connect, which are native direct connections — get guessed
+  onto the tunnel endpoint.
+  `dial_modes:` in the config is only to subset/reorder/add params. `perf_backends.py`: `SimulatorBackend` (deterministic
   offline numbers) and `ChariotBackend` (subprocess → `chariot_perf.py`).
   `chariot_perf.py` is the cleaned, parameterized port of the legacy `Dial.py`
   throughput+judge logic, Py2/3-compatible and bench-only (imports Chariot

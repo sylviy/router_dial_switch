@@ -107,7 +107,7 @@ def all_modes(facts: dict) -> list:
     return modes
 
 
-def planned_modes(facts: dict) -> list:
+def planned_modes(facts: dict, model: str = "") -> list:
     """整轮**实际**会跑的拨号方式:perf.yaml 写了 dial_modes 就以它为准
     (子集 / 改顺序 / 带参数),没写才是该型号声明的全部。
 
@@ -116,8 +116,8 @@ def planned_modes(facts: dict) -> list:
     几档 —— 在台架上看起来像漏测,而不是像配置。
     """
     try:
-        cfg = perf_config.load()
-    except Exception:                 # perf.yaml 坏了:run.py 会给出真正的报错
+        cfg = perf_config.load(model=model)
+    except Exception:                 # 参数文件坏了:run.py 会给出真正的报错
         return all_modes(facts)
     return [s.mode for s in cfg.dial_modes] or all_modes(facts)
 
@@ -184,9 +184,10 @@ def main(argv=None) -> int:
             print("  " + m)
         return 0
 
-    cfg = perf_config.load(args.config)
-    if args.model:
-        cfg.model = args.model
+    # 型号决定读哪份参数(perf_configs/<型号>.yaml),所以要先定型号。
+    # --model 没给就看 perf.yaml 里写的。
+    model = args.model or perf_config.load(args.config).model
+    cfg = perf_config.load(args.config, model)
     if args.backend:
         cfg.backend = args.backend
     if args.demo:
@@ -220,6 +221,18 @@ def main(argv=None) -> int:
         cfg.chariot.tst_dir = os.path.join(
             out_dir, "wanperf_%s_%s_tst"
             % (report_mod.report_slug(cfg.model), run_stamp))
+
+    # 开跑前检查:参数配对了没。整轮要几十分钟且每档都真切路由器,
+    # 错误一律拦住,警告打出来照跑(--demo 不碰台架,跳过)。
+    if facts and not args.demo:
+        from matrix import check_config
+        findings = check_config.check(cfg, facts, [s.mode for s in cfg.dial_modes])
+        print(_color("===== 开跑前检查 =====", _C_DIM))
+        print(check_config.format_report(findings))
+        if check_config.blocking(findings):
+            raise SystemExit(
+                "\n上面 [X] 的问题会让这一轮白跑,先改完再来。"
+                "(只想看样例报告:python run_matrix.py --demo)")
 
     backend = make_backend(cfg)
     problem = backend.preflight()

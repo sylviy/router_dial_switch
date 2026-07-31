@@ -23,6 +23,11 @@ except Exception:  # pragma: no cover - yaml 是硬依赖,这里只是防御
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_PATH = os.path.join(ROOT, "perf.yaml")
 EXAMPLE_PATH = os.path.join(ROOT, "perf.example.yaml")
+# 每台机一份参数:perf_configs/<型号脚本名>.yaml。选了型号就自动用它,
+# 不用再复制/改一个全局 perf.yaml —— 台架上有六台机,一个全局文件意味着
+# 换机就得重改一遍,改错了还看不出来(用户 2026-07-31)。
+CONFIG_DIR = os.path.join(ROOT, "perf_configs")
+TEMPLATE_PATH = os.path.join(CONFIG_DIR, "_template.yaml")
 
 
 @dataclass
@@ -60,6 +65,11 @@ class ChariotCfg:
     duration_s: int = 20
     internet_ip: str = "192.168.203.1"
     public_ip: str = "192.168.202.99"
+    # 按拨号方式**显式指定**对端(e2)。不写的模式才回落到"动态/静态走
+    # public_ip,其余走 internet_ip"那条从名字猜路的老规则 —— 而日本 IPoE
+    # 四档(transix/v6plus/ocnvc/v6connect)会被那条规则猜成隧道档,打错口
+    # 却照样出一份漂亮数字。见 chariot_perf._e2_ip 的注释。
+    e2_ip: Dict[str, str] = field(default_factory=dict)
     # 客户端侧(e1)每个频段用哪台注入机
     endpoints: Dict[str, str] = field(
         default_factory=lambda: {"lan": "192.168.0.79",
@@ -110,6 +120,7 @@ class PerfConfig:
     report_dir: str = "artifacts"
     report_title: str = "WAN Performance Matrix"
     reset_mode: Optional[str] = None   # 全部跑完后切回的安全模式(旧脚本切回 dynamic)
+    source: str = ""                   # 实际读的是哪个文件(开跑前检查会打出来)
 
 
 # --------------------------------------------------------------------------
@@ -129,23 +140,52 @@ def _dial_steps(raw) -> List[DialStep]:
     return [s for s in steps if s.mode]
 
 
-def load(path: str = DEFAULT_PATH) -> PerfConfig:
-    """读 perf.yaml -> PerfConfig。文件缺失/为空 -> 全默认(仍可 --demo 跑通)。"""
+def path_for_model(model: str) -> str:
+    """这台机的参数文件路径(可能还不存在)。"""
+    return os.path.join(CONFIG_DIR, "%s.yaml" % model)
+
+
+def resolve_path(path: str = DEFAULT_PATH, model: str = "") -> str:
+    """决定这一轮**实际读哪个文件**,并把它记在 PerfConfig.source 上。
+
+    优先级(从高到低):
+      1. --config 显式给的路径 —— 说了算,不再猜;
+      2. perf_configs/<型号>.yaml —— 每台机一份,选了型号就自动用它;
+      3. perf.yaml —— 老的全局配置,已经配好的台架不用动;
+      4. perf.example.yaml —— 谁都没有时的示例(会被开跑前检查警告)。
+    """
+    if path and path != DEFAULT_PATH:
+        return path
+    if model:
+        per_model = path_for_model(model)
+        if os.path.exists(per_model):
+            return per_model
+    if os.path.exists(DEFAULT_PATH):
+        return DEFAULT_PATH
+    return EXAMPLE_PATH
+
+
+def load(path: str = DEFAULT_PATH, model: str = "") -> PerfConfig:
+    """读参数文件 -> PerfConfig。缺失/为空 -> 全默认(仍可 --demo 跑通)。
+
+    model 给了就优先用 perf_configs/<model>.yaml(见 resolve_path)。
+    """
+    path = resolve_path(path, model)
     data: dict = {}
-    if yaml is not None:
-        for p in (path, EXAMPLE_PATH if path == DEFAULT_PATH else None):
-            if p and os.path.exists(p):
-                try:
-                    with open(p, "r", encoding="utf-8") as fh:
-                        data = yaml.safe_load(fh) or {}
-                    break
-                except Exception:
-                    data = {}
+    if yaml is not None and os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                data = yaml.safe_load(fh) or {}
+        except Exception:
+            data = {}
     if not isinstance(data, dict):
         data = {}
 
     cfg = PerfConfig()
-    cfg.model = str(data.get("model", "") or "")
+    cfg.source = path
+    # 型号:调用方给的(--model / 向导里选的)优先,它决定了读哪个文件;
+    # 没给才用文件里写的。
+    cfg.model = model or str(data.get("model", "") or "")
     cfg.backend = str(data.get("backend", cfg.backend) or cfg.backend).lower()
     # dial_modes 不写 = 留空,由 run.py 用"该型号声明的全部模式"补齐
     # (工具的本意:跑一次遍历所有支持的拨号方式)。--demo 无型号时才用
@@ -175,6 +215,8 @@ def load(path: str = DEFAULT_PATH) -> PerfConfig:
         duration_s=int(ch.get("duration_s", base.duration_s)),
         internet_ip=str(ch.get("internet_ip", base.internet_ip)),
         public_ip=str(ch.get("public_ip", base.public_ip)),
+        e2_ip=dict((str(k), str(v))
+                   for k, v in (ch.get("e2_ip") or {}).items()),
         endpoints=dict(ch.get("endpoints") or base.endpoints),
         scripts=dict(ch.get("scripts") or base.scripts),
         pairs={str(k).upper(): int(v)

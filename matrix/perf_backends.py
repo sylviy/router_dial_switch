@@ -153,6 +153,7 @@ class ChariotBackend(PerfBackend):
             "duration_s": self.cfg.duration_s,
             "internet_ip": self.cfg.internet_ip,
             "public_ip": self.cfg.public_ip,
+            "e2_ip": self.cfg.e2_ip,
             "endpoints": self.cfg.endpoints,
             "scripts": self.cfg.scripts,
             "pairs": self.cfg.pairs,

@@ -87,10 +87,30 @@ def _e1_ip(topo, band):
 
 
 def _e2_ip(topo, mode):
-    """对端:动态/静态/带 public 的组合走公网口,其余走内网口 —— 照搬旧逻辑。"""
+    """对端(e2)打谁。**先看按模式显式指定的 e2_ip**,没写才用老规则:
+    动态/静态/带 public 的走公网口,其余走内网口。
+
+    为什么要这条显式出口:老规则是**从模式名字猜路**。Buffalo 的日本 IPoE
+    四档(transix / v6plus / ocnvc / v6connect)既不叫 dynamic 也不含
+    "public",会被猜成隧道档打到内网口 —— 而它们其实是原生直连。猜错的后果
+    不是报错,是一份**打错了口、数字却很漂亮**的报告,事后根本看不出来。
+    所以能写死的就写死,别让它猜(perf_configs/<型号>.yaml 的 chariot.e2_ip)。
+    """
+    override = (topo.get("e2_ip") or {}).get(mode)
+    if override:
+        return override
     if mode in ("dynamic", "static") or ("public" in mode):
         return topo["public_ip"]
     return topo["internet_ip"]
+
+
+def _e2_source(topo, mode):
+    """这一格的 e2 是怎么定下来的 —— 给 --dry-run 和开跑前检查看的人话。"""
+    if (topo.get("e2_ip") or {}).get(mode):
+        return "e2_ip[%s] (显式指定)" % mode
+    if _e2_ip(topo, mode) == topo.get("public_ip"):
+        return "public_ip (direct)"
+    return "internet_ip (tunnel)"
 
 
 def _protocol(proto):
@@ -276,14 +296,12 @@ def plan(topo):
     """
     mode, band = topo["mode"], topo["band"]
     proto = topo["proto"].upper()
-    public = _e2_ip(topo, mode) == topo.get("public_ip")
     return {"dry_run": True,
             "mode": mode, "band": band,
             "direction": topo["direction"], "proto": proto,
             "e1_client_side": _e1_ip(topo, band),
             "e2_wan_side": _e2_ip(topo, mode),
-            "e2_source": "public_ip (direct)" if public
-                         else "internet_ip (tunnel)",
+            "e2_source": _e2_source(topo, mode),
             "scripts": topo["scripts"],
             "pairs": _pairs_for(topo, proto),
             "send_buffer_size": _send_buffer(topo, proto, mode) or "脚本默认(分片)",
