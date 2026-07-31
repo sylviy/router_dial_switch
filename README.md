@@ -27,6 +27,10 @@ python run_matrix.py --demo                  # 整轮性能矩阵:先离线看�
   (登录、菜单路径、控件选择器、各模式措辞、保存按钮),同事直接运行即可,
   不需要理解引擎。组内目标品牌:Cudy / Tenda / Buffalo / Huawei。
 - `models/_driver.py` —— 所有型号共用的点击逻辑(约 500 行,修一处全体受益)。
+  个别老 UI 的**操作序列**本身是特例(Buffalo 要先进 `advanced.html` 再让
+  iframe 加载 `wan.html`,否则保存提交旧值),这种型号脚本可以自己实现
+  `run()`(签名与 `_driver.run` 一致),`matrix/run.py` 的 `runner_for()` 会
+  自动改用它,整轮和 `start.py` 照跑。**是最后手段**:能加通用键就加通用键。
 - `tools/probe_router.py` —— **只读取证探针**:登录后抄下整页(含所有子
   frame)的控件,并**用 Playwright 引擎实测每个候选选择器的命中数**,产出
   证据 JSON + 一份 FACTS 建议(可 `--emit` 直接落成型号脚本骨架)。
@@ -43,6 +47,8 @@ python run_matrix.py --demo                  # 整轮性能矩阵:先离线看�
 | `models/Tenda_AX3000.py` | dynamic / pppoe / static / dhcpv6 / pppoev6(v6 精确到 flavor,无笼统 "ipv6") | **台架验收通过**(2026-07-18,含实际下发) |
 | `models/Cudy_AX1500.py`(老式 frameset 固件,与 AX3000 不是同一台) | dynamic / pppoe / static / l2tp / pptp | **台架验收通过**(2026-07-18,含 `--apply` 实际下发) |
 | `models/Cudy_AX3000.py` | dynamic / pppoe / l2tp / pptp | LuCI/OpenWrt 固件。选择器已在真机上引擎实测命中数==1;脚本机制已用 `cudy_luci.html` 离线验证(4 个 cbi.apply 的 form 锚定 / 含点号的 CBI id / XHR 重建 DOM)。**真机逐模式回读 + `--apply` 验收待做** |
+| `models/Cudy_BE6500.py` | dynamic / pppoe / l2tp / pptp | 同为 LuCI/OpenWrt,与 AX3000 同家族(dynamic 的措辞是 `DHCP`)。字段选择器都按 form 收窄 |
+| `models/BUFFALO_WSR6000AX8.py` | dynamic / pppoe / **transix / v6plus / ocnvc / v6connect**(日本 IPoE) | **真机六档 `--apply` 均已验过**(2026-07-31)。这台**自带 `run()`**,不走 `_driver`:`wan.html` 必须以 `advanced.html` 内 iframe 打开,否则保存提交旧值 |
 | `models/Mercusys_BE3600.py` | dynamic / pppoe / static / l2tp / pptp | 2026-07-11 真机跑通(当时走启发式);脚本形态的字段选择器仍标 `[待真机复核]` |
 
 各机型的具体怪癖(Tenda 的嵌套 span 按钮、Cudy 的 frameset + 隐藏诱饵按钮、

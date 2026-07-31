@@ -86,7 +86,16 @@ chariot:
                                # 落在 artifacts/wanperf_<型号>_<时间戳>_tst/,
                                # 和同一轮的 HTML/CSV 同名同戳,一眼对得上。
                                # 只要数字不要记录就写 false。
-  python2: python              # 跑 chariot_perf.py 的解释器(台架多为 python2)
+  # 跑 chariot_perf.py 的解释器。chariot_perf.py 本身 Py2/Py3 都能跑,这里
+  # 只决定它跑在哪个 python 里 —— 唯一的要求是**那个 python 里 import
+  # PyChariot 能成功**(开跑前 preflight 会替你验一次)。
+  #   留空(默认)= 跟本工具同一个 python。日本 IPoE(v6プラス / transix /
+  #                OCN バーチャルコネクト / v6 コネクト)那套 Python 3 拓扑
+  #                就留空,不用配。
+  #   老台架    = PyChariot 只装在 ActivePython 2.6.5 里,写它的绝对路径;
+  #                那台机的 Playwright 要 3.8,两个 python 只能子进程隔开。
+  # python: C:\Python26\python.exe
+  python: ""                   # (旧键名 python2: 仍然认)
 
 report:
   dir: artifacts               # HTML + CSV 写到哪

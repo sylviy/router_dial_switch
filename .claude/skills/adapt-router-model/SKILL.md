@@ -105,11 +105,31 @@ dict)。**`adapt.py` 是给人用的向导 —— 别调用它,也别去修它�
 | `Tenda_AX3000.py` | Vue SPA,role-less `div` 下拉 | 能(实测重建一致) | 保存键文字在里层 `<span>`,必须双锚定;IPv6 在独立页,靠 `enable_toggle` 开门 |
 | `Cudy_AX1500.py` | 老式 **frameset**(Realtek SDK) | 能 | 菜单/表单在不同子 frame;藏着 8 个 `*Connect` 诱饵;PPTP 与 L2TP 字段分家 |
 | `Cudy_AX3000.py` | **LuCI / CBI**(OpenWrt) | 能 | id 含点号只能 `[id='...']`;4 个 `cbi.apply` 要按 form 收窄;选完 proto 才用 XHR 挂载字段 |
+| `Cudy_BE6500.py` | LuCI / CBI,同上 | 能 | 与 AX3000 同家族,**照它改十分钟就好**;差别只有 dynamic 的措辞是 `DHCP`(AX3000 是 `DHCP(Dynamic IP)`)。字段选择器都用 `form:has(...)` 收窄过,比 AX3000 更稳,新 LuCI 机照这份抄 |
+| `BUFFALO_WSR6000AX8.py` | Buffalo 老 UI,**`advanced.html` 里套 iframe** | **不能** | 见下面「自带 run() 的型号」 |
 | `Mercusys_BE3600.py` | Vue 类,`role=combobox` | 未验 | `dial` 写的是 `[role='combobox']`,**太松**,同页多个下拉时会驱动错控件 |
 | (进行中)`Mercusys_MR80X` | 老 UI,与 BE3600 不同 | — | **登录进不去**是当前卡点;BE3600 的登录 FACTS 能登进它,说明差别在登录键 |
 
-三个"能"的家族覆盖了目前见过的全部路由器 UI 大类。**长得都不像,就直接从第 1 轮
+三个"能"的家族覆盖了目前见过的大部分路由器 UI。**长得都不像,就直接从第 1 轮
 的 `--dump` 开始,别浪费时间在自动生成上。**
+
+### 自带 `run()` 的型号(最后手段,不是常规路线)
+
+`FACTS + _driver` 表达不了的**操作序列**级特例,型号脚本可以自己实现
+`run()`,签名与 `models/_driver.run` 一致;`matrix/run.py` 的 `runner_for()`
+会自动改用它,整轮和 `start.py` 都照跑。目前只有 Buffalo WSR-6000AX8 走这条:
+
+* `wan.html` 必须**以 `advanced.html` 里的 iframe 形式**打开,否则配置对象
+  `CA` 不加载 —— 页面照显示、radio 照点,保存却提交旧值(**假成功**);
+* 左侧菜单点不动,只能改 `iframe#content_main` 的 `contentWindow.location.href`,
+  而且要重试(页面脚本会改回去);
+* radio 和保存键被 CSS 遮住,必须 `force=True` 点。
+
+**门槛要高。** 先确认卡点属于「控件形状」而不是「定位」(见下面「卡住了」),
+再确认加一个 FACTS 键真的表达不了。加得动就加通用键(`apply_settle_ms` 就是
+这么加的:一行,所有型号受益),别写第二个特例脚本 —— 每写一个,`_driver`
+的价值就少一分。自带 `run()` 的代价是它自己负责签名、`filled` 字段、
+`--apply` 语义,`_driver` 以后修的 bug 它一个也吃不到。
 
 ## 流程(合并成三轮命令跑完)
 

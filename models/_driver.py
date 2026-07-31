@@ -397,7 +397,9 @@ def _apply(page, facts: dict, result: dict) -> None:
     if el:
         el.click()
         result["applied"] = True
-        _settle(page, 500)
+        # 保存后要等多久由型号说了算:多数机型 0.5 秒就够,Buffalo 是 iframe
+        # 里异步提交 + 轮询,点完立刻关浏览器等于把保存打断(FACTS 里配 15 秒)。
+        _settle(page, facts.get("apply_settle_ms", 500))
     else:
         # 证据优先:把页面上实际可见的按钮列出来,失败信息自己就能定位问题
         # (例:真机按钮文字在里层 span,:text-is 会漏 —— 得换锚定写法)。

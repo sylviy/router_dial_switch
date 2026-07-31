@@ -66,13 +66,20 @@ Windows 上是 `start.bat` / `matrix.bat`。解释器选择在 `_py.bat` 里:
 这是**故意的**:后端没配好时,整轮会变成"把路由器来回真切一遍,拿回一份全是
 err 的报告"(2026-07-28 台架真这么浪费过一轮)。照它给的原因修:
 
-- `解释器 'python' 里没有 PyChariot` → `perf.yaml` 的 `chariot.python2` 要写
-  **装了 PyChariot 的那个解释器的绝对路径**(台架是 `C:\Python26\python.exe`,
-  YAML 里不要加双引号,`\P` 会被当转义)。
+- `解释器 '...' 里没有 PyChariot` → 决定 `chariot_perf.py` 跑在哪个 python 里
+  的是 `perf.yaml` 的 `chariot.python`。它本身 **Py2 / Py3 都能跑**,唯一的
+  要求是那个 python 里 `import PyChariot` 能成功:
+  - **Python 3 的台架**(日本 IPoE 那套拓扑)——`chariot.python` **留空**,
+    用跑本工具的同一个 python 就行。
+  - **老台架**——PyChariot 只装在 ActivePython 2.6.5 里,写它的绝对路径:
+    `chariot.python: C:\Python26\python.exe`(YAML 里不要加双引号,`\P` 会
+    被当转义)。那台机的 Playwright 要 3.8,两个 python 只能子进程隔开。
+  - 旧键名 `chariot.python2:` 仍然认,不必改已有的 perf.yaml。
 - 报错里出现 **`ModuleNotFoundError`** → 那是 **Python 3 才有的异常类**
-  (Python 2.6 说的是 `ImportError: No module named PyChariot`),等于直接证明
-  跑它的不是台架那套 Python 2。
-- 自己确认一次:`C:\Python26\python.exe -c "import PyChariot; print('ok')"`
+  (Python 2.6 说的是 `ImportError: No module named PyChariot`)。在**老台架**
+  上看到它,等于直接证明跑它的不是那套 Python 2;在 Py3 台架上它只是普通的
+  "这个 python 里没装 PyChariot"。
+- 自己确认一次:`<你配的那个 python> -c "import PyChariot; print('ok')"`
 
 ### 报告里某些格是 `err`
 

@@ -5,8 +5,10 @@
                       吞吐数。让整条链路(切模式 → 测 → 出报告)在没有 Chariot、
                       没有路由器的机器上也能跑通(--demo、CI、演示)。
   * ChariotBackend    真台架:把每次测量交给 matrix/chariot_perf.py(旧 Dial.py
-                      的 Chariot 逻辑,保持在它原生的 Py2/Windows 环境里),
-                      用子进程隔开两个 Python 世界,读它打印的 JSON。
+                      的 Chariot 逻辑),用子进程隔开跑它的那个解释器,读它
+                      打印的 JSON。那个解释器由 perf.yaml 的 chariot.python
+                      决定:Python 3 台架留空即可(同一个 python),Python 2
+                      台架写 C:\\Python26\\python.exe。
 
 新增后端 = 继承 PerfBackend、实现 measure 即可,编排器和报告都不用改。
 """
@@ -108,16 +110,19 @@ def _last_json(text: str) -> Optional[dict]:
     return None
 
 
-_PY2_HINT = """
-  perf.yaml 的 chariot.python2 必须指向**装了 PyChariot 的那个解释器的绝对
-  路径**(台架上是 C:\\Python26\\python.exe)。默认值是裸的 "python",它跟着
-  PATH 走,很容易落到别的 Python 上 —— 而 ModuleNotFoundError 这种写法本身
-  就说明跑它的是 Python 3,不是台架那套 Python 2。
-  确认办法:C:\\Python26\\python.exe -c "import PyChariot; print('ok')" """
+_PY_HINT = """
+  chariot_perf.py 在 **Python 2 和 Python 3 上都能跑**,决定它跑在哪个
+  python 里的是 perf.yaml 的 chariot.python:
+    * 留空(默认)= 用跑本工具的这个 python。**Python 3 的 Chariot 台架
+      (日本 IPoE 那套)就该留空** —— PyChariot 装在同一个 python 里。
+    * 老台架的 PyChariot 只在 Python 2 里(ActivePython 2.6.5),那里必须
+      写绝对路径:chariot.python: C:\\Python26\\python.exe
+      (那台机的 Playwright 要 3.8,两个 python 只能靠子进程隔开。)
+  确认办法:<你写的那个 python> -c "import PyChariot; print('ok')" """
 
 
 class ChariotBackend(PerfBackend):
-    """真台架:子进程调用 chariot_perf.py(Py2/Windows,内部 import Chariot)。
+    """真台架:子进程调用 chariot_perf.py(内部才 import Chariot)。
     每次测量传入拓扑(内外网 IP、注入机、脚本、对数、时长)作为一个 JSON,
     读回 {mbps, stable, samples}。任何失败(缺 Chariot、超时、非零退出)都
     收敛成 Measurement.error,让某一格坏掉不至于拖垮整轮矩阵。"""
@@ -129,17 +134,17 @@ class ChariotBackend(PerfBackend):
             os.path.dirname(os.path.abspath(__file__)), "chariot_perf.py")
 
     def preflight(self) -> str:
-        py = self.cfg.python2
+        py = self.cfg.interpreter
         try:
             out = subprocess.run([py, "-c", "import PyChariot"],
                                  capture_output=True, text=True,
                                  errors="replace", timeout=120)
         except Exception as exc:
-            return ("解释器 %r 跑不起来:%s" % (py, exc)) + _PY2_HINT
+            return ("解释器 %r 跑不起来:%s" % (py, exc)) + _PY_HINT
         if out.returncode != 0:
             lines = (out.stderr or out.stdout or "").strip().splitlines()
             return ("解释器 %r 里没有 PyChariot:%s"
-                    % (py, lines[-1] if lines else "(无输出)")) + _PY2_HINT
+                    % (py, lines[-1] if lines else "(无输出)")) + _PY_HINT
         return ""
 
     def measure(self, mode, band, direction, proto) -> Measurement:
@@ -155,7 +160,7 @@ class ChariotBackend(PerfBackend):
             "tst_dir": self.cfg.tst_dir if self.cfg.save_tests else "",
             "stability_ratio": self.cfg.stability_ratio,
         }
-        cmd = [self.cfg.python2, self.script, "--json", json.dumps(payload)]
+        cmd = [self.cfg.interpreter, self.script, "--json", json.dumps(payload)]
         try:
             # errors="replace":台架实测 PyChariot 一 import 就往外打 DEBUG 行,
             # 里面还有中文;子进程按 GBK 写、父进程按 GBK 读本来是对的,但只要

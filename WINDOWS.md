@@ -29,9 +29,11 @@
 不装任何东西,打印 `imports OK` + `SETUP COMPLETE` 就走人。
 
 > **为什么台架的 Python 2 不碍事:** 需要 Python 3.8 的只有"点浏览器切拨号"
-> 这半边,它跑在 `vendor\python\` 里。而整轮里跑 Chariot 吞吐的那半边**本来
-> 就要 Python 2**(`perf.yaml` 的 `chariot.python2`,指向台架自己的
-> `python.exe`)。两个解释器各干各的,互不打扰。
+> 这半边,它跑在 `vendor\python\` 里。而整轮里跑 Chariot 吞吐的那半边在**那台
+> 老台架上**只有 Python 2 能跑(PyChariot 就装在那儿),用 `perf.yaml` 的
+> `chariot.python` 指向它自己的 `python.exe` 即可。两个解释器各干各的,互不
+> 打扰。测吞吐的 `matrix\chariot_perf.py` 本身 Py2 / Py3 都能跑 —— 换成
+> Python 3 的台架(日本 IPoE 那套)时 `chariot.python` 留空就行。
 
 ## 方式 B:自己的开发机(联网、已有 Python 3.8+)
 
@@ -83,7 +85,8 @@ matrix.bat --model Tenda_AX3000      :: 整轮真跑:自动遍历该型号的全
   方式,切模式 → ping 等 WAN 拨通 → 跑吞吐并判稳 → 出自包含 HTML + CSV 报告
   (落在 `artifacts\`)。测什么写在 `perf.yaml`(复制 `perf.example.yaml` 改,
   git 忽略);真跑 Chariot 吞吐要在装了 IxChariot 的台架上,并在 `perf.yaml`
-  的 `chariot.python2` 指定台架的 Python 2 解释器;没有台架就用默认的
+  的 `chariot.python` 指定装了 PyChariot 的那个解释器(Py3 台架留空即可,
+  老台架写 `C:\Python26\python.exe`);没有台架就用默认的
   `simulate` 后端(离线模拟值,报告里会标明非实测)。
 - **`dial.bat` 不加 `--apply` 就不会点保存** —— 单模式调试期这样跑,不会把在
   用的网切断。整轮(`start.bat` / `matrix.bat`)是台架语义:每档都真正下发。
@@ -130,7 +133,7 @@ smoke.bat
 | `dial.bat` 报 `No such model script` | 型号名拼错了。不带参数跑 `dial.bat` 看可用列表。 |
 | 运行后卡在登录页 / `login failed` | ① 管理密码不对;② 有些机型(Tenda/Mercusys)**同一时间只允许一个 Web 会话** —— 先把浏览器里登录着的路由器页签退出。 |
 | 提示缺少宽带账号密码 | 先用 `start.bat` 菜单 4 存进 router.yaml,或本次加 `--param pppoe_user=账号 --param pppoe_pass=密码`。 |
-| `matrix.bat` 真跑时吞吐格全是 `err` | 台架没装 IxChariot / `perf.yaml` 的 `chariot.python2` 没指到台架的 Python 2。先用 `--demo` 或 `simulate` 后端确认链路,再配台架。 |
+| `matrix.bat` 真跑时吞吐格全是 `err` | 台架没装 IxChariot / `perf.yaml` 的 `chariot.python` 没指到装了 PyChariot 的那个解释器。先用 `--demo` 或 `simulate` 后端确认链路,再配台架。 |
 | 换一台 Windows | 整个文件夹拷过去直接双击 `start.bat`(自带运行时是可搬的)。**但 `.venv` 不要跨机拷** —— 里面写死了原机器的绝对路径,拷过去反而会被优先选中然后失败;删掉它即可。 |
 
 ## 安全提示

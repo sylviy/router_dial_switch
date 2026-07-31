@@ -57,18 +57,44 @@ def list_models() -> list:
     return out
 
 
-def _load_facts(model: str) -> dict:
-    """按型号脚本名(models/<name>.py)取它的 FACTS。"""
+def _load_module(model: str):
+    """import models/<name>.py 并返回模块本身。"""
     path = os.path.join(ROOT, "models", model + ".py")
     if not os.path.exists(path):
         raise SystemExit("没有这个型号脚本:models/%s.py(可用:%s)"
                          % (model, ", ".join(list_models())))
     import importlib
-    mod = importlib.import_module("models.%s" % model)
-    facts = getattr(mod, "FACTS", None)
+    return importlib.import_module("models.%s" % model)
+
+
+def _load_facts(model: str) -> dict:
+    """按型号脚本名(models/<name>.py)取它的 FACTS。"""
+    facts = getattr(_load_module(model), "FACTS", None)
     if not isinstance(facts, dict):
         raise SystemExit("models/%s.py 里没有 FACTS 字典。" % model)
     return facts
+
+
+def runner_for(model: str):
+    """返回驱动这台型号该用的 run() —— 型号脚本**自己定义了 run() 就用它**,
+    否则用共享的 models/_driver.run。
+
+    绝大多数型号靠 FACTS + _driver 就够(那才是这套东西的价值:一个文件描述
+    一台机)。但偶尔一台老 UI 的操作序列本身是特例 —— Buffalo WSR-6000AX8
+    必须先进 advanced.html,再把 iframe 的 location 改到 wan.html(点菜单不
+    可靠、直接开 wan.html 又拿不到完整的 CA 配置对象,保存会提交旧值),
+    radio 和保存键还得 force 点。把这些塞进 _driver 会让每台机都背上一份别
+    人的特例;写在它自己的脚本里更诚实。
+
+    但**没有这个分派的话,那台机在整轮编排器里等于不存在** —— run.py 和
+    start.py 都只调 _driver.run,一台自带 run() 的型号只能手工单跑,永远进
+    不了性能矩阵。签名与 _driver.run 一致即可接入。"""
+    mod = _load_module(model)
+    own = getattr(mod, "run", None)
+    if callable(own):
+        return own
+    from models import _driver
+    return _driver.run
 
 
 def all_modes(facts: dict) -> list:
@@ -96,11 +122,10 @@ def planned_modes(facts: dict) -> list:
     return [s.mode for s in cfg.dial_modes] or all_modes(facts)
 
 
-def _switch(facts, mode, params, admin_user, admin_pass, headless):
+def _switch(runner, facts, mode, params, admin_user, admin_pass, headless):
     """真正切一次拨号方式并**下发保存**(整轮里不下发,吞吐测的就不是这档
-    模式 —— 所以矩阵里没有"只切换不保存"的选项)。延迟 import _driver:
-    它会拉起 Playwright,--demo 时根本不 import。"""
-    from models import _driver
+    模式 —— 所以矩阵里没有"只切换不保存"的选项)。runner 由 runner_for()
+    给出:多数型号是 _driver.run,自带 run() 的型号是它自己的。"""
     from modes import MODE_REQUIRED_FIELDS, merge_params
     merged = merge_params(mode, params.get("saved") or {}, params.get("explicit") or {})
 
@@ -116,9 +141,9 @@ def _switch(facts, mode, params, admin_user, admin_pass, headless):
                            "dial_modes[].params 里。已跳过,没有碰路由器。"
                            % (mode, ", ".join(missing))}
 
-    return _driver.run(facts, mode, params=merged, apply=True,
-                       admin_user=admin_user, admin_pass=admin_pass,
-                       headless=headless)
+    return runner(facts, mode, params=merged, apply=True,
+                  admin_user=admin_user, admin_pass=admin_pass,
+                  headless=headless)
 
 
 def _console_safe() -> None:
@@ -173,6 +198,7 @@ def main(argv=None) -> int:
 
     # --demo 不驱动路由器,连型号脚本都不 import(避免拉起 Playwright)
     facts = _load_facts(cfg.model) if (cfg.model and not args.demo) else None
+    switch = runner_for(cfg.model) if facts else None
     if facts and cfg.model and not args.demo and facts.get("login") \
             and not args.password:
         raise SystemExit("缺管理密码:先 `python start.py --setup` 存进 router.yaml,"
@@ -204,7 +230,7 @@ def main(argv=None) -> int:
     print(_color("===== WAN 性能矩阵 =====", _C_DIM))
     print("型号=%s  后端=%s  模式=%s  频段=%s  方向=%s  协议=%s%s"
           % (cfg.model or "(demo)",
-             cfg.backend + ("(%s)" % cfg.chariot.python2
+             cfg.backend + ("(%s)" % cfg.chariot.interpreter
                             if cfg.backend == "chariot" else ""),
              "/".join(s.mode for s in cfg.dial_modes), "/".join(cfg.bands),
              "/".join(cfg.directions), "/".join(cfg.protocols),
@@ -220,7 +246,7 @@ def main(argv=None) -> int:
         if args.demo:
             switched, read_back, message = True, "(demo)", "离线模拟,未驱动路由器"
         else:
-            res = _switch(facts, mode,
+            res = _switch(switch, facts, mode,
                           {"saved": saved.get("params") or {},
                            "explicit": step.params},
                           args.user, args.password, args.headless)
@@ -267,7 +293,7 @@ def main(argv=None) -> int:
     if cfg.reset_mode and not args.demo and facts:
         print("\n=== 收尾:切回 %s ===" % cfg.reset_mode)
         try:
-            _switch(facts, cfg.reset_mode,
+            _switch(switch, facts, cfg.reset_mode,
                     {"saved": saved.get("params") or {}, "explicit": {}},
                     args.user, args.password, args.headless)
         except Exception as exc:

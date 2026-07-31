@@ -5,8 +5,11 @@
   * 不再有写死的 IP / 脚本名 / 对数 —— 全部从 --json 传进来的拓扑里取;
   * 不再直接切拨号方式、不写 Excel —— 切模式交给 models/ 的 Web 驱动,
     出报告交给 matrix/report.py;这个文件只负责"测一格并打印 JSON";
-  * 保持在它原生的 **Python 2 / Windows / Chariot** 环境里跑
-    (import Chariot 放到真正测量时才做,这样别的机器 import 本文件不会炸)。
+  * **Python 2 和 Python 3 都能跑**,由 perf.yaml 的 chariot.python 决定跑在
+    哪个解释器里 —— 老台架的 PyChariot 只在 ActivePython 2.6.5 里,而日本
+    IPoE(v6プラス/transix/OCN バーチャルコネクト/v6 コネクト)那套拓扑是
+    Python 3。同一份代码两边都跑,是因为这个文件本身**不 import Chariot**:
+    import 推迟到真正测量的那一刻,所以别的机器 import 本文件不会炸。
 
 用法。程序调用(ChariotBackend 自动拼好,不经人手):
     python chariot_perf.py --json '{"mode":"pppoe","band":"lan", ...}'
@@ -19,9 +22,13 @@
 加 --dry-run:只解析拓扑并打印它要打给谁、用哪个脚本、多少对,不碰 PyChariot
       —— 台架接线对不对,一眼就能看出来,不用真跑一轮。
 
-兼容 Python 2/3 写法:from __future__ print_function、不用 except X, e、
-**不用 argparse**(标准库 2.7 才收它;2026-07-28 台架实测 PATH 上的 Python
-是 2.6.5,import argparse 直接 ImportError)。
+兼容 Python 2/3 的写法(**改这个文件时必须保持**,否则 Py2 那台台架会在
+最没空调试的时候炸):from __future__ print_function、不用 except X, e、
+不用 f-string、不用 argparse(标准库 2.7 才收它;2026-07-28 台架实测 PATH
+上的 Python 是 2.6.5,import argparse 直接 ImportError)、只用 // 做整除。
+Py3 上这些写法一样合法,所以"支持 Py3"不是加分支,而是**别引入 Py3 独有
+语法**。tests/smoke_test.py 有一格用当前解释器跑本文件的 --dry-run,Py3
+下的可运行性是被自动测着的。
 """
 from __future__ import print_function
 

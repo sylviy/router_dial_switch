@@ -235,6 +235,55 @@ def main():
     passed += ok
     failed += not ok
 
+    # ②b chariot_perf.py 用**当前解释器**当子进程跑一次 --dry-run。
+    #     它要同时活在两个 Python 世界里(老台架的 ActivePython 2.6.5,和跑
+    #     日本 IPoE 拓扑的 Python 3),而这里只跑得到 Py3 那一侧 —— 所以这格
+    #     守的是"Py2 兼容写法没把 Py3 跑坏",以及 ChariotBackend 真正的调用
+    #     形态(子进程 + 末行 JSON)在这个解释器上成立。Py2 侧只能靠台架。
+    import subprocess as _sp
+    cell = os.path.join(ROOT, "matrix", "cell.example.json")
+    dry = _sp.run([sys.executable, os.path.join(ROOT, "matrix", "chariot_perf.py"),
+                   "--json-file", cell, "--dry-run"],
+                  capture_output=True, text=True, errors="replace", timeout=60)
+    from matrix.perf_backends import _last_json
+    data = _last_json(dry.stdout or "")
+    ok = (dry.returncode == 0 and isinstance(data, dict)
+          and data.get("dry_run") is True and data.get("pairs") == 50)
+    print("[%s] chariot_perf.py runs under this interpreter (py%d, --dry-run)"
+          % ("PASS" if ok else "FAIL", sys.version_info[0]))
+    if not ok:
+        print("    rc=%s stdout=%r stderr=%r"
+              % (dry.returncode, (dry.stdout or "")[-200:],
+                 (dry.stderr or "")[-200:]))
+    passed += ok
+    failed += not ok
+
+    # ②c 跑 chariot_perf.py 的解释器怎么选 + runner_for 的分派。
+    #     两处都是"配错了不会报错,只会静默跑到别的东西上"的接线:
+    #       - chariot.python 留空要落到当前解释器(Py3 台架不用配),旧键名
+    #         python2: 还得继续认,否则老台架升级后会悄悄回到跟着 PATH 走;
+    #       - 自带 run() 的型号(Buffalo)必须由它自己的 run() 驱动,否则整轮
+    #         会拿 _driver.run 去跑一台它驱动不了的机器。
+    from matrix.config import ChariotCfg, load as _perf_load
+    from matrix.run import runner_for
+    import tempfile as _tf
+    with _tf.NamedTemporaryFile("w", suffix=".yaml", delete=False,
+                                encoding="utf-8") as fh:
+        fh.write("backend: chariot\nchariot:\n  python2: /legacy/py26\n")
+        legacy_yaml = fh.name
+    from models import _driver as _drv
+    import models.BUFFALO_WSR6000AX8 as _buf
+    ok = (ChariotCfg().interpreter == sys.executable
+          and ChariotCfg(python="/x/py").interpreter == "/x/py"
+          and _perf_load(legacy_yaml).chariot.interpreter == "/legacy/py26"
+          and runner_for("BUFFALO_WSR6000AX8") is _buf.run
+          and runner_for("Tenda_AX3000") is _drv.run)
+    os.unlink(legacy_yaml)
+    print("[%s] chariot.python resolution + runner_for dispatch"
+          % ("PASS" if ok else "FAIL"))
+    passed += ok
+    failed += not ok
+
     # ③ start.py 交互式入口:管道喂按键,选型号→操作2(单切)→选模式→切换。
     #    台架语义(2026-07-23 用户定):切了就真正下发 —— 断言 apply 发生了。
     print("\n=== start.py (interactive wizard) ===")

@@ -85,13 +85,20 @@ chain with no router/Chariot present.
   isn't found. Nothing is applied until a final explicit y. The flagged
   commands still exist for an agent that needs `--nav`/`--open` control.
 - `matrix/` + `run_matrix.py` — **the orchestration layer (the full test loop).**
-  `run.py` is the main loop: for each dial mode → `_driver.run()` switch (lazy
-  import, so `--demo` needs no Playwright) → `wanup.wait_wan_up` → for each
+  `run.py` is the main loop: for each dial mode → `runner_for(model)` switch
+  (lazy import, so `--demo` needs no Playwright) → `wanup.wait_wan_up` → for each
   band×direction×proto call `perf_backends.PerfBackend.measure` → `report.py`
   writes HTML+CSV. **Default matrix = `all_modes(facts)` — every mode the
   model script declares, in declaration order — and every switch applies for
   real; there is NO --apply flag (removed 2026-07-23, user decision: on the
   bench you always apply, or the throughput isn't measuring that mode).**
+  `runner_for(model)` returns the model script's **own `run()`** when it defines
+  one, else `_driver.run` — added 2026-07-31 for Buffalo, whose operation
+  *sequence* (not just its selectors) is a special case. Without that dispatch a
+  self-driving model script is invisible to the matrix: `run.py` and `start.py`
+  only ever called `_driver.run`, so such a device could only be driven by hand
+  and would never enter a perf round. Keep the bar high — a new FACTS key that
+  every model benefits from (`apply_settle_ms`) beats a second bespoke script.
   `config.py` reads `perf.yaml` (optional; `dial_modes:` only to subset/
   reorder/add params). `perf_backends.py`: `SimulatorBackend` (deterministic
   offline numbers) and `ChariotBackend` (subprocess → `chariot_perf.py`).
@@ -207,8 +214,19 @@ python models/Tenda_AX3000.py dynamic               # per-mode live read-back
   Fixed twice over: the entry inserted ROOT, and `python38._pth` carries a
   `..\..` line. **Any new top-level entry script needs that insert** — never
   rely on the script directory being on sys.path.
+- **`matrix/chariot_perf.py` runs under Python 2 AND Python 3**; which one is
+  decided by `perf.yaml`'s `chariot.python` (empty = the interpreter running the
+  matrix — the right setting for the Python-3 Chariot topology used for the JP
+  IPoE modes; the old bench writes `C:\Python26\python.exe`). The legacy key
+  name `chariot.python2` is still read. The default used to be a bare `"python"`
+  that followed PATH — it worked on the old bench only by accident, because PATH
+  there *was* Python 2; it now falls back to `sys.executable`, which is at least
+  deterministic. Dual support is not a code branch: it is **not introducing
+  Py3-only syntax** (no f-strings, no argparse, `//` for integer division) —
+  `smoke_test.py` runs the file's `--dry-run` under the current interpreter, so
+  the Py3 side is covered automatically and only the Py2 side needs the bench.
 - The bench's Python 2 is an asset, not a problem: `matrix/chariot_perf.py` is
-  meant to run under it (`chariot.python2`). Only the Playwright half needs 3.8.
+  meant to run under it. Only the Playwright half needs 3.8.
   **That Python is ActivePython 2.6.5 (32-bit), not 2.7** (bench, 2026-07-28,
   `import PyChariot` confirmed working on it), so `chariot_perf.py` must avoid
   `argparse` (stdlib only since 2.7) — it hand-parses `--json`. Keep anything
@@ -302,6 +320,44 @@ devices, including the real `--apply` round** — dial mode changes and saves fo
 every mode they declare. They are the reference examples; copy their shape.
 `models/Mercusys_BE3600.py` still carries `[待真机复核]` field selectors (the
 2026-07-11 live run went through heuristics, not the script).
+
+**BUFFALO WSR-6000AX8 (2026-07-31, 192.168.11.1) — the first model that drives
+itself.** Adapted by an agent via `probe_router.py --dump/--count`; all six
+modes verified live **including `--apply`** (`artifacts/progress_BUFFALO_WSR6000AX8.md`).
+Modes are IPv4 radios on one page and include the Japanese IPoE set —
+transix / v6プラス / OCN バーチャルコネクト / v6 コネクト — which is why this
+device exists on the bench (the JP-dial comparison). Three facts forced a
+bespoke `run()` instead of FACTS + `_driver`:
+  * `wan.html` **must be opened as an iframe inside `advanced.html`**. Open it
+    directly and the page renders, the radios click, read-back passes — and
+    `apply()` submits the *old* values because the `CA` config object was never
+    loaded. A textbook false success, invisible from the DOM.
+  * the left menu can't be clicked (`dt.WAN` starts hidden, `iconDisable` and
+    async init block it), so the script sets `iframe#content_main`'s
+    `contentWindow.location.href` — with retries, because the page's own script
+    sometimes puts it back. Readiness is three conditions, not one: url is
+    wan.html **and** `CA.length > 0` **and** the radios exist.
+  * the radios and `div#button_1` are covered by CSS → Playwright's
+    actionability check times out → `force=True`.
+Generic spillover kept to one line: `apply_settle_ms` (Buffalo needs 15 s for
+its async submit; every other model keeps the 500 ms default). Mode key is
+`dynamic`, **not** `dhcp` — mode names are cross-layer (`chariot_perf._e2_ip`
+picks the public vs internal endpoint by that name, `modes.py` picks required
+params by it), so `dhcp` would have sent this device's direct-connect cell to
+the tunnel-side endpoint and produced plausible numbers for the wrong path.
+PPPoE credentials live on a **separate page** (`pppoe_reg.html`) which the
+script does not open: passing `--param pppoe_user=…` yields a warning, never a
+silent no-op. **Not covered by an offline mock yet** — the iframe+`CA` shape has
+no `tests/mock_router/` replica, so a `_driver`/Playwright change could break it
+without smoke noticing.
+
+**Cudy BE6500 (2026-07-31) — same LuCI/CBI family as `Cudy_AX3000`.** Cheap
+adaptation, as the registry predicts: the only substantive difference is that
+`dynamic` reads `DHCP` here vs `DHCP(Dynamic IP)` on the AX3000. Its field
+selectors are scoped with `form:has([id='cbid.network.wan.proto'])`, which is
+strictly better than the AX3000's bare ids — copy **this** one for the next
+LuCI device. Live per-mode read-back and `--apply` acceptance: reported working
+by the user, not independently re-verified here.
 
 Live on a **Mercusys BE3600** (2026-07-11): custom `<div>`-combobox connection
 type; Save button; L2TP fields Username/Password/"VPN Server IP/Domain Name";
@@ -483,7 +539,7 @@ mode_override.
   skeleton). **`matrix/chariot_perf.py` now runs for real** (bench 2026-07-28:
   one cell, dynamic/lan/up/TCP, 947.98 Mbps, `stable:true`, self-consistent with
   the driver's own `sent_bytes_e1 / elapsed_time`) — the port is no longer
-  UNRUN. `chariot.python2` = `C:\Python26\python.exe`. Remaining: (1) the
+  UNRUN. `chariot.python` = `C:\Python26\python.exe` on that bench. Remaining: (1) the
   orchestration layer end-to-end (`run_matrix.py` driving switch + measure in
   one loop) has NOT been run on the bench yet, only its two halves separately;
   (2) confirm one `wan_up` ping host that answers in every mode — 202.99

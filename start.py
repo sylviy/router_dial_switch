@@ -147,8 +147,7 @@ def main(argv=None) -> int:
     if args.setup:
         return run_setup()
 
-    from models import _driver as model_driver
-    from matrix.run import all_modes
+    from matrix.run import all_modes, runner_for
 
     print("==== 路由器拨号切换 / WAN 性能测试 ====")
     names = list_models()
@@ -276,7 +275,8 @@ def main(argv=None) -> int:
 
     # 台架语义:切了就下发(想只看回读不保存,用 python models/<型号>.py <mode>)
     print("运行中(会打开 Chrome,别动它;切换会真正下发)...")
-    res = model_driver.run(facts, mode, params=params, apply=True,
+    # 型号脚本自带 run() 就用它(Buffalo 那类特例 UI),否则用共享驱动。
+    res = runner_for(name)(facts, mode, params=params, apply=True,
                            admin_pass=pw, url=args.url,
                            headless=args.headless)
 

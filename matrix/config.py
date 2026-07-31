@@ -11,6 +11,7 @@ perf.yaml 缺项一律回落到下面的默认值 —— 一个空文件也能�
 from __future__ import annotations
 
 import os
+import sys
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
@@ -76,8 +77,24 @@ class ChariotCfg:
     stability_ratio: float = 0.9   # min < ratio*max 即判为"不稳"
     save_tests: bool = True        # 是否保留 Chariot 的 .tst 原始记录
     tst_dir: str = ""              # 运行时由 run.py 填(每轮一个目录)
-    python2: str = "python"        # 跑 chariot_perf.py 的解释器(台架多为 py2)
+    # 跑 chariot_perf.py 的解释器。**留空 = 用跑本工具的这个解释器**
+    # (Python 3 的 Chariot 台架:PyChariot 就装在同一个 python 里,不用配)。
+    # 老台架的 PyChariot 只在 Python 2 里(ActivePython 2.6.5),那里必须写
+    # 绝对路径,如 C:\Python26\python.exe —— 那台机上 Playwright 要 3.8,
+    # 两个 python 世界只能靠子进程隔开。旧键名 python2: 仍然认。
+    python: str = ""
     script: str = ""               # chariot_perf.py 路径(默认取包内同目录)
+
+    @property
+    def interpreter(self) -> str:
+        """真正会被执行的解释器路径。没配就是当前解释器。
+
+        默认值曾经是裸的 "python",它跟着 PATH 走 —— 在 Python 2 台架上
+        PATH 上那个正好**是** Python 2,于是配错了也能跑通,直到某天 PATH
+        变了才炸;在 Python 3 台架上它又可能落到一个没装 PyChariot 的
+        python 上。用 sys.executable 兜底至少是确定的:要么就是本工具这个
+        python,要么就是你显式写的那个。"""
+        return self.python or sys.executable
 
 
 @dataclass
@@ -166,6 +183,8 @@ def load(path: str = DEFAULT_PATH) -> PerfConfig:
                       for k, v in (ch.get("nofrag_bytes") or {}).items()},
         stability_ratio=float(ch.get("stability_ratio", base.stability_ratio)),
         save_tests=bool(ch.get("save_tests", base.save_tests)),
-        python2=str(ch.get("python2", base.python2)),
+        # python2: 是 2026-07 之前的键名(那时只有 Py2 台架)。仍然认它,
+        # 免得已经配好的台架升级后突然回到"跟着 PATH 走"。
+        python=str(ch.get("python", ch.get("python2", base.python)) or ""),
         script=str(ch.get("script", "") or ""))
     return cfg
