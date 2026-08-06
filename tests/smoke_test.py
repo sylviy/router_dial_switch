@@ -196,6 +196,84 @@ def main():
     passed += ok
     failed += not ok
 
+    # --- 第 5 个 UI 原型:外壳页 + iframe(BUFFALO)---------------------------
+    # 这台机的三条真机事实,以前一条也没有离线覆盖 —— 改动 _driver 可能悄悄
+    # 弄坏它而冒烟毫无反应(CLAUDE.md 把这个记成已知缺口)。现在都覆盖上了:
+    #   ① 设置页必须以 iframe 打开,且要等它的配置对象 CA 加载完;
+    #   ② 页面脚本会把 iframe 地址改回去一次 -> 必须重试;
+    #   ③ radio 和保存键被皮盖住 -> 必须 force 点。
+    print("\n=== BUFFALO (第 5 原型:外壳页 + iframe) ===")
+    from models.BUFFALO_WSR6000AX8 import FACTS as BUF_FACTS
+
+    def buf_facts(**over):
+        f = dict(BUF_FACTS)
+        f["url"] = "http://127.0.0.1:%d/buffalo_advanced.html" % port
+        f["iframe_target"] = "buffalo_wan.html"      # mock 的文件名
+        f.update(over)
+        return f
+
+    buf_run = runner_for("BUFFALO_WSR6000AX8")
+    buf_cases = [
+        # (名字, facts, 模式, 下发?, 期望 success, 期望 verify)
+        ("iframe + CA 就绪 + force 点", buf_facts(), "v6plus", False,
+         True, ""),
+        ("真的保存(CA 已就绪,不是 STALE)", buf_facts(), "dynamic", True,
+         True, "Saved & Applied: dynamic"),
+    ]
+    for name, f, mode, do_apply, want_ok, want_verify in buf_cases:
+        res = buf_run(f, mode, params={}, apply=do_apply,
+                      admin_pass="admin123", config=cfg, verify_hook=read_toast)
+        ok = (res["success"] is want_ok
+              and res["read_back"] == mode
+              and (res.get("verify") or "") == want_verify)
+        print("[%s] %-32s success=%s read_back=%r verify=%r"
+              % ("PASS" if ok else "FAIL", name, res["success"],
+                 res["read_back"], res.get("verify")))
+        if not ok:
+            print("        message: %s warnings: %s"
+                  % (res["message"], res["warnings"]))
+        passed += ok
+        failed += not ok
+
+    # 账密框在别的页(fields_page):必须发警告,绝不静默装作填过了。
+    res = buf_run(buf_facts(), "pppoe",
+                  params={"pppoe_user": "u", "pppoe_pass": "p"}, apply=False,
+                  admin_pass="admin123", config=cfg)
+    ok = (res["success"] and not res["filled"]
+          and len(res["warnings"]) == 2
+          and all("pppoe_reg.html" in w for w in res["warnings"]))
+    print("[%s] fields_page:账密在别页 -> 警告而非静默(filled=%s warnings=%d)"
+          % ("PASS" if ok else "FAIL", res["filled"], len(res["warnings"])))
+    passed += ok
+    failed += not ok
+
+    # 直接打开设置页(没有外壳 iframe):必须诚实失败。真机上这条路径最危险 ——
+    # 页面照样渲染、radio 照样点、回读照样通过,保存提交的却是旧值。
+    res = buf_run(buf_facts(url="http://127.0.0.1:%d/buffalo_wan.html" % port),
+                  "dynamic", params={}, apply=True, admin_pass="admin123",
+                  config=cfg, verify_hook=read_toast)
+    ok = (not res["success"]) and not res["applied"] and bool(res["message"])
+    print("[%s] 没有外壳页时诚实失败:success=%s applied=%s"
+          % ("PASS" if ok else "FAIL", res["success"], res["applied"]))
+    passed += ok
+    failed += not ok
+
+    # 就绪判据是**承重的**,不是装饰:拆掉 iframe_ready_js 就会在 CA 加载完
+    # 之前保存 —— 切换照样成功、success 照样 true,只有 mock 的 toast 会喊
+    # STALE。这一条钉住那个差别,免得哪天有人"简化"掉那道判据。
+    stale = dict(buf_facts())
+    stale.pop("iframe_ready_js")
+    res = buf_run(stale, "dynamic", params={}, apply=True,
+                  admin_pass="admin123", config=cfg, verify_hook=read_toast)
+    ok = res["success"] and "STALE" in (res.get("verify") or "")
+    print("[%s] 拆掉 iframe_ready_js -> 假成功(success=%s verify=%r)"
+          % ("PASS" if ok else "FAIL", res["success"], res.get("verify")))
+    if not ok:
+        print("        本条期望的就是「假成功」。它变红意味着 mock 不再能复现"
+              "那个陷阱了,而不是代码变好了 —— 先查 mock 的 CA 延迟。")
+    passed += ok
+    failed += not ok
+
     # --- run_matrix(matrix/ 编排层)-----------------------------------------
     # ① --demo 离线整轮:读 perf.yaml -> 主循环 -> simulate 后端 -> HTML+CSV
     #    报告落盘。不碰路由器、不需要 Playwright,验证的是编排层本身。
@@ -315,11 +393,11 @@ def main():
           and not hasattr(model_driver, "run")        # 老的成功出口已改名
           and hasattr(model_driver, "default_run")
           and _failed_result["success"] is False
-          # 公开动词就这 8 个。新增一个"成功判定类"动词必须让这条先红:
+          # 公开动词就这 9 个。新增一个"成功判定类"动词必须让这条先红:
           # 那是方案里唯一"永远不许新增"的一类。
           and sorted(_public) == ["apply_and_verify", "ensure_enabled", "fail",
-                                  "fill_params", "login", "navigate",
-                                  "set_mode", "warn"])
+                                  "fill_params", "goto_iframe", "login",
+                                  "navigate", "set_mode", "warn"])
     print("[%s] 回读守卫:success 只有 apply_and_verify 一个出口" % ("PASS" if ok else "FAIL"))
     if not ok:
         print("        Session 公开成员=%s" % sorted(_public))

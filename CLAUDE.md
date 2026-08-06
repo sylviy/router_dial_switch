@@ -45,9 +45,20 @@ chain with no router/Chariot present.
 
 ## Architecture (how the files work together)
 - `models/` — **the delivery layer.** `<Brand>_<Model>.py` = a FACTS dict
-  (explicit selectors/wordings, zero runtime guessing) + `run_cli(FACTS)`.
-  `_driver.py` is the only click logic (login → nav → enable_toggle guard →
-  set mode → read-back → fill → apply); it inherits the hard-won rules:
+  (explicit selectors/wordings, zero runtime guessing) + a `run()` saying what
+  this device DOES, + `run_cli(FACTS, runner=run)`.
+  `_driver.py` is a **verb library plus one default recipe** — the model calls
+  it, not the other way round (refactored 2026-08-06; the old rule "you may not
+  edit the driver" is gone, see the skill). Verbs live on `Session`:
+  `login / navigate / goto_iframe / ensure_enabled / set_mode / fill_params /
+  apply_and_verify / fail / warn` (`python models/_driver.py --verbs` prints the
+  list from their docstrings). Well-behaved models are three lines forwarding to
+  `default_run`; a device whose operation *order* is special composes verbs
+  itself (Buffalo). **`apply_and_verify()` is the ONLY producer of
+  `success=True`** and `fail()` the only failure exit — the bare "click save"
+  verb is not exported, so a model script can never mark a round successful on
+  its own. That guard is structural because a mis-set mode fails silently.
+  All the hard-won rules live in the verbs:
   success ONLY on real read-back == target wording (whole-text or exact
   per-line match — never substring, "PPPoEv6" must not pass for "pppoe"),
   enable_toggle never touched while a dial control is visible, popup options
@@ -92,13 +103,16 @@ chain with no router/Chariot present.
   model script declares, in declaration order — and every switch applies for
   real; there is NO --apply flag (removed 2026-07-23, user decision: on the
   bench you always apply, or the throughput isn't measuring that mode).**
-  `runner_for(model)` returns the model script's **own `run()`** when it defines
-  one, else `_driver.run` — added 2026-07-31 for Buffalo, whose operation
-  *sequence* (not just its selectors) is a special case. Without that dispatch a
-  self-driving model script is invisible to the matrix: `run.py` and `start.py`
-  only ever called `_driver.run`, so such a device could only be driven by hand
-  and would never enter a perf round. Keep the bar high — a new FACTS key that
-  every model benefits from (`apply_settle_ms`) beats a second bespoke script.
+  `runner_for(model)` returns the model script's **own `run()`** — one path, no
+  fallback (the dual dispatch went away 2026-08-06 when every model gained a
+  `run()`). A missing `run()` is a loud error, not a silent fall back to the
+  default recipe: falling back is exactly what would drive a special-order
+  device with the wrong sequence, and that failure is invisible (it switches,
+  reports success, and saves the old values). `tools/check_model.py` catches a
+  missing `run()` — and a tail line missing `runner=run` — offline.
+  Still keep the bar high on new *verbs*: a FACTS key or a verb parameter that
+  every model benefits from (`apply_settle_ms`, `set_mode(force=)`) beats a new
+  primitive, and a new verb needs a mock reproducing its shape.
   `config.py` resolves **one config file per device**: `--config` >
   `perf_configs/<model>.yaml` > `perf.yaml` > `perf.example.yaml`, recorded on
   `PerfConfig.source` (2026-07-31, user: copying and re-editing one global
@@ -339,15 +353,23 @@ every mode they declare. They are the reference examples; copy their shape.
 `models/Mercusys_BE3600.py` still carries `[待真机复核]` field selectors (the
 2026-07-11 live run went through heuristics, not the script).
 
-**BUFFALO WSR-6000AX8 (2026-07-31, 192.168.11.1) — the first model that drives
-itself.** Adapted by an agent via `probe_router.py --dump/--count`; all six
-modes verified live **including `--apply`** (evidence: the adaptation's progress
-file `artifacts/progress_BUFFALO_WSR6000AX8.md` — git-ignored, it carries the
-admin password in clear, so it stays local and is not pasted into tickets).
-Modes are IPv4 radios on one page and include the Japanese IPoE set —
+**BUFFALO WSR-6000AX8 (2026-07-31, 192.168.11.1) — the model whose operation
+*order* is special.** Adapted by an agent via `probe_router.py --dump/--count`;
+all six modes verified live **including `--apply`** (evidence: the adaptation's
+progress file `artifacts/progress_BUFFALO_WSR6000AX8.md` — git-ignored, it
+carries the admin password in clear, so it stays local and is not pasted into
+tickets). Modes are IPv4 radios on one page and include the Japanese IPoE set —
 transix / v6プラス / OCN バーチャルコネクト / v6 コネクト — which is why this
-device exists on the bench (the JP-dial comparison). Three facts forced a
-bespoke `run()` instead of FACTS + `_driver`:
+device exists on the bench (the JP-dial comparison).
+**Rewritten 2026-08-06 as an 8-line `run()` composing verbs** (was a 268-line
+bespoke reimplementation of the whole pipeline; the only real difference was
+always the iframe navigation). `goto_iframe()` is now a driver verb and the
+three device facts below are FACTS keys — `iframe_selector` /
+`iframe_target` / `iframe_ready_js` — plus `set_mode(force=True)` and
+`apply_and_verify(force=True)`. **Needs one more bench pass**: the login and
+navigation steps changed implementation, so re-run per-mode read-back and one
+`--apply` on the physical device before treating it as re-accepted.
+Three facts make its order special:
   * `wan.html` **must be opened as an iframe inside `advanced.html`**. Open it
     directly and the page renders, the radios click, read-back passes — and
     `apply()` submits the *old* values because the `CA` config object was never
@@ -367,9 +389,17 @@ params by it), so `dhcp` would have sent this device's direct-connect cell to
 the tunnel-side endpoint and produced plausible numbers for the wrong path.
 PPPoE credentials live on a **separate page** (`pppoe_reg.html`) which the
 script does not open: passing `--param pppoe_user=…` yields a warning, never a
-silent no-op. **Not covered by an offline mock yet** — the iframe+`CA` shape has
-no `tests/mock_router/` replica, so a `_driver`/Playwright change could break it
-without smoke noticing.
+silent no-op. That is now generic — `FACTS.fields_page` makes `fill_params()`
+warn instead of fill, and `run_cli` stops demanding params the tool cannot type.
+**Now covered offline** (2026-08-06) by `tests/mock_router/buffalo_advanced.html`
++ `buffalo_wan.html` + `buffalo_info.html` — the 5th UI prototype (shell page +
+iframe). The mock reproduces all three facts and is *adversarial*: `CA` is only
+assigned when the page is a child frame and only after 1.5 s, the shell reverts
+the iframe's location once, and the radios sit under `<label>` skins. So the
+suite proves each guard is load-bearing rather than decorative: one case
+**deliberately removes `iframe_ready_js` and asserts the round comes back
+`success=true` with a `STALE ... submitted OLD values` toast** — that is the
+exact silent false success, reproducible in seconds instead of on the bench.
 
 **Cudy BE6500 (2026-07-31) — same LuCI/CBI family as `Cudy_AX3000`.** Cheap
 adaptation, as the registry predicts: the only substantive difference is that

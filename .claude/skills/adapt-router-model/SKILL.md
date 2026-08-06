@@ -5,8 +5,9 @@ description: 为一台新路由器型号产出专属拨号切换脚本 models/<�
 
 # 适配一台新路由器型号
 
-**产出**:一个文件 `models/<品牌>_<型号>.py`(只有这台机的 FACTS)。放进
-`models/` 就完事,`start.py` / `run_matrix.py` 自动发现,没有注册表要改。
+**产出**:一个文件 `models/<品牌>_<型号>.py` —— 这台机的 FACTS,加一个 `run()`
+说明操作顺序(规矩机型就是转调默认配方的那三行)。放进 `models/` 就完事,
+`start.py` / `run_matrix.py` 自动发现,没有注册表要改。
 
 ## ⚠ 开工第一件事:读进度文件
 
@@ -83,8 +84,9 @@ python3                   -c "import playwright,sys;print(sys.version)"
 `CLAUDE.md`(7500–10500)、`artifacts/probe_*.json`(真机上几百 KB)、
 `*.png`、`vendor/` 里的文件、`reference.md` 全文。
 
-不要写 mock、不要改 `tools/` 或 `_driver.py`、不要逐行打印脚本(只输出 FACTS
-dict)。**`adapt.py` 是给人用的向导 —— 别调用它,也别去修它。**
+不要逐行打印脚本(只输出 FACTS dict)。改 `_driver.py` 不再是禁区,但要按下面
+「需要一个新动词时」的三步走,而且**得配 mock**;`tools/` 不用动。
+**`adapt.py` 是给人用的向导 —— 别调用它,也别去修它。**
 
 **每轮尽量多跑几条命令再汇报**,别一条一问 —— 轮数越少,被压缩的机会越小。
 
@@ -106,30 +108,51 @@ dict)。**`adapt.py` 是给人用的向导 —— 别调用它,也别去修它�
 | `Cudy_AX1500.py` | 老式 **frameset**(Realtek SDK) | 能 | 菜单/表单在不同子 frame;藏着 8 个 `*Connect` 诱饵;PPTP 与 L2TP 字段分家 |
 | `Cudy_AX3000.py` | **LuCI / CBI**(OpenWrt) | 能 | id 含点号只能 `[id='...']`;4 个 `cbi.apply` 要按 form 收窄;选完 proto 才用 XHR 挂载字段 |
 | `Cudy_BE6500.py` | LuCI / CBI,同上 | 能 | 与 AX3000 同家族,**照它改十分钟就好**;差别只有 dynamic 的措辞是 `DHCP`(AX3000 是 `DHCP(Dynamic IP)`)。字段选择器都用 `form:has(...)` 收窄过,比 AX3000 更稳,新 LuCI 机照这份抄 |
-| `BUFFALO_WSR6000AX8.py` | Buffalo 老 UI,**`advanced.html` 里套 iframe** | **不能** | 见下面「自带 run() 的型号」 |
+| `BUFFALO_WSR6000AX8.py` | Buffalo 老 UI,**`advanced.html` 里套 iframe** | **不能** | 设置页必须以 iframe 打开(否则保存提交旧值=假成功);菜单点不动靠 `goto_iframe`;控件被皮盖住要 `force`。这三条都有离线 mock(`buffalo_*.html`)|
 | `Mercusys_BE3600.py` | Vue 类,`role=combobox` | 未验 | `dial` 写的是 `[role='combobox']`,**太松**,同页多个下拉时会驱动错控件 |
 | (进行中)`Mercusys_MR80X` | 老 UI,与 BE3600 不同 | — | **登录进不去**是当前卡点;BE3600 的登录 FACTS 能登进它,说明差别在登录键 |
 
 三个"能"的家族覆盖了目前见过的大部分路由器 UI。**长得都不像,就直接从第 1 轮
 的 `--dump` 开始,别浪费时间在自动生成上。**
 
-### 自带 `run()` 的型号(最后手段,不是常规路线)
+### 每个型号脚本都有一个 `run()`(2026-08-06 起)
 
-`FACTS + _driver` 表达不了的**操作序列**级特例,型号脚本可以自己实现
-`run()`,签名与 `models/_driver.run` 一致;`matrix/run.py` 的 `runner_for()`
-会自动改用它,整轮和 `start.py` 都照跑。目前只有 Buffalo WSR-6000AX8 走这条:
+`models/_driver.py` 是**动词库 + 一份默认配方**,不是框架:型号脚本调它。
+所以每个脚本末尾都有这三行,规矩机型一个字都不用改:
 
-* `wan.html` 必须**以 `advanced.html` 里的 iframe 形式**打开,否则配置对象
-  `CA` 不加载 —— 页面照显示、radio 照点,保存却提交旧值(**假成功**);
-* 左侧菜单点不动,只能改 `iframe#content_main` 的 `contentWindow.location.href`,
-  而且要重试(页面脚本会改回去);
-* radio 和保存键被 CSS 遮住,必须 `force=True` 点。
+```python
+def run(facts=None, mode="dynamic", **kw):
+    return default_run(facts or FACTS, mode, **kw)
+```
 
-**门槛要高。** 先确认卡点属于「控件形状」而不是「定位」(见下面「卡住了」),
-再确认加一个 FACTS 键真的表达不了。加得动就加通用键(`apply_settle_ms` 就是
-这么加的:一行,所有型号受益),别写第二个特例脚本 —— 每写一个,`_driver`
-的价值就少一分。自带 `run()` 的代价是它自己负责签名、`filled` 字段、
-`--apply` 语义,`_driver` 以后修的 bug 它一个也吃不到。
+**操作顺序**本身是特例的机型,就自己拼动词 —— 不再需要重写整条流程。
+动词清单:`python models/_driver.py --verbs`。例(Buffalo,全文见它的脚本):
+
+```python
+with session(facts or FACTS, mode, **kw) as s:
+    if not s.login():        return s.fail("登录失败")
+    if not s.goto_iframe():  return s.fail("设置页没在 iframe 里就绪")
+    s.set_mode(force=True)   # 控件被皮盖住,force 点
+    s.fill_params()
+    return s.apply_and_verify(force=True)
+```
+
+**成功判定只有一个出口。** `apply_and_verify()` 是唯一能产出 `success=True`
+的动词(判据是 `set_mode()` 那次真实回读),`fail()` 是唯一的失败出口,裸的
+"点保存"不对外导出。**成功判定类的动词,永远不许新增。**
+
+### 需要一个新动词时(替换了旧的「禁止编辑 driver」)
+
+1. **先试参数化**:多数"新动词"其实是老动词加参数(`force=True`、换等待
+   策略)。能用参数表达就不算新形态。
+2. **确实是没见过的形态** → 写进**动词库**(`_driver.py`),配一个复现该形态的
+   mock,并且既有 mock 全绿。
+3. **绝不允许**在 `models/*.py` 里写私有辅助函数(`_enter_frame()` 那种)——
+   十台机之后就是六份几乎一样的私有导航函数,比一个特例脚本更难发现。
+
+默认仍是**先提出需求 + 说明老动词为什么不够**(driver 里"Vue 重渲染要等"、
+"某些控件必须 force 点"这些教训是一台台踩出来的,新写的原语不会自带),
+但这是默认,不是禁令:证据充分且 mock 已配,就做完它。
 
 ## 流程(合并成三轮命令跑完)
 

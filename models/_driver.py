@@ -403,7 +403,18 @@ def _set_mode_radio(page, facts: dict, mode: str, label: str, out: dict,
     if not el:
         out["message"] = "没找到模式 radio:%s" % label
         return
-    el.click(force=force)
+    try:
+        el.click(force=force)
+    except Exception as exc:
+        # 最常见的原因:radio 被皮/遮罩盖住,Playwright 的可操作性检查超时
+        # (报 "... intercepts pointer events")。那是 set_mode(force=True)
+        # 解决的问题,不该以一条 traceback 收场。
+        out["message"] = ("点 %s 的 radio 失败:%s%s"
+                          % (mode, str(exc).splitlines()[0],
+                             "" if force else
+                             "(控件被别的元素盖住时,run() 里改成 "
+                             "set_mode(force=True))"))
+        return
     settle(page)
     try:
         checked = el.is_checked()
@@ -563,6 +574,90 @@ class Session:
             return
         navigate(self.page, self.facts, self._result)
 
+    def goto_iframe(self, target: Optional[str] = None,
+                    ready_js: Optional[str] = None,
+                    parent_url: Optional[str] = None,
+                    attempts: int = 10) -> bool:
+        """把设置页**以 iframe 的形式**打开,并确认它真的就绪才返回 True。
+
+        有的机型(Buffalo)的设置页直接打开也能渲染、控件也能点、回读也通过,
+        但页面的配置对象没加载,保存提交的是**旧值** —— 一次 DOM 上完全看不
+        出来的假成功。所以就绪 = 三个条件同时成立:url 到位、配置对象到位
+        (FACTS.iframe_ready_js)、拨号控件已出现。只看 url 是不够的。
+
+        菜单点不动的机型才用它(能点菜单就用 navigate)。要重试是因为页面自己
+        的脚本有时会把 iframe 的地址改回去。
+        """
+        if self._aborted:
+            return False
+        sel = self.facts.get("iframe_selector")
+        target = target or self.facts.get("iframe_target")
+        ready_js = ready_js or self.facts.get("iframe_ready_js")
+        parent = parent_url or self.facts.get("url")
+        if not sel or not target:
+            self.warn("goto_iframe 需要 FACTS 里的 iframe_selector 和 "
+                      "iframe_target(当前:%r / %r)" % (sel, target))
+            return False
+
+        # 登录后可能被跳到别的页:先确保主文档回到外壳页,否则 iframe 不在。
+        leaf = (parent or "").rstrip("/").split("/")[-1].split("?")[0]
+        if leaf and leaf not in (self.page.url or ""):
+            try:
+                self.page.goto(parent, wait_until="domcontentloaded")
+            except Exception as exc:
+                self.warn("回到外壳页 %s 失败:%s" % (parent, exc))
+        settle(self.page)
+
+        dial_sel = (self.facts.get("dial") or {}).get("selector") or ""
+        seen_url = ""
+
+        def ready():
+            fl = self.page.frame_locator(sel)
+            root = fl.locator(":root")
+            here = root.evaluate("() => location.href") or ""
+            if target.split("?")[0] not in here:
+                return False
+            if ready_js:
+                # 配置对象可能还没赋值 —— 求值抛异常按"还没好"处理。
+                good = root.evaluate(
+                    "() => { try { return !!(%s); } catch (e) { return false; } }"
+                    % ready_js)
+                if not good:
+                    return False
+            if dial_sel and fl.locator(dial_sel).count() < 1:
+                return False
+            return here
+
+        for _ in range(max(1, attempts)):
+            try:
+                self.page.evaluate(
+                    """([sel, target]) => {
+                        var frm = document.querySelector(sel);
+                        if (!frm) throw new Error("iframe not found: " + sel);
+                        var rnd = parseInt(Math.random() * 100000000);
+                        frm.contentWindow.location.href =
+                            target + (target.indexOf('?') < 0 ? '?' : '&')
+                            + 'rnd=' + rnd;
+                    }""", [sel, target])
+            except Exception as exc:
+                self.warn("设置 iframe 地址失败:%s" % exc)
+                return False
+            settle(self.page, 500)
+            hit = poll(self.page, ready, 8000)
+            if hit:
+                return True
+            try:
+                seen_url = self.page.frame_locator(sel).locator(
+                    ":root").evaluate("() => location.href") or ""
+            except Exception:
+                pass
+            # 页面脚本把地址改回去了 / 配置还没到位:再来一轮。
+        self._result["message"] = (
+            "%s 没在 iframe 里就绪(试了 %d 轮)。iframe 当前 url=%r;"
+            "就绪判据 %r 未成立 —— 这一步不通过就绝不能往下走,"
+            "否则保存下去的是旧值。" % (target, attempts, seen_url, ready_js))
+        return False
+
     def ensure_enabled(self) -> None:
         """整块表单被开关门控时打开它;拨号控件已可见就绝不碰(防止点关)。"""
         if self._aborted:
@@ -716,7 +811,7 @@ def console_safe() -> None:
 
 
 # 动词清单:从 docstring 首行生成,不用手工维护第二份文档。
-_VERB_NAMES = ("login", "navigate", "ensure_enabled", "set_mode",
+_VERB_NAMES = ("login", "navigate", "goto_iframe", "ensure_enabled", "set_mode",
                "fill_params", "apply_and_verify", "fail", "warn")
 
 

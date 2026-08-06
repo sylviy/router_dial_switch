@@ -201,11 +201,18 @@ python tests/smoke_test.py --show   # 观看它点完所有模式
 登录 → 进 WAN 设置 → 定位控件 → 选中 → 填参数 → 回读 → 保存。看结尾的
 **`0 failed`**。覆盖:
 
-- **models/ 交付层**:用 `Tenda_AX3000.py` / `Cudy_AX1500.py` / `Cudy_AX3000.py` / `Mercusys_BE3600.py`
-  里的**真实 FACTS** 驱动对应 mock —— 原生 `<select>`、无 role 的 Vue widget
-  (含 "Connect" 保存键)、IPv6 使能开关门控页、`cudy*.htm` 的老式 frameset
-  (登录在主文档、菜单和表单各在子 frame,还有隐藏的 Connect/Disconnect 诱饵),
-  以及**"事实对不上的页面必须诚实失败"**这条守卫;
+- **models/ 交付层**:用真实型号脚本里的**真实 FACTS**、走**型号脚本自己的
+  `run()`** 驱动对应 mock。mock 按 **UI 原型**组织,不按机型 —— 目前 5 个:
+  原生 `<select>`(`index.html` / `custom.html`)、无 role 的 Vue widget
+  (`tenda*.html`,含 "Connect" 保存键和 IPv6 使能开关门控页)、老式 frameset
+  (`cudy*.htm`:登录在主文档、菜单和表单各在子 frame,还有隐藏的
+  Connect/Disconnect 诱饵)、LuCI/CBI(`cudy_luci.html`)、**外壳页 + iframe**
+  (`buffalo_*.html`)。适配新机型**只有遇到没见过的原型才加 mock** ——
+  维护量随原型数增长,不随机型数增长;
+- **两条守卫**:"事实对不上的页面必须诚实失败",以及"**拆掉守卫就会出现假
+  成功**" —— Buffalo 那组用例里有一条故意去掉 iframe 就绪判据,断言它切换
+  "成功"了而保存落在 `STALE`。这条**期望的就是假成功**:它变红说明 mock 不再
+  能复现那个陷阱,不是代码变好了;
 - **凭据层**:`router.yaml` 读写、按模式挑参数(PPPoE 账密不得漏进 dynamic);
 - **run_matrix 编排层**:`--demo` 离线整轮(配置 → 主循环 → simulate 后端 →
   HTML+CSV 落盘),以及 `chariot_perf._judge` 判稳纯函数 == 旧脚本

@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="ja">
+<head><meta charset="utf-8"><title>Mock Router (BUFFALO-style: advanced.html shell)</title>
+<style>
+  #login_base { display:none; }          /* 真机同样初始隐藏,由 JS 显示 */
+  #content_main { width: 640px; height: 420px; border: 1px solid #999; }
+</style>
+</head>
+<body>
+<!-- 第 5 个 UI 原型:**外壳页 + iframe**(BUFFALO WSR-6000AX8)。
+     真机 2026-07-31 取证的三条事实,这个 mock 逐条复现:
+       1. wan.html 必须以本页里的 iframe 打开 —— 直接打开它,页面照样渲染、
+          radio 照样能点、回读照样通过,但配置对象 CA 不会加载,保存提交的是
+          旧值。**这是一次 DOM 上看不出来的假成功**,所以 buffalo_wan.html 在
+          顶层打开时永远不给 CA 赋值,点保存只会喊 STALE。
+       2. 左侧菜单点不动,只能改 iframe 的 contentWindow.location.href,
+          而且页面脚本有时会把它改回去 —— 下面 revert_once 就干这件事,
+          逼出驱动的重试逻辑。
+       3. 登录框初始 display:none,由 JS 显示 —— 扫一次就放弃的话登录不进去。
+-->
+<h2>BUFFALO AirStation — 詳細設定</h2>
+
+<div id="login_base">
+  <p>パスワードを入力してください</p>
+  <input type="text" id="form_USERNAME" value="admin">
+  <input type="password" id="form_PASSWORD" placeholder="Password">
+  <input type="button" class="button_login" value="ログイン">
+</div>
+
+<div id="shell" style="display:none">
+  <p>詳細設定 &gt; Internet</p>
+  <iframe id="content_main" src="buffalo_info.html"></iframe>
+</div>
+
+<script>
+  // 登录框由 JS 延迟显示:驱动必须轮询等它,不能扫一次就放弃。
+  setTimeout(function () {
+    document.getElementById('login_base').style.display = 'block';
+  }, 300);
+
+  document.querySelector('input.button_login').onclick = function () {
+    document.getElementById('login_base').style.display = 'none';
+    document.getElementById('shell').style.display = 'block';
+  };
+
+  // 页面自己的脚本会把 iframe 改回 info 一次 —— 真机上就是这样,所以
+  // 「设一次 location 就以为到了」是不够的。
+  var revert_once = true;
+  var frm = document.getElementById('content_main');
+  frm.addEventListener('load', function () {
+    var here = '';
+    try { here = frm.contentWindow.location.href; } catch (e) { return; }
+    if (revert_once && here.indexOf('buffalo_wan.html') >= 0) {
+      revert_once = false;
+      frm.contentWindow.location.href = 'buffalo_info.html';
+    }
+  });
+</script>
+</body>
+</html>
