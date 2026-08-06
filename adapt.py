@@ -157,8 +157,11 @@ def _collect_creds(modes, saved: dict) -> dict:
 
 def main(argv=None) -> int:
     import argparse
-    from models._driver import _console_safe, run as driver_run
-    _console_safe()
+    from models._driver import console_safe
+    # 用型号脚本自己的 run()(和整轮编排器同一条路):操作顺序特殊的
+    # 机型在向导里也能验证,不会被默认配方驱动。
+    from matrix.run import runner_for
+    console_safe()
     ap = argparse.ArgumentParser(add_help=False)
     ap.add_argument("--headless", action="store_true",
                     help=argparse.SUPPRESS)   # 隐藏参数,仅冒烟测试用
@@ -345,9 +348,10 @@ def main(argv=None) -> int:
         params = merge_params(m, saved.get("params") or {}, {})
         _progress("  %-9s 切换中…" % m)
         try:
-            res = driver_run(mod.FACTS, m, params=params, apply=False,
-                             admin_user=saved.get("user", ""),
-                             admin_pass=password, headless=cli.headless)
+            res = runner_for(name)(mod.FACTS, m, params=params, apply=False,
+                                   admin_user=saved.get("user", ""),
+                                   admin_pass=password,
+                                   headless=cli.headless)
         except Exception as exc:
             _done("  %-9s [X] 跑不起来" % m)
             crashlog.report(exc, "验证模式 %s" % m,
@@ -386,9 +390,10 @@ def main(argv=None) -> int:
     for m in modes:
         params = merge_params(m, saved.get("params") or {}, {})
         _progress("  %-9s 下发中…" % m)
-        res = driver_run(mod.FACTS, m, params=params, apply=True,
-                         admin_user=saved.get("user", ""), admin_pass=password,
-                         headless=cli.headless)
+        res = runner_for(name)(mod.FACTS, m, params=params, apply=True,
+                               admin_user=saved.get("user", ""),
+                               admin_pass=password,
+                               headless=cli.headless)
         state = ("[OK] 已保存" if res["success"] and res["applied"]
                  else "[!] 切了但保存键没点到" if res["success"]
                  else "[X] %s" % (res["message"] or "失败"))

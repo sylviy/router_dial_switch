@@ -158,9 +158,17 @@ def check_facts(name: str, facts: dict, source: str, engine=None) -> Report:
                  "dial_modes 里排除它")
 
     # --- 7. 交付形态:CLI 入口 + 能被发现 ---------------------------------
-    if "run_cli(FACTS)" not in source:
-        rep.err("脚本末尾没有 `sys.exit(run_cli(FACTS))` —— "
-                "同事没法 python models/%s.py <mode> 直接跑" % name)
+    # 尾行必须把这台机自己的 run() 传进去。少了 runner=run,单跑会静默退回
+    # 默认配方 —— 对操作顺序特殊的机型(Buffalo)就是"切了、看着成功、保存的
+    # 是旧值",而 matrix/run.py 走的又是 run(),两条入口行为不一致。
+    if "run_cli(FACTS, runner=run)" not in source:
+        rep.err("脚本末尾要写 `sys.exit(run_cli(FACTS, runner=run))` —— "
+                "少了 runner=run,python models/%s.py 会退回默认配方,"
+                "和整轮走的不是同一条流程" % name)
+    if not re.search(r"^\s*def\s+run\s*\(", source, re.M):
+        rep.err("没有 run() —— 型号脚本必须自己定义入口(规矩机型照 "
+                "models/_template.py 抄三行:return default_run(facts or FACTS, "
+                "mode, **kw)),否则 start.py / run_matrix.py 驱动不了它")
     if not re.search(r"^\s*FACTS\s*=", source, re.M):
         rep.err("找不到顶层 FACTS = {...}")
 
@@ -231,8 +239,8 @@ def _open_engine():
 
 
 def main(argv=None) -> int:
-    from models._driver import _console_safe
-    _console_safe()
+    from models._driver import console_safe
+    console_safe()
     ap = argparse.ArgumentParser(description="型号脚本离线体检(不需要路由器)")
     ap.add_argument("name", nargs="?", help="型号脚本名,如 Tenda_AX3000")
     ap.add_argument("--all", action="store_true", help="检查 models/ 下全部型号")

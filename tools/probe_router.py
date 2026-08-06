@@ -431,19 +431,19 @@ def do_login(page, args, report: dict) -> None:
                 login["password"] = inp["pin"]["recommended"]
                 break
 
-    ok = _driver._login(page, {"login": login}, args.user, args.password)
+    ok = _driver.login(page, {"login": login}, args.user, args.password)
     if not ok and not args.login_btn:
         for sel in _login_button_candidates(page, login["password"]):
-            el = _driver._locate(page, sel)
+            el = _driver.locate(page, sel)
             if not el:
                 continue
             try:
                 el.click()
             except Exception:
                 continue
-            gone = _driver._poll(
+            gone = _driver.poll(
                 page,
-                lambda: _driver._locate(page, login["password"]) is None, 8000)
+                lambda: _driver.locate(page, login["password"]) is None, 8000)
             if gone:
                 login["button"] = sel
                 ok = True
@@ -834,12 +834,20 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from models._driver import run_cli
+from models._driver import default_run, run_cli
 
 FACTS = {facts}
 
+
+def run(facts=None, mode="dynamic", **kw):
+    """这台机的操作配方:标准流程(见 models/_driver.default_run)。
+    操作顺序本身是特例时(例:WAN 页必须以 iframe 打开)在这里改成
+    自己拼动词,清单见 python models/_driver.py --verbs。"""
+    return default_run(facts or FACTS, mode, **kw)
+
+
 if __name__ == "__main__":
-    sys.exit(run_cli(FACTS))
+    sys.exit(run_cli(FACTS, runner=run))
 '''
 
 
@@ -992,9 +1000,9 @@ def probe(args):
         login = do_login(page, args, report)
         facts_stub = {"login": login, "wan_path": list(args.nav)}
         nav_result = {"warnings": []}
-        _driver._navigate(page, facts_stub, nav_result)
+        _driver.navigate(page, facts_stub, nav_result)
         report["nav_warnings"] = nav_result["warnings"]
-        _driver._settle(page, 800)
+        _driver.settle(page, 800)
         report["final_url"] = page.url
         if getattr(args, "dump", False) or getattr(args, "count", None):
             # 只抄/只数:不做建议、不写产物。这条路是给 agent 用的,越小越好。
@@ -1008,10 +1016,10 @@ def probe(args):
         report["frames"] = harvest(page)
         if args.open_sel:
             # 点开下拉抄选项原文。只点触发器 —— 保存键永远不碰。
-            trig = _driver._locate(page, args.open_sel)
+            trig = _driver.locate(page, args.open_sel)
             if trig:
                 trig.click()
-                _driver._settle(page, 600)
+                _driver.settle(page, 600)
                 report["opened_options"] = _harvest_options(page)
             else:
                 report["opened_options"] = {"error": "没找到 %s" % args.open_sel}
@@ -1082,7 +1090,7 @@ def _probe_mode_fields(page, facts, report) -> None:
     if dial.get("kind") != "select" or not facts.get("modes"):
         return                      # 自定义下拉的逐档探测留给人工,别乱点
     dial_sel = dial["selector"]
-    sel = _driver._locate(page, dial_sel, require_visible=False)
+    sel = _driver.locate(page, dial_sel, require_visible=False)
     if not sel:
         return
     try:
@@ -1099,11 +1107,11 @@ def _probe_mode_fields(page, facts, report) -> None:
         if mode == "TODO" or not MODE_REQUIRED_FIELDS.get(mode):
             continue
         try:
-            _driver._locate(page, dial_sel, require_visible=False) \
+            _driver.locate(page, dial_sel, require_visible=False) \
                 .select_option(label=label, force=True)
         except Exception:
             continue
-        _driver._settle(page, 900)          # 等 XHR 把这一档的字段挂上来
+        _driver.settle(page, 900)          # 等 XHR 把这一档的字段挂上来
         for fr in page.frames:
             # 把搜索范围收窄到拨号控件所在的 form —— 同页别的段会冒充
             scope = ""
@@ -1132,9 +1140,9 @@ def _probe_mode_fields(page, facts, report) -> None:
                 seen.setdefault(mode, []).append(concept)
     if original:                            # 恢复原样,别把机器留在别的模式上
         try:
-            _driver._locate(page, dial_sel, require_visible=False) \
+            _driver.locate(page, dial_sel, require_visible=False) \
                 .select_option(label=original, force=True)
-            _driver._settle(page, 600)
+            _driver.settle(page, 600)
         except Exception:
             pass
     report["mode_fields"] = seen
@@ -1142,7 +1150,7 @@ def _probe_mode_fields(page, facts, report) -> None:
 
 # ---------------------------------------------------------------------------
 def main(argv=None) -> int:
-    _driver._console_safe()
+    _driver.console_safe()
     saved = settings_mod.load()
     ap = argparse.ArgumentParser(
         description="只读取证探针:抄下路由器 WAN 页的控件并验证选择器命中数")
@@ -1219,7 +1227,7 @@ def _harvest_options(page) -> dict:
     seen = []
     for fr in page.frames:
         try:
-            loc = fr.locator(_driver._OPTION_CONTAINERS)
+            loc = fr.locator(_driver.OPTION_CONTAINERS)
             for i in range(min(loc.count(), 40)):
                 el = loc.nth(i)
                 if not el.is_visible():
@@ -1233,7 +1241,7 @@ def _harvest_options(page) -> dict:
                 seen.append(t)
         except Exception:
             continue
-    return {"options": seen, "container": _driver._OPTION_CONTAINERS}
+    return {"options": seen, "container": _driver.OPTION_CONTAINERS}
 
 
 def _summary(report: dict, out: str) -> None:

@@ -38,7 +38,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import Config
 from models._browser import Browser
-from models._driver import available_modes, _screenshot
+from models._driver import available_modes, run_cli, screenshot
 import settings as settings_mod
 
 FACTS = {
@@ -190,7 +190,7 @@ def run(facts=None, mode="dynamic", params=None, apply=False,
             _enter_wan_iframe(page)
         except Exception as exc:
             result["message"] = "进入 wan.html iframe 失败:%s" % exc
-            result["screenshot"] = _screenshot(page, cfg, FACTS, mode)
+            result["screenshot"] = screenshot(page, cfg, FACTS, mode)
             return result
 
         target = FACTS["modes"][mode]
@@ -203,7 +203,7 @@ def run(facts=None, mode="dynamic", params=None, apply=False,
             time.sleep(1)
         except Exception as exc:
             result["message"] = "点击 %s radio 失败:%s" % (mode, exc)
-            result["screenshot"] = _screenshot(page, cfg, FACTS, mode)
+            result["screenshot"] = screenshot(page, cfg, FACTS, mode)
             return result
 
         # 只信真 radio 的 is_checked():点了不等于选上了。
@@ -213,7 +213,7 @@ def run(facts=None, mode="dynamic", params=None, apply=False,
         result["read_back"] = mode if checked else ""
         if not checked:
             result["message"] = "回读失败:%s 的 radio 未被选中" % mode
-            result["screenshot"] = _screenshot(page, cfg, FACTS, mode)
+            result["screenshot"] = screenshot(page, cfg, FACTS, mode)
             return result
 
         if apply:
@@ -228,41 +228,9 @@ def run(facts=None, mode="dynamic", params=None, apply=False,
                 result["verify"] = verify_hook(page, result)
             except Exception as exc:
                 result["warnings"].append("verify_hook: %s" % exc)
-        result["screenshot"] = _screenshot(page, cfg, FACTS, mode)
+        result["screenshot"] = screenshot(page, cfg, FACTS, mode)
     return result
 
 
-def run_cli(facts=None, argv=None):
-    """型号脚本的 main:python models/BUFFALO_WSR6000AX8.py <mode> [--apply]。"""
-    saved = settings_mod.load()
-    parser = argparse.ArgumentParser(
-        description="%s %s —— WAN 拨号方式切换(默认只切换不保存,"
-                    "加 --apply 才真正下发)" % (FACTS["brand"], FACTS["model"]))
-    parser.add_argument("mode", choices=available_modes(FACTS),
-                        help="目标拨号方式")
-    parser.add_argument("--apply", action="store_true",
-                        help="真正点保存(默认不点,先看回读)")
-    parser.add_argument("--url", default=None,
-                        help="覆盖脚本里的地址(默认 %s)" % FACTS["url"])
-    parser.add_argument("--pass", dest="password", default=saved.get("pass", ""),
-                        help="管理密码(默认取 router.yaml)")
-    parser.add_argument("--headless", action="store_true", help="无窗口运行")
-    args = parser.parse_args(argv)
-
-    if not args.password:
-        parser.error(
-            "没有管理密码:先跑一次 `python start.py --setup` 把路由器 IP/密码存进 "
-            "router.yaml(git 已忽略,不会进仓库),或本次直接加 --pass <管理密码>。")
-
-    res = run(FACTS, args.mode, apply=args.apply, admin_pass=args.password,
-              url=args.url,
-              headless=args.headless or bool(saved.get("headless")))
-    print(json.dumps(res, ensure_ascii=False, indent=2))
-    if res["success"] and not args.apply:
-        print("[hint] 已确认切换(回读=%r)但未点保存;加 --apply 真正下发。"
-              % res["read_back"])
-    return 0 if res["success"] else 2
-
-
 if __name__ == "__main__":
-    sys.exit(run_cli(FACTS))
+    sys.exit(run_cli(FACTS, runner=run))

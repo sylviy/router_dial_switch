@@ -13,7 +13,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from models._driver import run_cli
+from models._driver import default_run, run_cli
 
 FACTS = {
     "brand": "Mercusys",
@@ -55,5 +55,12 @@ FACTS = {
     # `python tools/probe_router.py` 取证后,照 Tenda_AX3000.py 的 mode_overrides 补上。
 }
 
+
+def run(facts=None, mode="dynamic", **kw):
+    """这台机的操作配方:标准流程(登录 → 走菜单 → 选模式 → 回读 →
+    填账密 → 保存)。逐步说明见 models/_driver.default_run。"""
+    return default_run(facts or FACTS, mode, **kw)
+
+
 if __name__ == "__main__":
-    sys.exit(run_cli(FACTS))
+    sys.exit(run_cli(FACTS, runner=run))
