@@ -11,7 +11,8 @@ PPPoE 账号密码在独立页 pppoe_reg.html:本脚本只切模式,账密要预
 
 事实来源:2026-07-31 真机取证(probe_router.py --dump/--count),六档模式
 的 --apply 均已在真机验过(artifacts/progress_BUFFALO_WSR6000AX8.md)。
-2026-08-06 重构成动词组合后,**真机需要再验一遍**(登录和导航换了实现)。
+2026-08-06 重构成动词组合(登录和导航换了实现)后**已在真机复验通过**:
+六档逐个回读正确,并下发保存过。
 
 用法(默认只切换不保存;确认回读无误后加 --apply 才真正下发):
     python models/BUFFALO_WSR6000AX8.py dynamic

@@ -366,9 +366,10 @@ bespoke reimplementation of the whole pipeline; the only real difference was
 always the iframe navigation). `goto_iframe()` is now a driver verb and the
 three device facts below are FACTS keys — `iframe_selector` /
 `iframe_target` / `iframe_ready_js` — plus `set_mode(force=True)` and
-`apply_and_verify(force=True)`. **Needs one more bench pass**: the login and
-navigation steps changed implementation, so re-run per-mode read-back and one
-`--apply` on the physical device before treating it as re-accepted.
+`apply_and_verify(force=True)`. **Re-accepted on the bench 2026-08-06** (user
+confirmed): all six modes read back correctly and `--apply` was exercised, after
+the login and navigation steps changed implementation. It is now the reference
+example for a device whose operation *order* is special — copy its `run()`.
 Three facts make its order special:
   * `wan.html` **must be opened as an iframe inside `advanced.html`**. Open it
     directly and the page renders, the radios click, read-back passes — and

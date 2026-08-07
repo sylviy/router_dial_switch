@@ -108,7 +108,7 @@ python3                   -c "import playwright,sys;print(sys.version)"
 | `Cudy_AX1500.py` | 老式 **frameset**(Realtek SDK) | 能 | 菜单/表单在不同子 frame;藏着 8 个 `*Connect` 诱饵;PPTP 与 L2TP 字段分家 |
 | `Cudy_AX3000.py` | **LuCI / CBI**(OpenWrt) | 能 | id 含点号只能 `[id='...']`;4 个 `cbi.apply` 要按 form 收窄;选完 proto 才用 XHR 挂载字段 |
 | `Cudy_BE6500.py` | LuCI / CBI,同上 | 能 | 与 AX3000 同家族,**照它改十分钟就好**;差别只有 dynamic 的措辞是 `DHCP`(AX3000 是 `DHCP(Dynamic IP)`)。字段选择器都用 `form:has(...)` 收窄过,比 AX3000 更稳,新 LuCI 机照这份抄 |
-| `BUFFALO_WSR6000AX8.py` | Buffalo 老 UI,**`advanced.html` 里套 iframe** | **不能** | 设置页必须以 iframe 打开(否则保存提交旧值=假成功);菜单点不动靠 `goto_iframe`;控件被皮盖住要 `force`。这三条都有离线 mock(`buffalo_*.html`)|
+| `BUFFALO_WSR6000AX8.py` | Buffalo 老 UI,**外壳页里套 iframe** | **不能** | **操作顺序特殊的参考实现,已真机验收** —— 遇到「顺序不对就保存旧值」这类机器照它的 `run()` 抄 |
 | `Mercusys_BE3600.py` | Vue 类,`role=combobox` | 未验 | `dial` 写的是 `[role='combobox']`,**太松**,同页多个下拉时会驱动错控件 |
 | (进行中)`Mercusys_MR80X` | 老 UI,与 BE3600 不同 | — | **登录进不去**是当前卡点;BE3600 的登录 FACTS 能登进它,说明差别在登录键 |
 
