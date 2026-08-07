@@ -81,7 +81,7 @@ python3                   -c "import playwright,sys;print(sys.version)"
 | `reference.md` 的**某一节** | 按节 | 拿不准某个键怎么写时 |
 
 **不要读**(读一次就烧掉整轮预算):`models/_driver.py`(5000–7000)、
-`CLAUDE.md`(7500–10500)、`artifacts/probe_*.json`(真机上几百 KB)、
+`GOTCHAS.md` 全文(1.4 万+)、`artifacts/probe_*.json`(真机上几百 KB)、
 `*.png`、`vendor/` 里的文件、`reference.md` 全文。
 
 不要逐行打印脚本(只输出 FACTS dict)。改 `_driver.py` 不再是禁区,但要按下面

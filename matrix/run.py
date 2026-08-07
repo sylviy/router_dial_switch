@@ -47,7 +47,7 @@ def _color(txt, code):
 
 def list_models() -> list:
     # 注意:不能用 glob —— 本仓库路径里有 "[Tool]",glob 会把方括号当字符类,
-    # 静默返回空列表(CLAUDE.md 的老坑,这里也踩过)。
+    # 静默返回空列表(GOTCHAS.md 的老坑,这里也踩过)。
     out = []
     mdir = os.path.join(ROOT, "models")
     for fn in sorted(os.listdir(mdir)):

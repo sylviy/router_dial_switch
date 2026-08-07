@@ -78,7 +78,7 @@ v6 按 flavor 命名,不要笼统的 `ipv6`。键名的顺序就是整轮的测�
 |---|---|
 | `pppoe_user` / `pppoe_pass` | pppoe(以及 pppoev6,按需显式传) |
 | `vpn_server` / `vpn_user` / `vpn_pass` | l2tp、pptp |
-| `static_ip` / `static_mask` / `static_gateway` / `static_dns` | static(**目前 modes.py 里是空的**,见 CLAUDE.md「Known gaps」) |
+| `static_ip` / `static_mask` / `static_gateway` / `static_dns` | static(**目前 modes.py 里是空的**,见 GOTCHAS.md「Known gaps」) |
 
 **L2TP 和 PPTP 字段名相同、DOM 字段不同**(Cudy 是 `l2tpUserName` vs
 `pptpUserName`)—— 必须拆进 `mode_overrides`,放一层里其中一个模式必然填错地方。

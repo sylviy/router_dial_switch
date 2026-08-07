@@ -5,7 +5,7 @@
     python models/Mercusys_BE3600.py l2tp --param vpn_server=1.2.3.4 \
         --param vpn_user=u --param vpn_pass=p
 
-事实来源:2026-07-11 真机验证(详见 CLAUDE.md「Validated」)。标注 [待真机复核]
+事实来源:2026-07-11 真机验证(详见 GOTCHAS.md「Validated」)。标注 [待真机复核]
 的行当时由启发式自动搞定、没记下精确选择器 —— 失败时跑
 `python tools/probe_router.py` 取证后修正。
 """

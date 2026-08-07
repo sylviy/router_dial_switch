@@ -151,7 +151,7 @@ def check_facts(name: str, facts: dict, source: str, engine=None) -> Report:
                 rep.note("措辞 %r 是 %r 的子串 —— 驱动用精确相等,不会认错;"
                          "别把任何判定改成子串匹配" % (a, b))
 
-    # --- 6. static 的已知空档(CLAUDE.md「Known gaps」)--------------------
+    # --- 6. static 的已知空档(GOTCHAS.md「Known gaps」)-------------------
     if "static" in available_modes(facts) and not MODE_REQUIRED_FIELDS.get("static"):
         rep.warn("声明了 static,但 modes.py 里 static 没有字段映射 —— "
                  "整轮会切到静态 IP 且不填任何地址,记得在 perf.yaml 的 "
@@ -218,7 +218,7 @@ def _selectors(facts: dict):
 
 def list_model_names():
     """os.listdir 而不是 glob:仓库路径里有 [Tool],是个字符类,glob 会静悄悄
-    返回空(CLAUDE.md 的老坑,PR #1 在 list_models 上又踩过一次)。"""
+    返回空(GOTCHAS.md 的老坑,PR #1 在 list_models 上又踩过一次)。"""
     d = os.path.join(ROOT, "models")
     return sorted(f[:-3] for f in os.listdir(d)
                   if f.endswith(".py") and not f.startswith("_"))

@@ -52,7 +52,7 @@ python run_matrix.py --demo                  # 整轮性能矩阵:先离线看�
 | `models/Mercusys_BE3600.py` | dynamic / pppoe / static / l2tp / pptp | 2026-07-11 真机跑通(当时走启发式);脚本形态的字段选择器仍标 `[待真机复核]` |
 
 各机型的具体怪癖(Tenda 的嵌套 span 按钮、Cudy 的 frameset + 隐藏诱饵按钮、
-Cudy 固件关掉了 IPv6 的证据链)都记在 `CLAUDE.md` 的 **Validated** 一节。
+Cudy 固件关掉了 IPv6 的证据链)都记在 `GOTCHAS.md` 的 **Validated** 一节。
 
 ---
 
@@ -188,7 +188,7 @@ python models/<品牌>_<型号>.py pppoe --apply   # 全对了再验收
 
 **不要靠猜写 FACTS。** 这个仓库里所有"假成功"的教训(点了个同名的诱饵元素、
 把卡片条的第一张当成当前值、`:text-is()` 匹配不到文字在内层 span 的按钮)都是
-因为选择器没在真机上验证过 —— 详见 `CLAUDE.md` 的 Validated 一节。
+因为选择器没在真机上验证过 —— 详见 `GOTCHAS.md` 的 Validated 一节。
 
 ## 如何验证(离线,无需真机)
 
