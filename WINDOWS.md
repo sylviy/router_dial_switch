@@ -83,7 +83,7 @@ matrix.bat --model Tenda_AX3000      :: 整轮真跑:自动遍历该型号的全
   文件名去掉 `.py`),后面的参数原样传给它。
 - **`matrix.bat` 是整轮命令**(组里性能脚本已合并进来):对配置里的每档拨号
   方式,切模式 → ping 等 WAN 拨通 → 跑吞吐并判稳 → 出自包含 HTML + CSV 报告
-  (落在 `artifacts\`)。测什么写在 `perf.yaml`(复制 `perf.example.yaml` 改,
+  (落在 `artifacts\`)。测什么写在 `perf_configs/<型号>.yaml`(复制 `_template.yaml` 改,
   git 忽略);真跑 Chariot 吞吐要在装了 IxChariot 的台架上,并在 `perf.yaml`
   的 `chariot.python` 指定装了 PyChariot 的那个解释器(Py3 台架留空即可,
   老台架写 `C:\Python26\python.exe`);没有台架就用默认的

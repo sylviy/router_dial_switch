@@ -34,6 +34,6 @@
 
 ## 优先级
 
-`--config <路径>` > `perf_configs/<型号>.yaml` > `perf.yaml` > `perf.example.yaml`
+`--config <路径>` > `perf_configs/<型号>.yaml` > `perf.yaml` > 内置默认值
 
 已经配好一个全局 `perf.yaml` 的台架不用动,它继续有效。

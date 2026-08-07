@@ -230,7 +230,6 @@ router_dial_switch/
   perf_configs/          **每台机一份测试参数**:<型号>.yaml(注入机/对端 IP、
                          每档打谁、测多久)。选到哪台就自动用哪份;没有的话
                          向导会问你要不要生成。密码不在这里。
-  perf.example.yaml      全局配置模板(老写法,作为没有按型号配时的回落)
   models/                **交付层:每台型号一个脚本**
     Tenda_AX3000.py      事实(FACTS)+ 入口;直接运行
     Mercusys_BE3600.py

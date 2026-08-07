@@ -7,7 +7,7 @@
                                                全部拨号方式,每档真正下发
                                                并测吞吐(台架语义,无 --apply)
 
-细节见 matrix/run.py 和 perf.example.yaml。
+细节见 matrix/run.py 和 perf_configs/_template.yaml。
 """
 import os
 import sys

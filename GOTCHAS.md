@@ -92,7 +92,7 @@
   every model benefits from (`apply_settle_ms`, `set_mode(force=)`) beats a new
   primitive, and a new verb needs a mock reproducing its shape.
   `config.py` resolves **one config file per device**: `--config` >
-  `perf_configs/<model>.yaml` > `perf.yaml` > `perf.example.yaml`, recorded on
+  `perf_configs/<model>.yaml` > `perf.yaml` > built-in defaults, recorded on
   `PerfConfig.source` (2026-07-31, user: copying and re-editing one global
   `perf.yaml` per DUT "is so complex" — the bench has six devices with
   different wiring, and a global file means re-editing on every switch with no

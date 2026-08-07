@@ -162,7 +162,7 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(
         description="WAN 性能矩阵:切拨号方式(Web 驱动)→ 等 WAN → 测吞吐 → 出报告")
     ap.add_argument("--config", default=perf_config.DEFAULT_PATH,
-                    help="perf.yaml 路径(默认仓库根;缺失则用 perf.example.yaml)")
+                    help="参数文件路径(默认按型号找 perf_configs/<型号>.yaml)")
     ap.add_argument("--model", default=None,
                     help="型号脚本名(models/<name>.py);覆盖 perf.yaml 的 model")
     ap.add_argument("--backend", choices=["simulate", "chariot"], default=None,
