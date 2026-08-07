@@ -155,6 +155,17 @@ python tools/probe_router.py --url ... --pass ...
 python tools/check_model.py <型号>       # 至少能验语法合法性
 ```
 
+### 在命令行上传选择器:一律内单引号、外双引号
+
+```
+--count "div.v-form-item:has-text('Internet Connection Type') div.v-select"
+```
+
+`:has-text('...')` / `:text-is('...')` 用单引号是合法的(已实测)。**别在命令行
+里用内层双引号** —— PowerShell 会把它吃掉,你会得到语法错或**错误的命中数**,
+而这仓库以前就为同一个原因栽过(所以 `chariot_perf.py` 才有 `--json-file`)。
+写进 `models/*.py` 时用哪种引号都行,那是 Python 字符串,不过 shell。
+
 ## 一次运行的返回值
 
 ```json
@@ -237,6 +248,95 @@ python tools/check_model.py <型号>       # 至少能验语法合法性
 | `models/Tenda_AX3000.py` | Vue SPA、role-less 下拉、表单行锚定、`dial.value`、IPv6 独立页 + `enable_toggle` + `mode_overrides`、嵌套 span 的保存键 |
 | `models/Cudy_AX1500.py` | 老式 frameset、原生 `<select>`、PPTP/L2TP 字段拆分、一堆隐藏诱饵按钮里挑保存键、"这台机没有 IPv6"的定案过程 |
 | `models/Cudy_AX3000.py` | LuCI/CBI、含点号的 id、`form:has()` 收窄保存键、XHR 重建 DOM、三个模式共用一对输入框 |
+| `models/BUFFALO_WSR6000AX8.py` | **操作顺序特殊**的机器怎么写:外壳页 + iframe、`goto_iframe`、被皮盖住的控件要 `force` |
 | `models/_template.py` | 空白模板 |
 
-Tenda 和 Cudy 都已在物理设备上通过验收(含 `--apply` 真实下发),照它们抄。
+Tenda / Cudy / Buffalo 都已在物理设备上通过验收(含 `--apply` 真实下发),
+照它们抄。
+
+## 各 UI 家族特有的坑(SKILL.md 的登记册只留「抄哪个」)
+
+| 家族 | 坑 |
+|---|---|
+| Vue SPA,role-less `div` 下拉(Tenda) | 保存键文字在里层 `<span>`,`:text-is()` 命中 0 —— 必须 `button[data-name='submit']:has(span:text-is("Connect"))` 双锚定;IPv6 在独立页,靠 `enable_toggle` 开门;同页 5 个同 class 的下拉,只能用标签锚定 |
+| 老式 frameset,Realtek SDK(Cudy AX1500) | 登录在主文档、菜单和 WAN 表单在不同子 frame(驱动全 frame 扫);藏着 8 个 `*Connect`/`*Disconnect` 诱饵,**这个牌子绝不能按文字 "Connect" 找保存键**;PPTP 与 L2TP 字段分家(`pptp*` / `l2tp*`) |
+| LuCI / CBI,OpenWrt(Cudy AX3000 / BE6500) | CBI 的 id 含点号,`#cbid.network.wan.proto` 会被当成 id+3 个 class 而命中 0 → 只能 `[id='...']`;`button[name='cbi.apply']` 一页命中 4,要 `form:has(<拨号控件>)` 收窄;选完 proto 后整段 DOM 被 XHR 重建,账密框那时才挂上;登录是加盐挑战,填可见密码框按回车让页面自己算 |
+| 外壳页 + iframe(Buffalo) | 设置页必须以外壳页里的 iframe 打开,直接开也能渲染、能点、能回读,但配置对象没加载,保存提交**旧值**;菜单点不动,只能改 iframe 的 location 且要重试;控件被 `<label>` 皮盖住 → 普通 click 报 "intercepts pointer events" 超时,要 `force` |
+| Vue 类,`role=combobox`(Mercusys) | `dial` 只写 `[role='combobox']` **太松**,同页多个下拉时会驱动错控件 —— 一定要加标签锚定 |
+
+## 卡住了:先分四类(成本差一个数量级)
+
+- **崩溃**(抛异常退出)→ 看 `artifacts/crash_*.txt`(20 行),多数是环境问题;
+- **登录**进不去 → 看探针打印的登录页诊断(密码框/文本框/按钮/可点元素 + 截图),
+  **从那份诊断里挑一个** `--login-pass` / `--login-btn` 传进来,别猜;
+- **定位**(清单里看得见控件,但选择器不唯一/回读不对)→ **便宜**,用两条收窄法
+  + `--count`。**修法必须通用**:`_driver.py` 和 `probe_router.py` 里没有一行按
+  品牌分支的代码,别加第一行;
+- **形态**(页面上有、清单里压根没有这种控件)→ **贵**,见下面两节。
+
+## 收尾:把这次学到的写回来
+
+**验收通过之后**(真机逐档回读全对)做两件小事 —— 这是下一个人少走弯路的唯一
+来源:
+
+1. 这台特有的坑加进本文件「各 UI 家族特有的坑」;是个**新家族**就同时在
+   `SKILL.md` 的家族表里加一行(写清抄哪个脚本、`--emit` 行不行);
+2. 踩到通用的新坑,加进本文件「陷阱清单」。
+
+约束(别把登记册写坏):
+
+- **只加,不改写已有内容**;一次最多加一行 + 一条陷阱;
+- **只写实测过的**。没跑通就不要加行,可以写"(进行中)"并注明卡在哪 —— 那比
+  空着有用;
+- 坑要写成**别人能照做的一句话**(「id 含点号只能用 `[id='...']`」),不是感想
+  (「这个 UI 很奇怪」)。
+
+**改不了 skill 文件**(只读 / 你是被粘贴进来的)?把要加的那一行**原样输出给
+用户**让他自己粘 —— 别因为写不了就跳过,这是整套流程里唯一会累积的东西。
+
+## 需要一个新动词时(改 `_driver.py` 的门槛)
+
+`_driver.py` 是**动词库 + 一份默认配方**,不是框架 —— 改它不是禁区(2026-08-06
+起;旧的"禁止编辑 driver"那条规则已经取消,它当年把成本放大成了 Buffalo 那
+268 行)。但按顺序走这三步:
+
+1. **先试参数化。** 多数"新动词"其实是老动词加一个参数(`force=True`、换等待
+   策略、加一个 FACTS 键)。能用参数表达就不算新形态 —— `apply_settle_ms` 就是
+   这么加的:一行,所有型号受益。
+2. **确实是没见过的形态** → 写进**动词库**,并**配一个复现该形态的 mock**,
+   既有 mock 全绿。mock 不是用来验新机型的(真机更强),它是"允许改 driver"的
+   入场券:它回答真机回答不了的问题 —— *为适配这台改了下拉定位,另外五台还
+   好使吗?* 真机要回答就得把六台重接一遍,几小时;mock 几秒。
+3. **成功判定类的动词,永远不许新增。** `apply_and_verify()` 是唯一能产出
+   `success=True` 的地方,`fail()` 是唯一的失败出口。
+
+**绝不允许**在 `models/*.py` 里写私有辅助函数(`_enter_frame()` 那种)——
+十台机之后就是六份几乎一样的私有导航函数,比一个特例脚本更难发现。
+
+操作**顺序**特殊的机型就自己拼动词(动词清单:`python models/_driver.py
+--verbs`)。Buffalo 的全文长这样:
+
+```python
+def run(facts=None, mode="dynamic", **kw):
+    with session(facts or FACTS, mode, **kw) as s:
+        if not s.login():
+            return s.fail("登录失败:仍停在登录页,检查管理密码")
+        if not s.goto_iframe():      # 进外壳页,再把 iframe 开到设置页
+            return s.fail("设置页没在 iframe 里就绪")
+        s.set_mode(force=True)       # 控件被皮盖住,force 点
+        s.fill_params()
+        return s.apply_and_verify(force=True)
+```
+
+## 探针吃不下的东西(遇到不是你没弄对,别反复试)
+
+- `--probe-modes` **只支持原生 `<select>`** —— 自定义下拉要自己在页面上切一档
+  再 `--dump` 一次,对比多出来哪些框;
+- closed shadow DOM / canvas 自绘 / 验证码登录 —— 抄不到,如实报告;
+- 保存前要确认弹窗的机型 —— 驱动点完保存不会去点弹窗,`--apply` 会报"已点但
+  没生效",如实报告;
+- 卡片条 / 分段选择器 —— 现有三种 `dial.kind` 都不是它,**别硬套**。
+
+**任何一条命令崩了都不要卡住**:那几条命令彼此独立,而且你**永远不需要工具替你
+生成脚本** —— 有 `--dump` 的清单 + 本文件的格式,自己写 dict 就行,这条路没有
+环节会崩。只要清单存过盘,前面就没有白跑。
