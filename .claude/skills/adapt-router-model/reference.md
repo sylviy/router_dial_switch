@@ -328,6 +328,33 @@ def run(facts=None, mode="dynamic", **kw):
         return s.apply_and_verify(force=True)
 ```
 
+### 改动分级(哪些能碰)
+
+| 层级 | 规则 |
+|---|---|
+| `poll` / `locate` / `frames` / `settle` | **禁止改** —— 全机型地基。确实需要,先停下来向用户说明理由并等确认 |
+| `login` / `navigate` / `ensure_enabled` / `set_mode` / `fill_params` | 可**新增**;改已有的必须在报告里写清影响哪些机型 |
+| `Session` 的 `_verified` / `_aborted` 流转 | **禁止改** |
+| `apply_and_verify` / `fail` | **禁止改** —— 成功判定唯一出口 |
+
+**改之前**:`cp models/_driver.py models/_driver.py.bak`。改完不通过就还原,
+**不要在坏掉的基础上继续改**(改坏了再往上叠,下一次失败就分不清是谁造成的)。
+通过之后把 `.bak` 删掉 —— 仓库没有 `*.bak` 的忽略规则,留着会被提交进去。
+
+**改完必须跑**(不是可选):
+
+```
+<PY> tests/smoke_test.py
+```
+
+这条是唯一的回归防线,通过 = 没弄坏另外五台。**不跑就不算改完。**
+
+**改完必须报告**,格式:
+
+> 改了 `_driver.py` 的 `<函数名>`,影响范围:`<哪些 kind / 哪些机型>`。
+> smoke_test 全绿。**mock 全绿不等于真机没事**,建议在 `<具体机型>` 上各跑一次
+> 确认。
+
 ## 探针吃不下的东西(遇到不是你没弄对,别反复试)
 
 - `--probe-modes` **只支持原生 `<select>`** —— 自定义下拉要自己在页面上切一档
