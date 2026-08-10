@@ -33,10 +33,21 @@
 动词清单:`python models/_driver.py --verbs`(从各动词的 docstring 生成,
 不会和文档漂移)。
 
+根本不走 Web UI 的机型(有 HTTP API,或只能靠 py2 桥接)用 `browser=False`:
+不开浏览器、`s.page` 是 None,回读自己读回来交给 `record_verified()`,
+判定出口一个字没变:
+
+    with session(facts or FACTS, mode, browser=False, **kw) as s:
+        got = my_http_dial(mode)             # 型号脚本自己下发 + 自己回读
+        s.record_verified(got, s.label)      # 精确相等才算通过
+        return s.apply_and_verify()
+
 ## 回读守卫:success 只有一个出口
 
 `apply_and_verify()` 是**唯一**能产出 `success=True` 的地方,`fail()` 是唯一
-的失败出口;裸的"点保存"动词不对外导出。型号脚本永远拿不到写 `success` 的笔。
+的失败出口;裸的"点保存"动词不对外导出。型号脚本永远拿不到写 `success` 的笔
+(`_verified` 只有 `set_mode()` 和 `record_verified()` 写得动,两个都强制
+一次真实回读、都精确相等比对)。
 理由:切错模式这类错误**失败得静默** —— 报 success、截图正常、数据照进报告,
 只是那一格测的不是这个模式。别的动词写错会当场报错,这个不会。
 
@@ -521,7 +532,8 @@ class Session:
     """
 
     def __init__(self, facts: dict, mode: str, params=None, apply=False,
-                 admin_user="", admin_pass="", verify_hook=None):
+                 admin_user="", admin_pass="", verify_hook=None,
+                 browser=True):
         self.facts = facts
         self.mode = mode
         self.label = (facts.get("modes") or {}).get(mode, "")
@@ -532,7 +544,10 @@ class Session:
         self._verify_hook = verify_hook
         self._admin_user = admin_user
         self._admin_pass = admin_pass
-        self._verified = False          # 只有 set_mode() 能写
+        # browser=False:HTTP/CLI 路线,page 恒为 None。浏览器动词一律当场报错,
+        # 回读改由 record_verified() 写 —— 见 session() 的 browser 参数。
+        self._has_browser = bool(browser)
+        self._verified = False          # 只有 set_mode()/record_verified() 能写
         self._aborted = False
         self._result = {
             "brand": facts.get("brand", ""), "model": facts.get("model", ""),
@@ -552,6 +567,22 @@ class Session:
         self._aborted = True
         self._result["message"] = message
 
+    def _needs_browser(self, verb: str) -> None:
+        """browser=False 的会话里调浏览器动词 = 接线写错了,当场抛异常。
+
+        不能静默返回:page 是 None,静默 return 会让 run() 一路走到
+        apply_and_verify() —— 而 _verified 可能是别处写的,于是报出一个
+        "那一步根本没做过"的成功。这不是设备状况(设备状况要如实 fail()),
+        是型号脚本写错了路线,必须当场炸掉。
+        """
+        if not self._has_browser:
+            raise RuntimeError(
+                "%s() 需要浏览器,当前 session 是 browser=False"
+                "(HTTP/CLI 路线不开浏览器,self.page 是 None)。"
+                "这条路线用 record_verified(read_back, expected) 记回读,"
+                "再走 apply_and_verify();要用浏览器就别传 browser=False。"
+                % verb)
+
     def _shot(self) -> None:
         if self.page is not None and self.cfg is not None:
             self._result["screenshot"] = screenshot(
@@ -566,12 +597,14 @@ class Session:
         """按 FACTS.login 登录;返回是否确实离开了登录页。"""
         if self._aborted:
             return False
+        self._needs_browser("login")
         return login(self.page, self.facts, self._admin_user, self._admin_pass)
 
     def navigate(self) -> None:
         """按 FACTS.wan_path 点菜单走到设置页;找不到的菜单记成警告。"""
         if self._aborted:
             return
+        self._needs_browser("navigate")
         navigate(self.page, self.facts, self._result)
 
     def goto_iframe(self, target: Optional[str] = None,
@@ -590,6 +623,7 @@ class Session:
         """
         if self._aborted:
             return False
+        self._needs_browser("goto_iframe")
         sel = self.facts.get("iframe_selector")
         target = target or self.facts.get("iframe_target")
         ready_js = ready_js or self.facts.get("iframe_ready_js")
@@ -662,6 +696,7 @@ class Session:
         """整块表单被开关门控时打开它;拨号控件已可见就绝不碰(防止点关)。"""
         if self._aborted:
             return
+        self._needs_browser("ensure_enabled")
         ensure_enabled(self.page, self.facts)
 
     def set_mode(self, force: bool = False) -> bool:
@@ -671,6 +706,7 @@ class Session:
         """
         if self._aborted:
             return False
+        self._needs_browser("set_mode")
         kind = (self.facts.get("dial") or {}).get("kind", "dropdown")
         out = {"read_back": "", "verified": False, "message": ""}
         if kind == "select":
@@ -686,10 +722,40 @@ class Session:
         self._verified = bool(out["verified"])
         return self._verified
 
+    def record_verified(self, read_back: str, expected: str) -> bool:
+        """非浏览器路线(HTTP/CLI)记一次**真实回读**,并据此写 _verified。
+
+        比对是**精确相等**(只规整空白和大小写,和 set_mode() 同一把尺子),
+        永不放宽成包含 —— 否则 "PPPoEv6" 会被认成 "PPPoE"。空回读永不算通过。
+        read_back 对不对都记进结果:不对的时候它就是失败信息里的那份证据。
+
+        这是 set_mode() 之外**唯一**能写 _verified 的地方(别开第三个);
+        success 仍然只能由 apply_and_verify() 产出。
+        """
+        if self._aborted:
+            return False
+        got = ("" if read_back is None else str(read_back)).strip()
+        self._result["read_back"] = got
+        # bool(got):回读和目标同时为空时 _norm 相等 —— 那是"什么都没读到",
+        # 绝不是通过。
+        self._verified = bool(got) and _norm(got) == _norm(expected)
+        if not self._verified:
+            self._result["message"] = (
+                "回读没通过:设备回读 %r,目标是 %r(精确相等比对,不放宽成包含)"
+                % (got, expected))
+        elif self._result["message"].startswith("回读没通过:"):
+            # 重试的第二次读通过了:把上一次那条清掉,别让一轮成功的结果里
+            # 挂着一句"回读没通过"(只清我们自己写的那句,别人的原样留着)。
+            self._result["message"] = ""
+        return self._verified
+
     def fill_params(self, params: Optional[Dict[str, str]] = None) -> None:
         """填这个模式要的账密/服务器地址。**回读没通过就不填** —— 页面状态
         还不明,填进去等于往未知表单里打字。"""
-        if self._aborted or not self._verified:
+        if self._aborted:
+            return
+        self._needs_browser("fill_params")
+        if not self._verified:
             return
         use = self._params if params is None else params
         page_of_fields = self.facts.get("fields_page")
@@ -706,9 +772,13 @@ class Session:
     def apply_and_verify(self, force: bool = False) -> dict:
         """**唯一的成功出口。** 用 set_mode() 那次真实回读判定 success;
         只有验证通过且这一轮要求下发时才点保存,然后跑 verify_hook + 截图。
+
+        browser=False 时跳过"点保存"(HTTP 路线没有保存键,下发即生效),
+        判定照旧只看回读 —— 这条路线的回读由 record_verified() 写。
         """
         self._result["success"] = bool(self._verified) and not self._aborted
-        if self._result["success"] and self._apply_requested:
+        if (self._result["success"] and self._apply_requested
+                and self._has_browser):
             _apply(self.page, self.facts, self._result, force=force)
         if not self._result["success"] and not self._result["message"]:
             self._result["message"] = (
@@ -737,20 +807,39 @@ class Session:
 def session(facts: dict, mode: str, params: Optional[Dict[str, str]] = None,
             apply: bool = False, admin_user: str = "", admin_pass: str = "",
             url: Optional[str] = None, headless: Optional[bool] = None,
-            config: Optional[Config] = None, verify_hook=None):
+            config: Optional[Config] = None, verify_hook=None,
+            browser: bool = True):
     """开浏览器、套 mode_overrides、落在设置页的起点,yield 一个 Session。
 
     型号脚本 run() 的标准开头。模式名型号脚本没声明时**不开浏览器**就短路
     (打错一个模式名不该弹出一个 Chrome)。
+
+    browser=False:**不开浏览器、不开页面**,`s.page` 恒为 None。给"根本不走
+    Web UI"的路线用(有 HTTP API / 只能靠 py2 桥接的机型)。除浏览器之外一切
+    照旧:mode_overrides 已合并、凭据已带进来(调用方从 router.yaml 取,和
+    浏览器路线同一条)、result 已构造、_aborted 照样判。浏览器动词一律抛
+    RuntimeError,回读改用 `record_verified()`,判定仍然只有
+    `apply_and_verify()` 一个出口;退出时不截图(screenshot 留空串)。
     """
     mode = (mode or "").lower()
     merged = facts_for(facts, mode)
     sess = Session(merged, mode, params=params, apply=apply,
                    admin_user=admin_user, admin_pass=admin_pass,
-                   verify_hook=verify_hook)
+                   verify_hook=verify_hook, browser=browser)
     if mode not in (merged.get("modes") or {}):
         sess._abort("此型号脚本未定义模式 %r(可用:%s)"
                     % (mode, ", ".join(available_modes(merged))))
+        yield sess
+        return
+
+    if not browser:
+        # 不建 Config、不动 http_pass、不进 Browser 的 with:没有浏览器可配,
+        # 碰了只是副作用(config 是调用方的对象)。
+        if url:
+            # 说出来,别悄悄丢:没有浏览器可导航,这条路线要换地址得由 run()
+            # 自己接 url 参数,否则人以为切了机器、其实还在打老地址。
+            sess.warn("browser=False:url=%r 被忽略(没有浏览器可导航)。"
+                      "这条路线的目标地址由型号脚本自己处理。" % url)
         yield sess
         return
 
@@ -812,7 +901,8 @@ def console_safe() -> None:
 
 # 动词清单:从 docstring 首行生成,不用手工维护第二份文档。
 _VERB_NAMES = ("login", "navigate", "goto_iframe", "ensure_enabled", "set_mode",
-               "fill_params", "apply_and_verify", "fail", "warn")
+               "record_verified", "fill_params", "apply_and_verify", "fail",
+               "warn")
 
 
 def verbs() -> List[tuple]:

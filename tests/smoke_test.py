@@ -393,11 +393,14 @@ def main():
           and not hasattr(model_driver, "run")        # 老的成功出口已改名
           and hasattr(model_driver, "default_run")
           and _failed_result["success"] is False
-          # 公开动词就这 9 个。新增一个"成功判定类"动词必须让这条先红:
-          # 那是方案里唯一"永远不许新增"的一类。
+          # 公开动词就这 10 个。新增一个"成功判定类"动词必须让这条先红:
+          # 那是方案里唯一"永远不许新增"的一类。record_verified 不是成功出口 ——
+          # 它和 set_mode 一样只写 _verified(**这两个是唯一的两个写者**),
+          # success 仍旧只能从 apply_and_verify 出来。
           and sorted(_public) == ["apply_and_verify", "ensure_enabled", "fail",
                                   "fill_params", "goto_iframe", "login",
-                                  "navigate", "set_mode", "warn"])
+                                  "navigate", "record_verified", "set_mode",
+                                  "warn"])
     print("[%s] 回读守卫:success 只有 apply_and_verify 一个出口" % ("PASS" if ok else "FAIL"))
     if not ok:
         print("        Session 公开成员=%s" % sorted(_public))
@@ -414,6 +417,96 @@ def main():
               % [n for n, d in _verbs if not d.strip()])
     passed += ok
     failed += not ok
+
+    # ②c4 browser=False:根本不走 Web UI 的路线(有 HTTP API,或只能靠 py2
+    #      桥接的机型)。这条路线是假成功的新入口候选,三件事必须同时成立:
+    #        ① 真的不开浏览器(把 Browser 换成炸弹来证明),但 mode_overrides
+    #           合并、凭据、result、_aborted 全照旧,退出时不截图;
+    #        ② 浏览器动词一个都不许静默通过 —— page 是 None,静默 return 会让
+    #           run() 带着别处写的 _verified 一路走到 apply_and_verify();
+    #        ③ record_verified 精确相等:"PPPoEv6" 绝不能算成 "PPPoE",空回读
+    #           绝不算通过(两边都空时 _norm 是相等的 —— 那是什么都没读到)。
+    print("\n=== browser=False(不开浏览器的路线)===")
+    HTTP_FACTS = {"brand": "X", "model": "Y", "url": "http://10.0.0.1",
+                  "modes": {"pppoe": "PPPoE", "dynamic": "Dynamic IP"},
+                  "mode_overrides": {"pppoe": {"apply": "#save-v2"}}}
+
+    class _Boom:
+        def __init__(self, *a, **kw):
+            raise AssertionError("browser=False 时不该实例化 Browser")
+
+    _real_browser = model_driver.Browser
+    model_driver.Browser = _Boom
+    try:
+        # ① 骨架照旧,只少了浏览器;没记回读就不许成功
+        with model_driver.session(HTTP_FACTS, "pppoe", apply=True,
+                                  admin_pass="pw", browser=False) as s:
+            skeleton = (s.page is None
+                        and s.facts["apply"] == "#save-v2"   # overrides 合并了
+                        and s.label == "PPPoE"
+                        and s._admin_pass == "pw")           # 凭据带进来了
+            r_bare = s.apply_and_verify()
+        # 模式名没声明:browser=False 也照样 abort,原因保留
+        with model_driver.session(HTTP_FACTS, "nosuch", browser=False) as s:
+            r_abort = s.fail("这条不该盖掉 abort 的原因")
+        ok = (skeleton and r_bare["success"] is False
+              and r_bare["applied"] is False        # 没有保存键可点
+              and r_bare["screenshot"] == ""        # 没有页面可截
+              and bool(r_bare["message"])
+              and "nosuch" in r_abort["message"])
+        print("[%s] browser=False:不开浏览器,骨架照旧(page=%s screenshot=%r)"
+              % ("PASS" if ok else "FAIL", None, r_bare["screenshot"]))
+        if not ok:
+            print("        skeleton=%s bare=%s abort=%r"
+                  % (skeleton, r_bare, r_abort["message"]))
+        passed += ok
+        failed += not ok
+
+        # ② 六个浏览器动词全都必须当场报错
+        raised = {}
+        with model_driver.session(HTTP_FACTS, "pppoe", browser=False) as s:
+            for vname in ("login", "navigate", "goto_iframe", "ensure_enabled",
+                          "set_mode", "fill_params"):
+                try:
+                    getattr(s, vname)()
+                    raised[vname] = "静默通过了"
+                except RuntimeError as exc:
+                    raised[vname] = ("browser=False" in str(exc)
+                                     and vname in str(exc))
+        ok = all(v is True for v in raised.values())
+        print("[%s] browser=False:浏览器动词全部当场报错(%d/6)"
+              % ("PASS" if ok else "FAIL",
+                 sum(1 for v in raised.values() if v is True)))
+        if not ok:
+            print("        没报错/文案不对的动词:%s"
+                  % {k: v for k, v in raised.items() if v is not True})
+        passed += ok
+        failed += not ok
+
+        # ③ record_verified:精确相等,且它写不出 success
+        with model_driver.session(HTTP_FACTS, "pppoe", apply=True,
+                                  browser=False) as s:
+            v6 = s.record_verified("PPPoEv6", s.label)      # 子串诱饵
+            after_v6 = dict(s._result)
+            empty = s.record_verified("", "")               # 什么都没读到
+            good = s.record_verified("  pppoe ", "PPPoE")   # 空白/大小写不计
+            r_http = s.apply_and_verify()
+        ok = (v6 is False and empty is False and good is True
+              and after_v6["read_back"] == "PPPoEv6"   # 不对也记,那是证据
+              and after_v6["success"] is False         # 它写不出 success
+              and r_http["success"] is True            # 判定仍走唯一出口
+              and r_http["read_back"] == "pppoe"
+              and r_http["applied"] is False           # HTTP 路线不点保存
+              and r_http["message"] == "")             # 上一次的失败话术已清掉
+        print("[%s] record_verified:PPPoEv6/空回读都不算通过,精确相等才算"
+              % ("PASS" if ok else "FAIL"))
+        if not ok:
+            print("        v6=%s empty=%s good=%s result=%s"
+                  % (v6, empty, good, r_http))
+        passed += ok
+        failed += not ok
+    finally:
+        model_driver.Browser = _real_browser
 
     # ②d 每台机一份参数(perf_configs/<型号>.yaml)+ 开跑前检查。
     #     两件事都属于"配错了不报错,只是测的不是那条路":
