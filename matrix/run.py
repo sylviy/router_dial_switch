@@ -47,7 +47,7 @@ def _color(txt, code):
 
 def list_models() -> list:
     # 注意:不能用 glob —— 本仓库路径里有 "[Tool]",glob 会把方括号当字符类,
-    # 静默返回空列表(CLAUDE.md 的老坑,这里也踩过)。
+    # 静默返回空列表(GOTCHAS.md 的老坑,这里也踩过)。
     out = []
     mdir = os.path.join(ROOT, "models")
     for fn in sorted(os.listdir(mdir)):
@@ -76,25 +76,23 @@ def _load_facts(model: str) -> dict:
 
 
 def runner_for(model: str):
-    """返回驱动这台型号该用的 run() —— 型号脚本**自己定义了 run() 就用它**,
-    否则用共享的 models/_driver.run。
+    """返回驱动这台型号的 run() —— **一律是型号脚本自己的那个**。
 
-    绝大多数型号靠 FACTS + _driver 就够(那才是这套东西的价值:一个文件描述
-    一台机)。但偶尔一台老 UI 的操作序列本身是特例 —— Buffalo WSR-6000AX8
-    必须先进 advanced.html,再把 iframe 的 location 改到 wan.html(点菜单不
-    可靠、直接开 wan.html 又拿不到完整的 CA 配置对象,保存会提交旧值),
-    radio 和保存键还得 force 点。把这些塞进 _driver 会让每台机都背上一份别
-    人的特例;写在它自己的脚本里更诚实。
-
-    但**没有这个分派的话,那台机在整轮编排器里等于不存在** —— run.py 和
-    start.py 都只调 _driver.run,一台自带 run() 的型号只能手工单跑,永远进
-    不了性能矩阵。签名与 _driver.run 一致即可接入。"""
+    每个型号脚本都定义 run():规矩机型是一行转调 _driver.default_run,操作
+    顺序特殊的机型(Buffalo 的 WAN 页必须以 iframe 打开)就自己拼动词。所以
+    这里只有一条路,没有"没定义就用共享驱动"的回退 —— 回退会让一台其实需要
+    特殊顺序的机器被默认配方驱动,而那种失败是静默的(切了、看起来成功、
+    保存的是旧值)。宁可当场报错说清怎么补。"""
     mod = _load_module(model)
     own = getattr(mod, "run", None)
-    if callable(own):
-        return own
-    from models import _driver
-    return _driver.run
+    if not callable(own):
+        raise SystemExit(
+            "models/%s.py 没有 run() —— 型号脚本必须自己定义入口。"
+            "规矩机型照 models/_template.py 加这三行:\n"
+            "    def run(facts=None, mode=\"dynamic\", **kw):\n"
+            "        return default_run(facts or FACTS, mode, **kw)\n"
+            "(动词清单:python models/_driver.py --verbs)" % model)
+    return own
 
 
 def all_modes(facts: dict) -> list:
@@ -125,7 +123,7 @@ def planned_modes(facts: dict, model: str = "") -> list:
 def _switch(runner, facts, mode, params, admin_user, admin_pass, headless):
     """真正切一次拨号方式并**下发保存**(整轮里不下发,吞吐测的就不是这档
     模式 —— 所以矩阵里没有"只切换不保存"的选项)。runner 由 runner_for()
-    给出:多数型号是 _driver.run,自带 run() 的型号是它自己的。"""
+    给出,就是型号脚本自己的 run()。"""
     from modes import MODE_REQUIRED_FIELDS, merge_params
     merged = merge_params(mode, params.get("saved") or {}, params.get("explicit") or {})
 
@@ -164,7 +162,7 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(
         description="WAN 性能矩阵:切拨号方式(Web 驱动)→ 等 WAN → 测吞吐 → 出报告")
     ap.add_argument("--config", default=perf_config.DEFAULT_PATH,
-                    help="perf.yaml 路径(默认仓库根;缺失则用 perf.example.yaml)")
+                    help="参数文件路径(默认按型号找 perf_configs/<型号>.yaml)")
     ap.add_argument("--model", default=None,
                     help="型号脚本名(models/<name>.py);覆盖 perf.yaml 的 model")
     ap.add_argument("--backend", choices=["simulate", "chariot"], default=None,

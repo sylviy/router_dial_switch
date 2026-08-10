@@ -47,12 +47,12 @@ def check(cfg, facts: dict, modes: List[str]) -> List[Finding]:
     rel = os.path.relpath(cfg.source or "", perf_config.ROOT) or "(默认值)"
     out.append(Finding("i", "参数文件:%s" % rel))
 
-    if cfg.source == perf_config.EXAMPLE_PATH:
+    if not os.path.exists(cfg.source or ""):
         out.append(Finding(
-            "!", "还在用示例模板 perf.example.yaml —— 里面的 IP 是别的台架的",
+            "!", "没有参数文件,这一轮全走内置默认值 —— 台架拓扑几乎肯定不对",
             "跑 `python start.py` 选这台机时会问你要不要生成 "
-            "perf_configs/%s.yaml,生成后把 IP 改成你台架的。"
-            % (cfg.model or "<型号>")))
+            "perf_configs/%s.yaml(模板 perf_configs/_template.yaml),"
+            "生成后把 IP 改成你台架的。" % (cfg.model or "<型号>")))
 
     # --- 拨号方式 ---------------------------------------------------------
     declared = set((facts.get("modes") or {}).keys())

@@ -33,8 +33,12 @@
 import os
 import sys
 
+# 这一行每个型号脚本都要自己写一遍,**不能抽成共享模块** —— 它要解决的正是
+# "还没法 import 仓库里的东西"这个状态:直接 `python models/X.py` 时 Python 把
+# models/ 加进 sys.path,不是仓库根;而台架的 vendor/python 带 ._pth,解释器处于
+# isolated 模式,连脚本目录都不加。两种情况都要求 insert 写在本文件、import 之前。
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from models._driver import run_cli
+from models._driver import default_run, run_cli
 
 FACTS = {
     "brand": "<品牌>",
@@ -98,5 +102,12 @@ FACTS = {
     # },
 }
 
+
+def run(facts=None, mode="dynamic", **kw):
+    """这台机的操作配方:标准流程(登录 → 走菜单 → 选模式 → 回读 →
+    填账密 → 保存)。逐步说明见 models/_driver.default_run。"""
+    return default_run(facts or FACTS, mode, **kw)
+
+
 if __name__ == "__main__":
-    sys.exit(run_cli(FACTS))
+    sys.exit(run_cli(FACTS, runner=run))

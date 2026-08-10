@@ -73,19 +73,28 @@ def main():
         passed += ok
         failed += not ok
 
-    # --- models/ 层:FACTS + _driver(2026-07-16 起的交付形态) ----------------
+    # --- models/ 层:FACTS + 动词库(交付形态)---------------------------------
     # 每台型号一个脚本、事实全显式、运行期零猜测。这里用真实脚本里的 FACTS
     # 驱动对应的 mock,证明"照探针产物填 FACTS -> 直接能跑"这条交付路成立。
-    print("\n=== models/ (FACTS + _driver, per-model delivery layer) ===")
+    # **走型号脚本自己的 run()**(经 runner_for),而不是直接调驱动 —— 测的
+    # 就是同事和整轮实际走的那条路。
+    print("\n=== models/ (FACTS + 动词库, per-model delivery layer) ===")
     from models import _driver as model_driver
+    from matrix.run import runner_for
     from models.Tenda_AX3000 import FACTS as TENDA_FACTS
     from models.Mercusys_BE3600 import FACTS as MERCUSYS_FACTS
     from models.Cudy_AX1500 import FACTS as CUDY_FACTS
     from models.Cudy_AX3000 import FACTS as CUDY3K_FACTS
 
+    # 哪份 FACTS 属于哪个型号脚本 —— 用来取它自己的 run()
+    SCRIPT_OF = {id(TENDA_FACTS): "Tenda_AX3000",
+                 id(MERCUSYS_FACTS): "Mercusys_BE3600",
+                 id(CUDY_FACTS): "Cudy_AX1500",
+                 id(CUDY3K_FACTS): "Cudy_AX3000"}
+
     def read_toast(page, _res):
         # 跨 frame 找 toast(Cudy mock 的 toast 在 WAN 子 frame 里)
-        el = model_driver._locate(page, "#toast")
+        el = model_driver.locate(page, "#toast")
         try:
             return el.inner_text().strip() if el else ""
         except Exception:
@@ -155,7 +164,7 @@ def main():
               applied=True, verify="Saved & Applied: L2TP")),
     ]
     for name, facts, page_file, mode, params, do_apply, want in model_cases:
-        res = model_driver.run(
+        res = runner_for(SCRIPT_OF[id(facts)])(
             facts, mode, params=params, apply=do_apply,
             admin_pass="admin123",
             url="http://127.0.0.1:%d/%s" % (port, page_file),
@@ -177,13 +186,91 @@ def main():
 
     # 事实对不上的页面必须诚实失败(而不是零交互的假成功):拿 Mercusys 的
     # FACTS 去跑 Tenda 页,菜单/控件都对不上 -> success=False + 明确 message。
-    res = model_driver.run(MERCUSYS_FACTS, "dynamic", apply=False,
-                           admin_pass="admin123",
-                           url="http://127.0.0.1:%d/tenda.html" % port,
-                           config=cfg)
+    res = runner_for("Mercusys_BE3600")(MERCUSYS_FACTS, "dynamic", apply=False,
+                                        admin_pass="admin123",
+                                        url="http://127.0.0.1:%d/tenda.html" % port,
+                                        config=cfg)
     ok = (not res["success"]) and not res["applied"] and bool(res["message"])
     print("[%s] wrong-page guard: success=%s message=%r"
           % ("PASS" if ok else "FAIL", res["success"], res["message"]))
+    passed += ok
+    failed += not ok
+
+    # --- 第 5 个 UI 原型:外壳页 + iframe(BUFFALO)---------------------------
+    # 这台机的三条真机事实,以前一条也没有离线覆盖 —— 改动 _driver 可能悄悄
+    # 弄坏它而冒烟毫无反应(GOTCHAS.md 曾把这个记成已知缺口)。现在都覆盖上了:
+    #   ① 设置页必须以 iframe 打开,且要等它的配置对象 CA 加载完;
+    #   ② 页面脚本会把 iframe 地址改回去一次 -> 必须重试;
+    #   ③ radio 和保存键被皮盖住 -> 必须 force 点。
+    print("\n=== BUFFALO (第 5 原型:外壳页 + iframe) ===")
+    from models.BUFFALO_WSR6000AX8 import FACTS as BUF_FACTS
+
+    def buf_facts(**over):
+        f = dict(BUF_FACTS)
+        f["url"] = "http://127.0.0.1:%d/buffalo_advanced.html" % port
+        f["iframe_target"] = "buffalo_wan.html"      # mock 的文件名
+        f.update(over)
+        return f
+
+    buf_run = runner_for("BUFFALO_WSR6000AX8")
+    buf_cases = [
+        # (名字, facts, 模式, 下发?, 期望 success, 期望 verify)
+        ("iframe + CA 就绪 + force 点", buf_facts(), "v6plus", False,
+         True, ""),
+        ("真的保存(CA 已就绪,不是 STALE)", buf_facts(), "dynamic", True,
+         True, "Saved & Applied: dynamic"),
+    ]
+    for name, f, mode, do_apply, want_ok, want_verify in buf_cases:
+        res = buf_run(f, mode, params={}, apply=do_apply,
+                      admin_pass="admin123", config=cfg, verify_hook=read_toast)
+        ok = (res["success"] is want_ok
+              and res["read_back"] == mode
+              and (res.get("verify") or "") == want_verify)
+        print("[%s] %-32s success=%s read_back=%r verify=%r"
+              % ("PASS" if ok else "FAIL", name, res["success"],
+                 res["read_back"], res.get("verify")))
+        if not ok:
+            print("        message: %s warnings: %s"
+                  % (res["message"], res["warnings"]))
+        passed += ok
+        failed += not ok
+
+    # 账密框在别的页(fields_page):必须发警告,绝不静默装作填过了。
+    res = buf_run(buf_facts(), "pppoe",
+                  params={"pppoe_user": "u", "pppoe_pass": "p"}, apply=False,
+                  admin_pass="admin123", config=cfg)
+    ok = (res["success"] and not res["filled"]
+          and len(res["warnings"]) == 2
+          and all("pppoe_reg.html" in w for w in res["warnings"]))
+    print("[%s] fields_page:账密在别页 -> 警告而非静默(filled=%s warnings=%d)"
+          % ("PASS" if ok else "FAIL", res["filled"], len(res["warnings"])))
+    passed += ok
+    failed += not ok
+
+    # 直接打开设置页(没有外壳 iframe):必须诚实失败。真机上这条路径最危险 ——
+    # 页面照样渲染、radio 照样点、回读照样通过,保存提交的却是旧值。
+    res = buf_run(buf_facts(url="http://127.0.0.1:%d/buffalo_wan.html" % port),
+                  "dynamic", params={}, apply=True, admin_pass="admin123",
+                  config=cfg, verify_hook=read_toast)
+    ok = (not res["success"]) and not res["applied"] and bool(res["message"])
+    print("[%s] 没有外壳页时诚实失败:success=%s applied=%s"
+          % ("PASS" if ok else "FAIL", res["success"], res["applied"]))
+    passed += ok
+    failed += not ok
+
+    # 就绪判据是**承重的**,不是装饰:拆掉 iframe_ready_js 就会在 CA 加载完
+    # 之前保存 —— 切换照样成功、success 照样 true,只有 mock 的 toast 会喊
+    # STALE。这一条钉住那个差别,免得哪天有人"简化"掉那道判据。
+    stale = dict(buf_facts())
+    stale.pop("iframe_ready_js")
+    res = buf_run(stale, "dynamic", params={}, apply=True,
+                  admin_pass="admin123", config=cfg, verify_hook=read_toast)
+    ok = res["success"] and "STALE" in (res.get("verify") or "")
+    print("[%s] 拆掉 iframe_ready_js -> 假成功(success=%s verify=%r)"
+          % ("PASS" if ok else "FAIL", res["success"], res.get("verify")))
+    if not ok:
+        print("        本条期望的就是「假成功」。它变红意味着 mock 不再能复现"
+              "那个陷阱了,而不是代码变好了 —— 先查 mock 的 CA 延迟。")
     passed += ok
     failed += not ok
 
@@ -262,25 +349,69 @@ def main():
     #     两处都是"配错了不会报错,只会静默跑到别的东西上"的接线:
     #       - chariot.python 留空要落到当前解释器(Py3 台架不用配),旧键名
     #         python2: 还得继续认,否则老台架升级后会悄悄回到跟着 PATH 走;
-    #       - 自带 run() 的型号(Buffalo)必须由它自己的 run() 驱动,否则整轮
-    #         会拿 _driver.run 去跑一台它驱动不了的机器。
+    #       - **每个**型号都必须由它自己的 run() 驱动。少一个 run() 就会有一台
+    #         机器被别的流程驱动,而那种失败是静默的(切了、看着成功、保存的
+    #         是旧值)—— 所以这里遍历 models/ 全部型号,不是抽查两台。
     from matrix.config import ChariotCfg, load as _perf_load
-    from matrix.run import runner_for
+    from matrix.run import list_models as _list_models
     import tempfile as _tf
+    import importlib as _il
     with _tf.NamedTemporaryFile("w", suffix=".yaml", delete=False,
                                 encoding="utf-8") as fh:
         fh.write("backend: chariot\nchariot:\n  python2: /legacy/py26\n")
         legacy_yaml = fh.name
-    from models import _driver as _drv
-    import models.BUFFALO_WSR6000AX8 as _buf
+    own_run = {}
+    for _m in _list_models():
+        _mod = _il.import_module("models.%s" % _m)
+        own_run[_m] = (callable(getattr(_mod, "run", None))
+                       and runner_for(_m) is _mod.run)
     ok = (ChariotCfg().interpreter == sys.executable
           and ChariotCfg(python="/x/py").interpreter == "/x/py"
           and _perf_load(legacy_yaml).chariot.interpreter == "/legacy/py26"
-          and runner_for("BUFFALO_WSR6000AX8") is _buf.run
-          and runner_for("Tenda_AX3000") is _drv.run)
+          and all(own_run.values()))
     os.unlink(legacy_yaml)
-    print("[%s] chariot.python resolution + runner_for dispatch"
-          % ("PASS" if ok else "FAIL"))
+    print("[%s] chariot.python resolution + runner_for -> 型号自己的 run()(%d 台)"
+          % ("PASS" if ok else "FAIL", len(own_run)))
+    if not ok:
+        print("        缺 run() 的型号:%s"
+              % [m for m, good in own_run.items() if not good])
+    passed += ok
+    failed += not ok
+
+    # ②c2 回读守卫的**结构性**保证(方案的硬约束 ①)。
+    #      切错模式这类错误失败得静默 —— 报 success、截图正常、数据照进报告,
+    #      只是那一格测的不是这个模式。所以 success 必须只有一个出口:
+    #        - 驱动不导出裸的"点保存"动词,拿不到"点了就算成功"这条路;
+    #        - fail() 产出的结果 success 恒 False;
+    #        - Session 没有别的公开方法能把一轮标成成功。
+    from models._driver import Session as _Sess
+    _s = _Sess({"brand": "b", "model": "m", "modes": {"dynamic": "Dynamic"}},
+               "dynamic")
+    _failed_result = _s.fail("刻意失败")
+    _public = [n for n in dir(_Sess) if not n.startswith("_")]
+    ok = (not hasattr(model_driver, "apply")          # 没有裸 apply 动词
+          and not hasattr(model_driver, "run")        # 老的成功出口已改名
+          and hasattr(model_driver, "default_run")
+          and _failed_result["success"] is False
+          # 公开动词就这 9 个。新增一个"成功判定类"动词必须让这条先红:
+          # 那是方案里唯一"永远不许新增"的一类。
+          and sorted(_public) == ["apply_and_verify", "ensure_enabled", "fail",
+                                  "fill_params", "goto_iframe", "login",
+                                  "navigate", "set_mode", "warn"])
+    print("[%s] 回读守卫:success 只有 apply_and_verify 一个出口" % ("PASS" if ok else "FAIL"))
+    if not ok:
+        print("        Session 公开成员=%s" % sorted(_public))
+    passed += ok
+    failed += not ok
+
+    # ②c3 动词清单是从 docstring 生成的(方案 §6:根治文档漂移)。
+    _verbs = model_driver.verbs()
+    ok = (len(_verbs) >= 8 and all(doc.strip() for _n, doc in _verbs))
+    print("[%s] 动词清单自动生成(%d 个动词,每个都有说明)"
+          % ("PASS" if ok else "FAIL", len(_verbs)))
+    if not ok:
+        print("        缺 docstring 的动词:%s"
+              % [n for n, d in _verbs if not d.strip()])
     passed += ok
     failed += not ok
 

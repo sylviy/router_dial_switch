@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="ja">
+<head><meta charset="utf-8"><title>Mock BUFFALO: wan.html</title>
+<style>
+  /* 真机上 radio 和保存键被 CSS 遮住:Playwright 的可操作性检查会超时,
+     必须 force 点。这里用路由器 UI 最常见的那种做法复现 —— 真 input
+     opacity:0 铺在底下,上面盖一个 <label for> 画的皮。命中测试打到皮上
+     (不是 input 的后代)-> 普通 click 判定"被别的元素挡住"而超时;
+     force 点落在皮上,而皮是 label,浏览器照样把它的 for 目标选中。 */
+  .row { position: relative; height: 26px; margin: 2px 0; }
+  .row input[type=radio] { position: absolute; left: 0; top: 4px; opacity: 0; }
+  .row label { position: absolute; left: 0; top: 0; width: 320px;
+               height: 24px; background: #eef; cursor: pointer; }
+  #button_1 { position: relative; width: 120px; height: 28px;
+              background: #ddf; text-align: center; line-height: 28px; }
+  #button_1_cover { position: absolute; left: 0; top: 0;
+                    width: 120px; height: 28px; background: rgba(0,0,0,0); }
+</style>
+</head>
+<body>
+<h3>Internet 設定</h3>
+
+<!-- IPv4 拨号方式全部是同一页上的 radio,含日本的 IPoE 各档。
+     id 与真机一致(id_method2/3/5/6/8/10 —— 编号不连续,真机就是这样)。 -->
+<form onsubmit="return false">
+  <div class="row"><input type="radio" name="WanMethod" id="id_method2" value="dynamic">
+    <label for="id_method2">DHCP</label></div>
+  <div class="row"><input type="radio" name="WanMethod" id="id_method3" value="pppoe">
+    <label for="id_method3">PPPoE</label></div>
+  <div class="row"><input type="radio" name="WanMethod" id="id_method5" value="transix">
+    <label for="id_method5">transix (v4overv6)</label></div>
+  <div class="row"><input type="radio" name="WanMethod" id="id_method6" value="v6plus">
+    <label for="id_method6">v6プラス</label></div>
+  <div class="row"><input type="radio" name="WanMethod" id="id_method8" value="ocnvc">
+    <label for="id_method8">OCN バーチャルコネクト</label></div>
+  <div class="row"><input type="radio" name="WanMethod" id="id_method10" value="v6connect">
+    <label for="id_method10">v6 コネクト</label></div>
+
+  <div id="button_1">設定<div id="button_1_cover"></div></div>
+  <p><span id="toast" style="color:green;font-weight:bold"></span></p>
+</form>
+
+<script>
+  // ===== 这个 mock 的核心:配置对象 CA =====
+  // 真机上 wan.html 只有作为 advanced.html 的 iframe 打开时才会拿到完整的
+  // CA;直接打开它,页面照样渲染、radio 照样点得动、回读照样通过,但保存
+  // 提交的是旧值。所以这里:顶层打开 -> CA 永远是空的。
+  // 这个延迟是**故意留够的**:它让 iframe_ready_js 那道判据可以被测出来。
+  // 不等 CA 就往下走的话,radio 照样点上、回读照样通过、success 照样是 true,
+  // 只有保存那一下会落在 STALE 上 —— 拆掉判据,冒烟测试必须变红。
+  var CA = [];
+  setTimeout(function () {
+    if (window !== window.top) {          // 只有当 iframe 时才加载配置
+      CA = ['wan_settings', 'pppoe_settings', 'ipv6_settings'];
+    }
+  }, 1500);
+
+  document.getElementById('button_1').onclick = function () {
+    var picked = document.querySelector("input[name='WanMethod']:checked");
+    var mode = picked ? picked.value : '(none)';
+    var toast = document.getElementById('toast');
+    if (!CA.length) {
+      // 假成功的样子:radio 确实选上了,但提交的是旧值。
+      toast.style.color = 'red';
+      toast.textContent = 'STALE: CA not loaded, submitted OLD values';
+      return false;
+    }
+    toast.style.color = 'green';
+    toast.textContent = 'Saved & Applied: ' + mode;
+    return false;
+  };
+</script>
+</body>
+</html>

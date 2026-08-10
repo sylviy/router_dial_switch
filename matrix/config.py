@@ -1,8 +1,9 @@
 """加载 perf.yaml —— WAN 性能矩阵的全部可调项。
 
 分工:
-  * perf.yaml   描述 **测什么、怎么测**(测试矩阵、后端、拨号台架拓扑、
-                WAN 拨通判据、报告位置);可提交模板是 perf.example.yaml。
+  * perf_configs/<型号>.yaml  描述 **测什么、怎么测**(测试矩阵、后端、台架
+                拓扑、WAN 拨通判据、报告位置)。一台机一份,不含密码,已提交
+                —— 模板是 perf_configs/_template.yaml。
   * router.yaml 存 **密码**(管理密码 / 宽带账密),由 settings.py 读,git 忽略。
 
 两者分开:换台架拓扑改 perf.yaml,换密码改 router.yaml,互不干扰。
@@ -22,7 +23,6 @@ except Exception:  # pragma: no cover - yaml 是硬依赖,这里只是防御
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_PATH = os.path.join(ROOT, "perf.yaml")
-EXAMPLE_PATH = os.path.join(ROOT, "perf.example.yaml")
 # 每台机一份参数:perf_configs/<型号脚本名>.yaml。选了型号就自动用它,
 # 不用再复制/改一个全局 perf.yaml —— 台架上有六台机,一个全局文件意味着
 # 换机就得重改一遍,改错了还看不出来(用户 2026-07-31)。
@@ -151,8 +151,8 @@ def resolve_path(path: str = DEFAULT_PATH, model: str = "") -> str:
     优先级(从高到低):
       1. --config 显式给的路径 —— 说了算,不再猜;
       2. perf_configs/<型号>.yaml —— 每台机一份,选了型号就自动用它;
-      3. perf.yaml —— 老的全局配置,已经配好的台架不用动;
-      4. perf.example.yaml —— 谁都没有时的示例(会被开跑前检查警告)。
+      3. perf.yaml —— 老的全局配置,已经配好的台架不用动。
+    一个都没有 -> 全默认(仍能 --demo 跑通)。模板见 perf_configs/_template.yaml。
     """
     if path and path != DEFAULT_PATH:
         return path
@@ -162,7 +162,7 @@ def resolve_path(path: str = DEFAULT_PATH, model: str = "") -> str:
             return per_model
     if os.path.exists(DEFAULT_PATH):
         return DEFAULT_PATH
-    return EXAMPLE_PATH
+    return DEFAULT_PATH        # 不存在也返回它:load() 会退回全默认
 
 
 def load(path: str = DEFAULT_PATH, model: str = "") -> PerfConfig:

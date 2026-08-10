@@ -1,45 +1,28 @@
 """BUFFALO WSR-6000AX8(url=http://192.168.11.1,管理密码见 router.yaml)
 
-WAN 拨号切换脚本。**这台是特例:它自己实现 run(),不走 models/_driver.py。**
-
-为什么是特例(三条都在真机上验过,少一条保存就不生效):
-  * wan.html 必须**以 advanced.html 里的 iframe 形式**打开。直接开
-    wan.html 页面能显示、radio 也能点,但配置对象 CA 不会被加载,apply()
-    提交的是旧值 —— 也就是"切换看起来成功了,其实没保存"。
-  * 左侧菜单点不动(dt.WAN 默认隐藏、iconDisable 与异步初始化都会挡),
-    所以脚本直接改 iframe#content_main 的 contentWindow.location.href,
-    改完还要重试:页面脚本有时会把它改回 info。
-  * radio 和保存键在 iframe 里被 CSS 遮住,Playwright 的可操作性检查会超时,
-    必须 force=True 点真实 input。
-
-这些都不是"再加一个 FACTS 键"能表达的形状,塞进 _driver.py 会让另外五台机
-背上一份 Buffalo 的特例。所以流程写在这里 —— 代价是本文件要自己负责
-run()/run_cli() 的签名与 _driver 一致,整轮编排器(matrix/run.py 的
-runner_for)才认得它。改签名前先看那个函数的注释。
+WAN 拨号切换脚本。和别的型号只差**一步**:设置页必须以 advanced.html 里的
+iframe 形式打开(见下面 run())。其余全走共享动词库。
 
 IPv4 拨号方式全部以 radio 列在 wan.html 同一页,包含日本的 IPoE 各档
-(transix / v6プラス / OCN バーチャルコネクト / v6 コネクト)。
+(transix / v6プラス / OCN バーチャルコネクト / v6 コネクト)—— 这台机就是为
+那组对比才上台架的。
 PPPoE 账号密码在独立页 pppoe_reg.html:本脚本只切模式,账密要预先在 Web UI
-里配好(见下面 fields 的注释)。
+里配好(见下面 fields_page 的注释)。
 
 事实来源:2026-07-31 真机取证(probe_router.py --dump/--count),六档模式
 的 --apply 均已在真机验过(artifacts/progress_BUFFALO_WSR6000AX8.md)。
+2026-08-06 重构成动词组合(登录和导航换了实现)后**已在真机复验通过**:
+六档逐个回读正确,并下发保存过。
 
 用法(默认只切换不保存;确认回读无误后加 --apply 才真正下发):
     python models/BUFFALO_WSR6000AX8.py dynamic
     python models/BUFFALO_WSR6000AX8.py v6plus --apply
 """
-import argparse
-import json
 import os
 import sys
-import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from config import Config
-from models._browser import Browser
-from models._driver import available_modes, _screenshot
-import settings as settings_mod
+from models._driver import run_cli, session
 
 FACTS = {
     "brand": "BUFFALO",
@@ -49,18 +32,24 @@ FACTS = {
     "url": "http://192.168.11.1/advanced.html",
 
     # 登录页:用户名通常已预填,只需填密码后点登录按钮。
-    # #login_base 初始 display:none,由 JS 显示 —— 要轮询等它可见再填。
+    # #login_base 初始 display:none,由 JS 显示 —— 驱动会轮询等它可见再填。
     "login": {
         "password": "#form_PASSWORD",
         "button": "input.button_login",
     },
 
     # 拨号页在 advanced.html 的菜单中:詳細設定 -> Internet -> Internet。
-    # 菜单点不动,脚本改 iframe 的 location;这两个键留作事实记录。
-    "menu_selector": "p.CONNECT[data-main='wan.html']",
+    # 左侧菜单点不动(dt.WAN 默认隐藏、iconDisable 与异步初始化都会挡),
+    # 所以不走 wan_path,而是让 goto_iframe 直接把 iframe 导过去。
+    "menu_selector": "p.CONNECT[data-main='wan.html']",   # 事实记录,不点它
     "iframe_selector": "iframe#content_main",
+    "iframe_target": "wan.html",
+    # 「配置到位了吗」的判据。CA 是 wan.html 自己的配置对象:直接打开这一页
+    # 时它不会被加载,而页面照样渲染、radio 照样点得动、回读照样通过,保存却
+    # 提交旧值 —— 一次 DOM 上看不出来的假成功。所以就绪必须查它。
+    "iframe_ready_js": "CA.length > 0",
 
-    # 拨号控件:原生 radio 组。
+    # 拨号控件:原生 radio 组。radio 被 CSS 遮住,run() 里用 force 点。
     "dial": {"kind": "radio", "selector": "input[name='WanMethod']"},
 
     # 各模式在 wan.html 上对应的 radio 选择器(已用 --count 验证唯一)。
@@ -77,10 +66,10 @@ FACTS = {
         "v6connect": "input#id_method10",  # v6 コネクト
     },
 
-    # PPPoE 账密框在 pppoe_reg.html,和 wan.html 不是同一页,本脚本不去那页。
+    # PPPoE 账密框在 pppoe_reg.html,和拨号页不是同一页,本脚本不去那页。
     # 选择器留在这里是事实记录;真要跑 PPPoE 吞吐,账号得先在 Web UI 的
-    # pppoe_reg.html 里建好。给了 --param 也只会得到一条 warning,不会静默
-    # 装作填过了。
+    # pppoe_reg.html 里建好。fields_page 一写,给了 --param 只会得到一条
+    # warning,绝不会静默装作填过了。
     "fields": {
         "pppoe_user": "input#id_PUsername",
         "pppoe_pass": "input#id_PPassword",
@@ -96,173 +85,21 @@ FACTS = {
 }
 
 
-def _do_login(page, password):
-    pwd = page.locator(FACTS["login"]["password"])
-    # 登录框(#login_base)初始 display:none,由 JS 显示,轮询等它可见。
-    for _ in range(20):
-        if pwd.count() and pwd.is_visible():
-            break
-        time.sleep(0.5)
-    else:
-        return False        # 没出现登录框:可能已在会话内,交给调用方判断
-    pwd.fill(password)
-    page.locator(FACTS["login"]["button"]).click()
-    time.sleep(2)
-    return True
+def run(facts=None, mode="dynamic", **kw):
+    """这台机的操作配方。和规矩机型只差一步:**设置页要以 iframe 打开**,
+    因为直接打开它保存下去的是旧值(看起来却像成功了)。
 
-
-def _enter_wan_iframe(page):
-    """把 iframe#content_main 导到 wan.html,并等它真的就绪。
-
-    就绪 = 三个条件同时成立:url 是 wan.html、CA 配置对象已加载、拨号 radio
-    已出现。只看 url 不够 —— CA 没加载时页面照样渲染,保存却会提交旧值。
+    radio 和保存键被 CSS 遮住,所以两处都 force 点。
     """
-    actual_url = ""
-    for _attempt in range(10):
-        page.evaluate("""()=>{
-            var frm = document.querySelector("iframe#content_main");
-            if (!frm) throw new Error("iframe#content_main not found");
-            var rnd = parseInt(Math.random()*100000000);
-            frm.contentWindow.location.href = "wan.html?rnd=" + rnd;
-        }""")
-        time.sleep(2)
-        iframe = page.frame_locator(FACTS["iframe_selector"])
-        for _ in range(20):
-            try:
-                actual_url = iframe.locator(":root").evaluate(
-                    "()=>location.href") or ""
-                if ("wan.html" in actual_url and
-                        iframe.locator(":root").evaluate(
-                            "()=>{try{return CA.length;}catch(e){return 0;}}") > 0 and
-                        iframe.locator("input[name='WanMethod']").count() > 0):
-                    return iframe
-            except Exception:
-                pass
-            time.sleep(0.5)
-        # 页面脚本把 location 改回去了:再来一轮。
-    raise Exception("wan.html 未加载(或 CA 未就绪),当前 iframe url=%s"
-                    % actual_url)
-
-
-def run(facts=None, mode="dynamic", params=None, apply=False,
-        admin_user="", admin_pass="", url=None, headless=None,
-        config=None, verify_hook=None):
-    """切换一次拨号方式。签名与 models/_driver.run 一致,整轮编排器才能调它。
-
-    facts 参数是为了签名对齐而收下的,本脚本只用模块级的 FACTS —— 这台机的
-    流程和它的 FACTS 是绑死的,换一份 facts 进来也驱动不了别的机器。
-    """
-    mode = (mode or "").lower()
-    result = {
-        "brand": FACTS["brand"], "model": FACTS["model"], "mode": mode,
-        "success": False, "read_back": "", "filled": [], "applied": False,
-        "message": "", "warnings": [], "screenshot": "",
-    }
-    if mode not in FACTS["modes"]:
-        result["message"] = ("此型号脚本未定义模式 %r(可用:%s)"
-                             % (mode, ", ".join(available_modes(FACTS))))
-        return result
-
-    # 账密在另一页,本脚本填不了 —— 说出来,不要让整轮以为它填过了。
-    for key in sorted(params or {}):
-        if (params or {})[key]:
-            result["warnings"].append(
-                "参数 %s 没有填:它的输入框在 %s,和拨号页不是同一页。"
-                "PPPoE 账号请先在路由器 Web UI 里建好。"
-                % (key, FACTS["fields_page"]))
-
-    cfg = config or Config()
-    if headless is not None:
-        cfg.headless = headless
-    if admin_pass and not cfg.http_pass:
-        cfg.http_user, cfg.http_pass = (admin_user or "admin"), admin_pass
-
-    with Browser(cfg) as br:
-        page = br.goto(url or FACTS["url"])
-        if not _do_login(page, admin_pass):
-            result["warnings"].append(
-                "没等到登录框(#form_PASSWORD)—— 当作已在会话内继续。")
-        # 登录后可能跳到非 advanced.html 的页面,确保回到高级设置页。
-        if "advanced.html" not in page.url:
-            page = br.goto(url or FACTS["url"])
-
-        try:
-            _enter_wan_iframe(page)
-        except Exception as exc:
-            result["message"] = "进入 wan.html iframe 失败:%s" % exc
-            result["screenshot"] = _screenshot(page, cfg, FACTS, mode)
-            return result
-
-        target = FACTS["modes"][mode]
-        # iframe 可能在切换后重新加载,每次操作前重新定位,避免旧句柄超时。
-        iframe = page.frame_locator(FACTS["iframe_selector"])
-        try:
-            # radio 被 CSS 遮住,Playwright 默认的可操作性检查会超时:
-            # force=True 直接点真实 input。
-            iframe.locator(target).click(force=True)
-            time.sleep(1)
-        except Exception as exc:
-            result["message"] = "点击 %s radio 失败:%s" % (mode, exc)
-            result["screenshot"] = _screenshot(page, cfg, FACTS, mode)
-            return result
-
-        # 只信真 radio 的 is_checked():点了不等于选上了。
-        iframe = page.frame_locator(FACTS["iframe_selector"])
-        checked = iframe.locator(target).is_checked()
-        result["success"] = bool(checked)
-        result["read_back"] = mode if checked else ""
-        if not checked:
-            result["message"] = "回读失败:%s 的 radio 未被选中" % mode
-            result["screenshot"] = _screenshot(page, cfg, FACTS, mode)
-            return result
-
-        if apply:
-            iframe = page.frame_locator(FACTS["iframe_selector"])
-            iframe.locator(FACTS["apply"]).click(force=True)
-            result["applied"] = True
-            # 异步提交 + 轮询:等满再关浏览器,否则保存被打断。
-            time.sleep(FACTS.get("apply_settle_ms", 500) / 1000.0)
-
-        if verify_hook:
-            try:
-                result["verify"] = verify_hook(page, result)
-            except Exception as exc:
-                result["warnings"].append("verify_hook: %s" % exc)
-        result["screenshot"] = _screenshot(page, cfg, FACTS, mode)
-    return result
-
-
-def run_cli(facts=None, argv=None):
-    """型号脚本的 main:python models/BUFFALO_WSR6000AX8.py <mode> [--apply]。"""
-    saved = settings_mod.load()
-    parser = argparse.ArgumentParser(
-        description="%s %s —— WAN 拨号方式切换(默认只切换不保存,"
-                    "加 --apply 才真正下发)" % (FACTS["brand"], FACTS["model"]))
-    parser.add_argument("mode", choices=available_modes(FACTS),
-                        help="目标拨号方式")
-    parser.add_argument("--apply", action="store_true",
-                        help="真正点保存(默认不点,先看回读)")
-    parser.add_argument("--url", default=None,
-                        help="覆盖脚本里的地址(默认 %s)" % FACTS["url"])
-    parser.add_argument("--pass", dest="password", default=saved.get("pass", ""),
-                        help="管理密码(默认取 router.yaml)")
-    parser.add_argument("--headless", action="store_true", help="无窗口运行")
-    args = parser.parse_args(argv)
-
-    if not args.password:
-        parser.error(
-            "没有管理密码:先跑一次 `python start.py --setup` 把路由器 IP/密码存进 "
-            "router.yaml(git 已忽略,不会进仓库),或本次直接加 --pass <管理密码>。")
-
-    res = run(FACTS, args.mode, apply=args.apply, admin_pass=args.password,
-              url=args.url,
-              headless=args.headless or bool(saved.get("headless")))
-    print(json.dumps(res, ensure_ascii=False, indent=2))
-    if res["success"] and not args.apply:
-        print("[hint] 已确认切换(回读=%r)但未点保存;加 --apply 真正下发。"
-              % res["read_back"])
-    return 0 if res["success"] else 2
+    with session(facts or FACTS, mode, **kw) as s:
+        if not s.login():
+            return s.fail("登录失败:仍停在登录页,检查管理密码")
+        if not s.goto_iframe():          # 进 advanced.html,再把 iframe 开到 wan.html
+            return s.fail("设置页没在 iframe 里就绪")
+        s.set_mode(force=True)
+        s.fill_params()                  # 账密在 pppoe_reg.html,只会 warn
+        return s.apply_and_verify(force=True)
 
 
 if __name__ == "__main__":
-    sys.exit(run_cli(FACTS))
+    sys.exit(run_cli(FACTS, runner=run))
