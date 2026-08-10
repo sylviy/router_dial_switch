@@ -389,19 +389,43 @@ def main():
                "dynamic")
     _failed_result = _s.fail("刻意失败")
     _public = [n for n in dir(_Sess) if not n.startswith("_")]
+    # **_verified 的写者必须只有这三个**,而且这一条是从源码 AST 数出来的,
+    # 不是靠人读:随便哪个新动词偷偷写一次 self._verified,这里就红。
+    # (record_applied 只写 applied,所以它不许出现在这个集合里。)
+    import ast as _ast
+    with open(os.path.join(ROOT, "models", "_driver.py"), encoding="utf-8") as fh:
+        _tree = _ast.parse(fh.read())
+    _writers = set()
+    for _fn in _ast.walk(_tree):
+        if not isinstance(_fn, (_ast.FunctionDef, _ast.AsyncFunctionDef)):
+            continue
+        for _node in _ast.walk(_fn):
+            _tgts = []
+            if isinstance(_node, _ast.Assign):
+                _tgts = _node.targets
+            elif isinstance(_node, (_ast.AugAssign, _ast.AnnAssign)):
+                _tgts = [_node.target]
+            for _t in _tgts:
+                if (isinstance(_t, _ast.Attribute) and _t.attr == "_verified"
+                        and isinstance(_t.value, _ast.Name)
+                        and _t.value.id == "self"):
+                    _writers.add(_fn.name)
     ok = (not hasattr(model_driver, "apply")          # 没有裸 apply 动词
           and not hasattr(model_driver, "run")        # 老的成功出口已改名
           and hasattr(model_driver, "default_run")
           and _failed_result["success"] is False
-          # 公开动词就这 10 个。新增一个"成功判定类"动词必须让这条先红:
-          # 那是方案里唯一"永远不许新增"的一类。record_verified 不是成功出口 ——
-          # 它和 set_mode 一样只写 _verified(**这两个是唯一的两个写者**),
-          # success 仍旧只能从 apply_and_verify 出来。
+          # 写 _verified 的只有这三处:初始化、浏览器回读、非浏览器回读。
+          and _writers == {"__init__", "set_mode", "record_verified"}
+          # 公开动词就这 11 个。新增一个"成功判定类"动词必须让这条先红:
+          # 那是方案里唯一"永远不许新增"的一类。record_verified / record_applied
+          # 都不是成功出口 —— 前者只写 _verified(和 set_mode 并列,仅此两个),
+          # 后者只写 applied,success 仍旧只能从 apply_and_verify 出来。
           and sorted(_public) == ["apply_and_verify", "ensure_enabled", "fail",
                                   "fill_params", "goto_iframe", "login",
-                                  "navigate", "record_verified", "set_mode",
-                                  "warn"])
-    print("[%s] 回读守卫:success 只有 apply_and_verify 一个出口" % ("PASS" if ok else "FAIL"))
+                                  "navigate", "record_applied",
+                                  "record_verified", "set_mode", "warn"])
+    print("[%s] 回读守卫:success 只有 apply_and_verify;_verified 只有 %s 写"
+          % ("PASS" if ok else "FAIL", "/".join(sorted(_writers))))
     if not ok:
         print("        Session 公开成员=%s" % sorted(_public))
     passed += ok
@@ -505,8 +529,44 @@ def main():
                   % (v6, empty, good, r_http))
         passed += ok
         failed += not ok
+
+        # ④ record_applied:只写 applied,对判定没有任何权力。
+        #    报告里那句"已保存"要如实(桥接真的 dial 过),但"下发了"绝不能
+        #    变成"成功了" —— 回读不过照样 success=False。
+        with model_driver.session(HTTP_FACTS, "pppoe", apply=True,
+                                  browser=False) as s:
+            s.record_applied()                       # 下发发生了
+            s.record_verified("PPPoEv6", s.label)    # 但回读不是目标
+            r_lie = s.apply_and_verify()
+        with model_driver.session(HTTP_FACTS, "pppoe", apply=True,
+                                  browser=False) as s:
+            s.record_applied()
+            s.record_verified("PPPoE", s.label)
+            r_true = s.apply_and_verify()
+        ok = (r_lie["applied"] is True and r_lie["success"] is False
+              and r_true["applied"] is True and r_true["success"] is True)
+        print("[%s] record_applied:下发≠成功(applied=True 时 success=%s/%s)"
+              % ("PASS" if ok else "FAIL", r_lie["success"], r_true["success"]))
+        if not ok:
+            print("        lie=%s true=%s" % (r_lie, r_true))
+        passed += ok
+        failed += not ok
     finally:
         model_driver.Browser = _real_browser
+
+    # 浏览器路线不许手写 applied:那边只能由"真的点了保存键"来写。
+    with model_driver.session(HTTP_FACTS, "nosuch") as s:      # 短路,不开浏览器
+        try:
+            s.record_applied()
+            guard = "静默通过了"
+        except RuntimeError as exc:
+            guard = "browser=False" in str(exc)
+    ok = guard is True
+    print("[%s] record_applied 在浏览器路线上被拒绝" % ("PASS" if ok else "FAIL"))
+    if not ok:
+        print("        %s" % guard)
+    passed += ok
+    failed += not ok
 
     # ②d 每台机一份参数(perf_configs/<型号>.yaml)+ 开跑前检查。
     #     两件事都属于"配错了不报错,只是测的不是那条路":
@@ -571,6 +631,49 @@ def main():
     from tools.check_model import main as check_main
     ok = check_main(["--all"]) == 0
     print("[%s] check_model --all" % ("PASS" if ok else "FAIL"))
+    passed += ok
+    failed += not ok
+
+    # route="bridge":不走 Web UI 的机型(py2 侧走 HTTP API)。体检必须换一套
+    # 必填项 —— 拿浏览器那套去要求它,只会逼人往 FACTS 里填假选择器,那比不
+    # 检查更糟。同时它得继续抓住这条路线**自己**的致命错:
+    #   * 模式名和桥接的 MODES 不一致 -> 桥接退出码 3,一次都不会下发;
+    #   * 真正的回读撞车(两个模式回读同一个串,而它们下发的**不是**同一支)。
+    # 唯一放行的撞车是只差 _internet/_public 的那对 —— 桥接里同一支 elif,
+    # 后缀只决定 Chariot 打哪个远端。
+    from tools.check_model import check_facts as _cf
+    _SRC = "FACTS = {}\ndef run(facts=None, mode='dynamic', **kw):\n    pass\n" \
+           "sys.exit(run_cli(FACTS, runner=run))\n"
+    _bridge_facts = {
+        "brand": "TPLink", "model": "Demo", "route": "bridge",
+        "url": "http://192.168.0.1", "bridge": "tools/routerctrl_bridge.py",
+        "modes": {"dynamic": "Dynamic IP", "static": "Static IP",
+                  "pppoe": "PPPoE",
+                  "pptp_dynamic_internet": "PPTP",
+                  "pptp_dynamic_public": "PPTP",
+                  "l2tp_dynamic_internet": "L2TP",
+                  "l2tp_dynamic_public": "L2TP"},
+    }
+    good = _cf("TPLink_Demo", _bridge_facts, _SRC)
+    typo = _cf("t", dict(_bridge_facts, modes=dict(
+        _bridge_facts["modes"], pptp_dyanamic_internet="PPTP")), _SRC)
+    clash = _cf("t", dict(_bridge_facts, modes={
+        "pppoe": "PPPoE", "pptp_dynamic_internet": "PPPoE"}), _SRC)
+    nobridge = _cf("t", {k: v for k, v in _bridge_facts.items()
+                         if k != "bridge"}, _SRC)
+    ok = (good.ok                                    # 没有 dial/apply 也算自洽
+          and any("同一支下发" in n for n in good.notes)   # 那对撞车只是说明
+          and not typo.ok
+          and any("MODES" in e for e in typo.errors)
+          and not clash.ok
+          and any("分不开" in e for e in clash.errors)
+          and not nobridge.ok)
+    print("[%s] check_model 认 route=bridge(好的过、模式名错的拦、真撞车的拦)"
+          % ("PASS" if ok else "FAIL"))
+    if not ok:
+        print("        good.errors=%s notes=%s\n        typo=%s clash=%s "
+              "nobridge=%s" % (good.errors, good.notes, typo.errors,
+                               clash.errors, nobridge.errors))
     passed += ok
     failed += not ok
 

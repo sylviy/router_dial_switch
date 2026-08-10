@@ -39,6 +39,7 @@
 
     with session(facts or FACTS, mode, browser=False, **kw) as s:
         got = my_http_dial(mode)             # 型号脚本自己下发 + 自己回读
+        s.record_applied()                   # 下发发生了(只写 applied)
         s.record_verified(got, s.label)      # 精确相等才算通过
         return s.apply_and_verify()
 
@@ -47,7 +48,8 @@
 `apply_and_verify()` 是**唯一**能产出 `success=True` 的地方,`fail()` 是唯一
 的失败出口;裸的"点保存"动词不对外导出。型号脚本永远拿不到写 `success` 的笔
 (`_verified` 只有 `set_mode()` 和 `record_verified()` 写得动,两个都强制
-一次真实回读、都精确相等比对)。
+一次真实回读、都精确相等比对;`record_applied()` 只写 `applied`,对判定
+没有任何权力)。
 理由:切错模式这类错误**失败得静默** —— 报 success、截图正常、数据照进报告,
 只是那一格测的不是这个模式。别的动词写错会当场报错,这个不会。
 
@@ -749,6 +751,25 @@ class Session:
             self._result["message"] = ""
         return self._verified
 
+    def record_applied(self, applied: bool = True) -> None:
+        """非浏览器路线记一次"下发确实发生了"。**只写 applied。**
+
+        HTTP/桥接路线没有保存键可点,但下发是真发生了(桥接先 dial 再回读),
+        报告里那句"已保存"要如实 —— 所以给它一个合法入口。但它对成败判定
+        **一点权力都没有**:不碰 _verified,success 仍然只由回读决定
+        (set_mode / record_verified),仍然只从 apply_and_verify() 出来。
+
+        浏览器路线不许用:那边的 applied 只能由"真的点了保存键"来写。
+        """
+        if self._has_browser:
+            raise RuntimeError(
+                "record_applied() 只给 browser=False 的路线用。浏览器路线的 "
+                "applied 由 apply_and_verify() 点保存键时写 —— 在这里手写它,"
+                "报告就会说'已保存'而其实没人点过。")
+        if self._aborted:
+            return
+        self._result["applied"] = bool(applied)
+
     def fill_params(self, params: Optional[Dict[str, str]] = None) -> None:
         """填这个模式要的账密/服务器地址。**回读没通过就不填** —— 页面状态
         还不明,填进去等于往未知表单里打字。"""
@@ -901,8 +922,8 @@ def console_safe() -> None:
 
 # 动词清单:从 docstring 首行生成,不用手工维护第二份文档。
 _VERB_NAMES = ("login", "navigate", "goto_iframe", "ensure_enabled", "set_mode",
-               "record_verified", "fill_params", "apply_and_verify", "fail",
-               "warn")
+               "record_verified", "record_applied", "fill_params",
+               "apply_and_verify", "fail", "warn")
 
 
 def verbs() -> List[tuple]:

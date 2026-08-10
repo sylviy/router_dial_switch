@@ -9,7 +9,10 @@
   * 模式要填的账密字段没有对应的 fields 选择器(跑到真机才发现,白切一次);
   * 两个模式的界面措辞一模一样 —— 回读判定分不开它俩;
   * 选择器语法本身就不合法(`:has-text(` 少个括号这类,装了浏览器时才验);
-  * 脚本没有 CLI 入口 / start.py 和 run_matrix.py 发现不了它。
+  * 脚本没有 CLI 入口 / start.py 和 run_matrix.py 发现不了它;
+  * `route="bridge"` 的机型(不走 Web UI,靠 tools/routerctrl_bridge.py 在 py2
+    侧走 HTTP API):模式名和桥接的 MODES 不一致 —— 桥接会以退出码 3 拒绝,
+    一次都不会下发,而那一格在报告里只是个 err。
 
 它**不能**抓的:选择器在真机上到底命中几个。那只有 tools/probe_router.py
 (引擎实测)和真机跑一遍能回答 —— 体检通过 ≠ 可以验收。
@@ -35,6 +38,37 @@ from modes import MODE_REQUIRED_FIELDS
 
 PLACEHOLDER = re.compile(r"TODO|<品牌>|<型号>|<选择器>|FIXME|XXX|待填", re.I)
 DIAL_KINDS = ("select", "dropdown", "radio")
+
+# FACTS.route:这台机靠什么切档。默认 browser(点 Web UI);bridge = 交给
+# tools/routerctrl_bridge.py 在 py2 侧走 HTTP API,**没有任何选择器**,
+# 所以下面的形状校验必须按路线分流 —— 拿浏览器的必填项去要求它,只会逼人
+# 往 FACTS 里填一堆假选择器,那比不检查更糟。
+ROUTES = ("browser", "bridge")
+# 桥接路线的模式名撞车:桥接里 `_internet` / `_public` 收在**同一支 elif**
+# (后缀只决定 Chariot 打哪个远端,对下发没有任何影响),所以这两个模式本来
+# 就是同一次下发 —— 回读分不开它们是**没有东西可分**,不是判定不严。
+# 除此之外的撞车照旧是错误。
+PEER_SUFFIX = re.compile(r"_(internet|public)$")
+
+
+def _route(facts: dict) -> str:
+    return (facts.get("route") or "browser").strip().lower()
+
+
+def _bridge_modes(path: str):
+    """从桥接脚本里抄出它认的模式名。**不 import** —— 那个文件是 py2 且
+    顶上就 `import RouterCtrl`(只存在于台架),这里只做文本提取。
+
+    返回 (模式名集合, 出错原因)。"""
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            src = fh.read()
+    except Exception as exc:
+        return None, str(exc)
+    m = re.search(r"^MODES\s*=\s*\[(.*?)\]", src, re.S | re.M)
+    if not m:
+        return None, "文件里找不到 MODES = [...]"
+    return set(re.findall(r"'([^']+)'", m.group(1))), ""
 
 
 class Report:
@@ -82,14 +116,42 @@ def _walk_strings(obj, path=""):
 
 def check_facts(name: str, facts: dict, source: str, engine=None) -> Report:
     rep = Report(name)
+    route = _route(facts)
+    if route not in ROUTES:
+        rep.err("FACTS.route=%r 不认识(只能是 %s)" % (route, "/".join(ROUTES)))
+        return rep
+    bridged = route == "bridge"
 
-    # --- 1. 基本形状 -------------------------------------------------------
-    for key in ("brand", "model", "url", "dial", "modes", "apply"):
+    # --- 1. 基本形状(按路线分流:桥接机型没有选择器可填)-------------------
+    need = ("brand", "model", "url", "modes", "bridge") if bridged else \
+           ("brand", "model", "url", "dial", "modes", "apply")
+    for key in need:
         if not facts.get(key):
             rep.err("FACTS 缺 %r" % key)
+    if bridged:
+        for key in ("dial", "apply", "wan_path", "enable_toggle", "fields"):
+            if facts.get(key):
+                rep.warn("route=bridge 却写了 %r —— 这条路线不开浏览器,"
+                         "这个键不会被用到,删掉免得下一个人以为它生效" % key)
     if not isinstance(facts.get("modes"), dict) or not facts.get("modes"):
         rep.err("FACTS.modes 必须是非空 dict")
         return rep
+
+    # 桥接路线:模式名必须是桥接认的那些。名字错一个字符,桥接以退出码 3
+    # 拒绝、**一次都不会下发**,而那一格在报告里只是个 err —— 在这里拦住。
+    if bridged and facts.get("bridge"):
+        bpath = facts["bridge"]
+        if not os.path.isabs(bpath):
+            bpath = os.path.join(ROOT, bpath)
+        known, why = _bridge_modes(bpath)
+        if known is None:
+            rep.err("读不到桥接脚本 %s(%s)—— FACTS.bridge 指错了?"
+                    % (facts["bridge"], why))
+        else:
+            unknown = [m for m in available_modes(facts) if m not in known]
+            if unknown:
+                rep.err("模式 %s 不在桥接的 MODES 里 —— 桥接会以退出码 3 拒绝,"
+                        "一次都不会下发。名字要和它一字不差" % "/".join(unknown))
 
     # --- 2. 占位符没清干净 = 骨架当成品 -----------------------------------
     for path, text in _walk_strings(facts):
@@ -113,6 +175,17 @@ def check_facts(name: str, facts: dict, source: str, engine=None) -> Report:
                     "(运行时会直接报'未定义模式')" % mode)
             continue
         label = m["modes"][mode]
+        if not str(label).strip():
+            # 浏览器路线:界面措辞。桥接路线:回读串(get_wan_info 的 wan_type)。
+            # 两边都一样 —— 空的就没有东西可比,回读判定直接失效。
+            flag("回读目标是空的", mode)
+        labels.setdefault(str(label).strip().lower(), []).append(mode)
+
+        if bridged:
+            # 桥接路线没有选择器,参数默认值也由桥接自己给(_defaults_for),
+            # 所以下面这些都不适用。它自己的必填项在第 1 节查过了。
+            continue
+
         dial = m.get("dial") or {}
         kind = dial.get("kind", "dropdown")
         if kind not in DIAL_KINDS:
@@ -122,9 +195,6 @@ def check_facts(name: str, facts: dict, source: str, engine=None) -> Report:
             flag("没有 dial.selector", mode)
         if not m.get("apply"):
             flag("没有 apply(保存键)—— 整轮会切了不保存,吞吐测的就不是这档", mode)
-        if not str(label).strip():
-            flag("界面措辞是空的", mode)
-        labels.setdefault(str(label).strip().lower(), []).append(mode)
 
         # 该模式要填的参数,fields 里必须有对应选择器
         fields = m.get("fields") or {}
@@ -139,9 +209,19 @@ def check_facts(name: str, facts: dict, source: str, engine=None) -> Report:
 
     # --- 4. 措辞撞车:回读判定是精确相等,两个模式同词就分不开 -------------
     for label, modes in labels.items():
-        if len(modes) > 1:
-            rep.err("模式 %s 的界面措辞都是 %r —— 回读判定分不开它们"
-                    % ("/".join(modes), label))
+        if len(modes) <= 1:
+            continue
+        # 桥接路线的唯一例外:只差 _internet / _public 的两个模式在桥接里走
+        # 同一支 elif —— 同一次下发,后缀只决定 Chariot 打哪个远端。这种
+        # "分不开"是没有东西可分,点名即可。其余撞车照旧是错误。
+        if bridged and len({PEER_SUFFIX.sub("", m) for m in modes}) == 1:
+            rep.note("模式 %s 的回读都是 %r —— 它们在桥接里是同一支下发,"
+                     "后缀只决定 Chariot 打哪个远端(perf_configs 的 "
+                     "wan_up.hosts / chariot.e2_ip),所以回读分不开是正常的"
+                     % ("/".join(modes), label))
+            continue
+        rep.err("模式 %s 的回读目标都是 %r —— 回读判定分不开它们"
+                % ("/".join(modes), label))
 
     # --- 5. 子串关系:驱动用精确匹配,所以安全,但值得点名 -----------------
     words = sorted(labels)
