@@ -100,6 +100,16 @@ FACTS = {
     #         "apply": 'button:text-is("Save")',
     #     },
     # },
+
+    # -- 根本不走 Web UI 的机型(有 HTTP API / 只能靠 py2 桥接)------------
+    # 这个模板剩下的键**一个都不填**(它们全是选择器),换成三样:
+    #     "route": "bridge",                       # 不开浏览器
+    #     "bridge": "tools/routerctrl_bridge.py",  # 下发+回读的那个子进程
+    #     "modes": {"dynamic": "Dynamic IP", ...}  # 值是**回读串**,不是措辞
+    # 地址和凭据不写在这里(router.yaml)。run() 自己拼动词:
+    # 桥接下发 → record_applied() → record_verified(回读, s.label) →
+    # apply_and_verify()。完整的一台见 models/TPLink_RouterCtrl.py,
+    # 判定规矩没变:success 仍然只从 apply_and_verify() 出来。
 }
 
 

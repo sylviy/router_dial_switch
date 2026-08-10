@@ -410,7 +410,25 @@ def main():
                         and isinstance(_t.value, _ast.Name)
                         and _t.value.id == "self"):
                     _writers.add(_fn.name)
-    ok = (not hasattr(model_driver, "apply")          # 没有裸 apply 动词
+    # 型号脚本可以改返回结果里的**报告字段**(TPLink 那台要把 model 换成样机
+    # 自己报的 hostName),但绝不许改判定字段 —— 那是绕开回读守卫最省事的一条
+    # 路:res = s.fail(...); res["success"] = True。扫一遍 models/*.py。
+    _judge_keys = ("success", "read_back", "verified")
+    _tamper = []
+    for _mf in sorted(os.listdir(os.path.join(ROOT, "models"))):
+        if not _mf.endswith(".py") or _mf.startswith("_"):
+            continue
+        with open(os.path.join(ROOT, "models", _mf), encoding="utf-8") as fh:
+            for _node in _ast.walk(_ast.parse(fh.read())):
+                if not isinstance(_node, _ast.Assign):
+                    continue
+                for _t in _node.targets:
+                    if (isinstance(_t, _ast.Subscript)
+                            and isinstance(_t.slice, _ast.Constant)
+                            and _t.slice.value in _judge_keys):
+                        _tamper.append("%s: [%r]" % (_mf, _t.slice.value))
+    ok = (not _tamper
+          and not hasattr(model_driver, "apply")      # 没有裸 apply 动词
           and not hasattr(model_driver, "run")        # 老的成功出口已改名
           and hasattr(model_driver, "default_run")
           and _failed_result["success"] is False
@@ -428,6 +446,8 @@ def main():
           % ("PASS" if ok else "FAIL", "/".join(sorted(_writers))))
     if not ok:
         print("        Session 公开成员=%s" % sorted(_public))
+        if _tamper:
+            print("        型号脚本改了判定字段(绕开守卫):%s" % _tamper)
     passed += ok
     failed += not ok
 
@@ -565,6 +585,104 @@ def main():
     print("[%s] record_applied 在浏览器路线上被拒绝" % ("PASS" if ok else "FAIL"))
     if not ok:
         print("        %s" % guard)
+    passed += ok
+    failed += not ok
+
+    # --- TPLink:桥接路线的 py3 那一侧 ---------------------------------------
+    # 桥接本身(tools/routerctrl_bridge.py)是 py2.6,只有台架能验,这里**没有
+    # 模拟 RouterCtrl**。假的只有那条命令行契约(tests/mock_bridge.py:stdout
+    # 一行 JSON + 退出码 0/2/3),被测的是 py3 侧会不会把它读错:
+    #   ① 正常一档:success + 报告里的型号换成样机自己报的 hostName;
+    #   ② **wan_type 对上、但桥接说没拨上** -> 绝不许报成功。这是这条路线最
+    #      危险的一格:回读串是对的,只有桥接知道 WAN 根本没拿到地址;
+    #   ③ 桥接没吐 JSON(退出码 3)-> 如实失败,不猜"可能切成功了";
+    #   ④ 不加 --apply 什么都不做(这条路线一调用就真下发,没有预览);
+    #   ⑤ 没配 chariot.python -> 开跑前就报错,并说清该改哪个文件哪一行。
+    print("\n=== TPLink(RouterCtrl 桥接路线的 py3 一侧)===")
+    import models.TPLink_RouterCtrl as _tp
+    _tp_facts = dict(_tp.FACTS, bridge="tests/mock_bridge.py")
+    _real_py2 = _tp._perf_python
+    _tp._perf_python = lambda name: (sys.executable,
+                                     "perf_configs/%s.yaml" % name)
+
+    def _tp_run(mode, scenario, **kw):
+        os.environ["MOCK_BRIDGE"] = scenario
+        return _tp.run(_tp_facts, mode,
+                       params={"pppoe_user": "u", "pppoe_pass": "p"},
+                       admin_pass="pw", url="192.168.0.1", **kw)
+
+    try:
+        r_ok = _tp_run("pppoe", "ok", apply=True)
+        r_noisy = _tp_run("dynamic", "noisy", apply=True)
+        r_bad = _tp_run("pppoe", "readback_fail", apply=True)
+        r_nojson = _tp_run("pppoe", "usage", apply=True)
+        r_dry = _tp_run("pppoe", "ok", apply=False)
+        _tp._perf_python = lambda name: ("", "perf_configs/%s.yaml" % name)
+        r_nopy2 = _tp_run("pppoe", "ok", apply=True)
+    finally:
+        _tp._perf_python = _real_py2
+        os.environ.pop("MOCK_BRIDGE", None)
+
+    ok = (r_ok["success"] and r_ok["read_back"] == "PPPoE"
+          and r_ok["applied"] is True
+          and r_ok["model"] == "ArcherAX1800"      # 报告里是真实型号,没写死
+          and r_ok["warnings"]                     # 桥接的 status 警告透传上来
+          and r_noisy["success"] and r_noisy["read_back"] == "Dynamic IP")
+    print("[%s] 桥接一档正常:success=%s model=%r(hostName,不是写死的)"
+          % ("PASS" if ok else "FAIL", r_ok["success"], r_ok.get("model")))
+    if not ok:
+        print("        ok=%s noisy=%s" % (r_ok, r_noisy))
+    passed += ok
+    failed += not ok
+
+    ok = (r_bad["success"] is False and r_bad["read_back"] == "PPPoE"
+          and "wan_ip is empty" in r_bad["message"]
+          and r_bad["applied"] is True)     # 下发确实发生了,只是没拨上
+    print("[%s] wan_type 对上但桥接说没拨上 -> 仍然失败(success=%s)"
+          % ("PASS" if ok else "FAIL", r_bad["success"]))
+    if not ok:
+        print("        这一条红就是假成功回来了:%s" % r_bad)
+    passed += ok
+    failed += not ok
+
+    ok = (r_nojson["success"] is False and r_nojson["applied"] is False
+          and "退出码 3" in r_nojson["message"]
+          and r_dry["success"] is False and r_dry["applied"] is False
+          and "只看不切" in r_dry["message"]
+          and r_nopy2["success"] is False
+          and "chariot" in r_nopy2["message"]
+          and "TPLink_RouterCtrl.yaml" in r_nopy2["message"])
+    print("[%s] 三种「没跑成」都如实失败:无 JSON / 不加 --apply / 没配 py2"
+          % ("PASS" if ok else "FAIL"))
+    if not ok:
+        print("        nojson=%r\n        dry=%r\n        nopy2=%r"
+              % (r_nojson["message"][:80], r_dry["message"][:80],
+                 r_nopy2["message"][:80]))
+    passed += ok
+    failed += not ok
+
+    # 复合模式名的参数映射(modes.py)。少一个键就静默出事:merge_params 只留
+    # needed 里的字段 -> router.yaml 里那档的账密被整块丢掉,而桥接有自己的历史
+    # 默认账号,于是拿默认账号拨上去、报告照样绿。家族块(pptp:/l2tp:)也必须
+    # 对复合名生效 —— 台架给 PPTP 和 L2TP 的是两套账号。
+    _saved = {"pppoe_user": "flat", "pppoe_pass": "flatpw",
+              "pptp": {"vpn_server": "10.0.0.1", "vpn_user": "pu",
+                       "vpn_pass": "pp"},
+              "l2tp": {"vpn_server": "10.0.0.2", "vpn_user": "lu",
+                       "vpn_pass": "lp"}}
+    _p_pptp = merge_params("pptp_dynamic_public", _saved, {})
+    _p_l2tp = merge_params("l2tp_dynamic_internet", _saved, {})
+    _p_pppoe = merge_params("pppoe_static_internet", _saved, {})
+    ok = (_p_pptp == {"vpn_server": "10.0.0.1", "vpn_user": "pu",
+                      "vpn_pass": "pp"}
+          and _p_l2tp == {"vpn_server": "10.0.0.2", "vpn_user": "lu",
+                          "vpn_pass": "lp"}
+          and _p_pppoe == {"pppoe_user": "flat", "pppoe_pass": "flatpw"}
+          and "vpn_user" not in merge_params("dynamic", _saved, {}))
+    print("[%s] 复合模式名按家族取账密(pptp/l2tp 两套不混)"
+          % ("PASS" if ok else "FAIL"))
+    if not ok:
+        print("        pptp=%s l2tp=%s pppoe=%s" % (_p_pptp, _p_l2tp, _p_pppoe))
     passed += ok
     failed += not ok
 

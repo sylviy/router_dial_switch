@@ -949,10 +949,14 @@ def run_cli(facts: dict, argv: Optional[List[str]] = None, runner=None) -> int:
     """
     console_safe()
     saved = settings_mod.load()
+    # 桥接/HTTP 路线没有"选中但不保存"这种状态 —— 一调用就真下发了。帮助里
+    # 说清楚,别让人以为不加 --apply 能先看一眼回读。
+    how = ("一调用就真下发,必须加 --apply;这条路线没有「只看不切」"
+           if (facts.get("route") or "browser") != "browser"
+           else "默认只切换不保存,加 --apply 才真正下发")
     parser = argparse.ArgumentParser(
-        description="%s %s —— WAN 拨号方式切换(默认只切换不保存,"
-                    "加 --apply 才真正下发)"
-                    % (facts.get("brand", ""), facts.get("model", "")))
+        description="%s %s —— WAN 拨号方式切换(%s)"
+                    % (facts.get("brand", ""), facts.get("model", ""), how))
     parser.add_argument("mode", choices=available_modes(facts),
                         help="目标拨号方式")
     parser.add_argument("--apply", action="store_true",

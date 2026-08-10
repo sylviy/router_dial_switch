@@ -123,7 +123,10 @@ def check_facts(name: str, facts: dict, source: str, engine=None) -> Report:
     bridged = route == "bridge"
 
     # --- 1. 基本形状(按路线分流:桥接机型没有选择器可填)-------------------
-    need = ("brand", "model", "url", "modes", "bridge") if bridged else \
+    # 桥接路线不要 url:样机地址在 router.yaml 的 router_ip(git 已忽略),
+    # 一个文件管所有自家样机,写死一个 IP 反而会指错机器。缺地址由 run()
+    # 在开跑前明确报错。
+    need = ("brand", "model", "modes", "bridge") if bridged else \
            ("brand", "model", "url", "dial", "modes", "apply")
     for key in need:
         if not facts.get(key):
