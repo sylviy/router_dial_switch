@@ -1,0 +1,62 @@
+# config.yaml —— 这台台架的实际配置。**唯一的配置文件。**
+#
+# 每一项该填什么、去哪里找,见 config.example.yaml(注释齐全的模板)。
+# 这里只留最短的提示,方便现场用记事本改。
+# 空字符串 "" 算「没填」;开跑前工具会核一遍并指出改哪一行。
+
+router:
+  ip: 192.168.0.1        # 路由器管理页地址
+  pass: ""               # 管理密码
+  pppoe_user: ""         # 宽带账号(测 pppoe 档要用)
+  pppoe_pass: ""
+  pptp:
+    server: ""
+    user: ""
+    pass: ""
+  l2tp:                  # 和 PPTP 是两套不同的账号,分开写
+    server: ""
+    user: ""
+    pass: ""
+
+bench:
+  python2: ""            # 装了 RouterCtrl 的 Python 2 绝对路径(只 TPLink 用)
+  injector_ip: ""        # 注入机(e1):接在被测机 LAN 口上的那台
+  injectors: {}          # 按频段各有一台注入机时写这里
+  endpoints: {}          # 各档对端(e2)IP,按拨号方式写死,别让它猜
+  public_ip: ""          # endpoints 没写到的直连档回落到它
+  internet_ip: ""        # endpoints 没写到的隧道档回落到它
+
+  wan_up_method: ping
+  wan_up_host: ""
+  wan_up_hosts: {}       # 各档 ping 谁(直连档和隧道档不在同一网段)
+
+  scripts:
+    up:   Throughput.scr
+    down: Throughput_w2l.scr
+  pairs: {TCP: 50, UDP: 100}
+  nofrag_bytes: {}
+  stability_ratio: 0.9
+  save_tests: true
+
+# 时序与矩阵:全仓库唯一的一份,型号脚本覆盖不了(报告要能横向比较)。
+perf:
+  settle_sec: 15
+  duration_sec: 20
+  wan_up_timeout_sec: 60
+  bands:      [lan]
+  directions: [up, down, bi]
+  protocols:  [TCP]
+
+run:
+  model: ""              # 型号脚本名,即 models/<这里>.py
+  dial_modes: []         # 留空 = 该型号支持的档全测
+  headless: false
+  backend: simulate      # simulate = 离线模拟;chariot = 真台架
+  reset_mode: dynamic
+
+report:
+  dir: artifacts
+  title: WAN 性能矩阵
+
+# 按型号覆盖上面任何一项(台架六台机的对端/档位各不相同)。
+models: {}
