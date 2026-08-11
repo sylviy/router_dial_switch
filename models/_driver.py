@@ -198,6 +198,25 @@ def available_modes(facts: dict) -> List[str]:
     return sorted(modes)
 
 
+def needs_admin_pass(facts: dict) -> bool:
+    """这台机切一次档要不要管理密码。**判据只有这一处,别就地重写。**
+
+    别用 `facts.get("login")` 当判据 —— 那是**登录页的选择器**,只有 Web UI
+    路线才有。桥接 / HTTP 路线一样要管理密码(RouterCtrl 就是拿它认证的),
+    但它没有 DOM、自然没有 login 键,于是那条判据会给出**相反**的答案:入口
+    以为"这台机不需要密码",连问都不问,还把一个空密码显式传下去 ——
+    结果每一档都以"没有管理密码"失败,而 router.yaml 里明明写着。
+    (2026-08-11 台架实测:TPLink_RouterCtrl 整轮六档全 FAIL 就是这个。)
+
+    真的去填密码框的地方(login()/probe_router/check_model)仍然看
+    `facts["login"]` —— 那里问的是"选择器长什么样",不是"要不要密码"。
+    """
+    if facts.get("login"):
+        return True
+    # 不走浏览器的路线(route != browser)没有登录页可言,但设备侧照样认证。
+    return (facts.get("route") or "browser") != "browser"
+
+
 # ---------------------------------------------------------------------------
 # 动词(型号脚本通过 Session 调用;这里的模块级函数供 tools/probe_router.py
 # 复用同一套查找语义 —— 探针跑通 = 交付脚本跑得通)
@@ -975,9 +994,9 @@ def run_cli(facts: dict, argv: Optional[List[str]] = None, runner=None) -> int:
     parser.add_argument("--headless", action="store_true", help="无窗口运行")
     args = parser.parse_args(argv)
 
-    # FACTS 声明了登录页 => 必须有管理密码,否则开跑前就报错,
-    # 不要开着浏览器白跑一趟再"卡在登录页"。
-    if facts.get("login") and not args.password:
+    # 这台机要管理密码 => 开跑前就报错,不要开着浏览器白跑一趟再"卡在登录页"
+    # (判据见 needs_admin_pass:桥接路线没有 login 键,但一样要密码)。
+    if needs_admin_pass(facts) and not args.password:
         parser.error(
             "没有管理密码:先跑一次 `python start.py --setup` 把路由器 IP/密码存进 "
             "router.yaml(git 已忽略,不会进仓库),或本次直接加 --pass <管理密码>。")

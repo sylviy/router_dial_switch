@@ -661,6 +661,60 @@ def main():
     passed += ok
     failed += not ok
 
+    # 「要不要管理密码」只有一处判据。以前四个入口各自看 facts["login"] ——
+    # 那是**登录页的选择器**,桥接路线没有它但一样要密码,于是入口连问都不问,
+    # 还把空密码显式传下去:2026-08-11 台架上整轮六档全 FAIL,报"没有管理密码",
+    # 而 router.yaml 里明明写着。三条一起守:判据本身、整轮入口、向导。
+    from models._driver import needs_admin_pass as _needs_pw
+    ok = (_needs_pw(_tp.FACTS) is True                     # 桥接路线:要
+          and _needs_pw(TENDA_FACTS) is True               # 有 login 选择器:要
+          and _needs_pw({"modes": {"a": "A"}}) is False)   # 都没有:不要
+    print("[%s] needs_admin_pass:桥接路线也要密码(login 键不是判据)"
+          % ("PASS" if ok else "FAIL"))
+    passed += ok
+    failed += not ok
+
+    # 整轮入口:没密码要在**开跑前**拦住,而不是每一档各失败一次。
+    _blocked = _sp.run(
+        [sys.executable, os.path.join(ROOT, "run_matrix.py"),
+         "--model", "TPLink_RouterCtrl"],
+        capture_output=True, text=True, errors="replace", timeout=120)
+    ok = (_blocked.returncode != 0
+          and "缺管理密码" in (_blocked.stdout + _blocked.stderr))
+    print("[%s] run_matrix:桥接型号没给密码 -> 开跑前拦住(rc=%s)"
+          % ("PASS" if ok else "FAIL", _blocked.returncode))
+    if not ok:
+        print("        stdout=%r stderr=%r" % (_blocked.stdout[-200:],
+                                               _blocked.stderr[-200:]))
+    passed += ok
+    failed += not ok
+
+    # 向导:桥接型号也要问密码,而且**绝不能传空的 --pass** —— 空值会盖掉
+    # run_matrix 自己那个"默认取 router.yaml"的默认值。这里把 run_matrix 的
+    # 入口换成"记下 argv 就返回",走真的 start.py 菜单。
+    _tp_idx = _list_models().index("TPLink_RouterCtrl") + 1
+    _harness = (
+        "import sys;sys.path.insert(0, %r);"
+        "import matrix.run as mr;"
+        "mr.main=lambda argv=None: (sys.stdout.write('ARGV=%%r\\n' %% (argv,)), 0)[1];"
+        "import start;sys.exit(start.main(['--headless']))" % ROOT)
+    _wiz = _sp.run(
+        [sys.executable, "-c", _harness],
+        input="%d\n1\nadmin123\n%s" % (_tp_idx, "\n" * 24),
+        capture_output=True, text=True, errors="replace", timeout=180)
+    _argv_line = [ln for ln in _wiz.stdout.splitlines()
+                  if ln.startswith("ARGV=")]
+    _argv = eval(_argv_line[0][5:]) if _argv_line else []      # 自己产的字面量
+    ok = ("管理密码" in _wiz.stdout                 # 问了(以前对桥接路线不问)
+          and "--pass" in _argv
+          and _argv[_argv.index("--pass") + 1] == "admin123")  # 传的不是空串
+    print("[%s] start.py 整轮:桥接型号问密码并传下去(argv=%s)"
+          % ("PASS" if ok else "FAIL", _argv))
+    if not ok:
+        print("        stdout 尾部=%r" % _wiz.stdout[-300:])
+    passed += ok
+    failed += not ok
+
     # 复合模式名的参数映射(modes.py)。少一个键就静默出事:merge_params 只留
     # needed 里的字段 -> router.yaml 里那档的账密被整块丢掉,而桥接有自己的历史
     # 默认账号,于是拿默认账号拨上去、报告照样绿。家族块(pptp:/l2tp:)也必须

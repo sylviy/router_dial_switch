@@ -198,10 +198,16 @@ def main(argv=None) -> int:
     # --demo 不驱动路由器,连型号脚本都不 import(避免拉起 Playwright)
     facts = _load_facts(cfg.model) if (cfg.model and not args.demo) else None
     switch = runner_for(cfg.model) if facts else None
-    if facts and cfg.model and not args.demo and facts.get("login") \
-            and not args.password:
-        raise SystemExit("缺管理密码:先 `python start.py --setup` 存进 router.yaml,"
-                         "或本次加 --pass <密码>。(只想看样例报告加 --demo)")
+    # 判据用 needs_admin_pass:桥接路线(TPLink)没有 login 键,但一样要密码 ——
+    # 用 facts["login"] 判会放它开跑,然后每一档都以"没有管理密码"失败。
+    if facts and cfg.model and not args.demo:
+        # **import 写在这个分支里**:--demo 那条路连型号脚本都不 import
+        # (免得拉起 Playwright),这里 facts 已经加载过了,再拉驱动不多花什么。
+        from models._driver import needs_admin_pass
+        if needs_admin_pass(facts) and not args.password:
+            raise SystemExit(
+                "缺管理密码:先 `python start.py --setup` 存进 router.yaml,"
+                "或本次加 --pass <密码>。(只想看样例报告加 --demo)")
 
     # perf.yaml 没写 dial_modes = 工具的本意:遍历该型号声明的**全部**拨号方式
     if not cfg.dial_modes:
