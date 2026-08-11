@@ -341,10 +341,27 @@ def main(argv=None):
         # 它),stderr 则被原样收进错误信息。这样出事时一次就能看全,不用再
         # 来回问"能不能再跑一遍加个 -v" —— 现场只有一个人,往返很贵。
         traceback.print_exc()
-        print(json.dumps({"error": "%s: %s" % (type(exc).__name__, exc)}))
+        _emit({"error": "%s: %s" % (type(exc).__name__, exc)})
         return 2
-    print(json.dumps(result))
+    _emit(result)
     return 0
+
+
+def _emit(obj):
+    """把结果写成 stdout 上**自己起一行**的 JSON。
+
+    前面加一个换行不是多余的:Chariot 的错误信息由它自己的原生库直接写
+    stdout,不走 Python 的缓冲、末尾也**没有换行**,于是这行 JSON 会被接在
+    `Error was detected at M` 后面,读侧就找不到它了(2026-08-10 台架实测:
+    PPTP 那格测到 283.63 Mbps 却被记成 err)。读侧现在也容忍前缀,但源头补一
+    个换行更便宜 —— 两边都改,不是二选一。
+    """
+    # 2.6:不用 print 函数、不用 f-string(这个文件要在 ActivePython 2.6.5 上跑)
+    sys.stdout.write("\n" + json.dumps(obj) + "\n")
+    try:
+        sys.stdout.flush()
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":

@@ -334,8 +334,17 @@ def main():
                   capture_output=True, text=True, errors="replace", timeout=60)
     from matrix.perf_backends import _last_json
     data = _last_json(dry.stdout or "")
+    # Chariot 的错误由它自己的原生库直接写 stdout,末尾没有换行 —— 我们那行
+    # JSON 会被接在它后面(2026-08-10 台架实测:PPTP 那格测到 283.63 Mbps
+    # 却被记成 err,"输出里没有 JSON 结果")。读侧必须容忍前缀和尾巴,但也
+    # 不能把散文里的花括号当成结果。
+    glued = _last_json('Error was detected at M{"mbps": 283.63, "samples": [1]}')
+    tailed = _last_json('{"mbps": 1.5} CHR0200: connection timed out')
+    prose = _last_json("set {a} to {b}")
     ok = (dry.returncode == 0 and isinstance(data, dict)
-          and data.get("dry_run") is True and data.get("pairs") == 50)
+          and data.get("dry_run") is True and data.get("pairs") == 50
+          and glued == {"mbps": 283.63, "samples": [1]}
+          and tailed == {"mbps": 1.5} and prose is None)
     print("[%s] chariot_perf.py runs under this interpreter (py%d, --dry-run)"
           % ("PASS" if ok else "FAIL", sys.version_info[0]))
     if not ok:
