@@ -22,6 +22,8 @@ router:
     pass: ""
 
 bench:
+  browser_path: ""       # Chrome/Chromium 可执行文件路径,留空 = 用系统装的 Chrome
+  browsers_dir: ""       # 预置的 Playwright 浏览器包目录(完全离线时填)
   python2: ""            # 装了 RouterCtrl 的 Python 2 绝对路径(只 TPLink 用)
   injector_ip: ""        # 注入机(e1):接在被测机 LAN 口上的那台
   injectors: {}          # 按频段各有一台注入机时写这里

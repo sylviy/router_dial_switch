@@ -44,6 +44,15 @@ router:
 # bench —— 台架接线:注入机、对端、Chariot 参数。跟被测机无关,换机器不用改。
 # ===========================================================================
 bench:
+  # 驱动哪个浏览器。两个都留空 = 用这台电脑上装着的 Chrome(台架的常态)。
+  #   browser_path  Chrome/Chromium 可执行文件的绝对路径,例:
+  #                 C:\Program Files\Google\Chrome\Application\chrome.exe
+  #   browsers_dir  仓库自带的 Playwright 浏览器包目录,完全离线、连 Chrome
+  #                 都没装的机器才填(vendor/ 里那份)。
+  # 环境变量 ROUTER_BROWSER_PATH / ROUTER_BROWSERS_DIR 同样认。
+  browser_path: ""
+  browsers_dir: ""
+
   # 台架上装了 RouterCtrl 的那个 Python 2 的**绝对路径**,
   # 例:C:\Python26\python.exe
   # 只有 TPLink_RouterCtrl 那条路线用它(RouterCtrl 只装在那个 python 里)。
