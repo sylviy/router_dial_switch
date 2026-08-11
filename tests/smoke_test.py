@@ -334,8 +334,17 @@ def main():
                   capture_output=True, text=True, errors="replace", timeout=60)
     from matrix.perf_backends import _last_json
     data = _last_json(dry.stdout or "")
+    # Chariot 的错误由它自己的原生库直接写 stdout,末尾没有换行 —— 我们那行
+    # JSON 会被接在它后面(2026-08-10 台架实测:PPTP 那格测到 283.63 Mbps
+    # 却被记成 err,"输出里没有 JSON 结果")。读侧必须容忍前缀和尾巴,但也
+    # 不能把散文里的花括号当成结果。
+    glued = _last_json('Error was detected at M{"mbps": 283.63, "samples": [1]}')
+    tailed = _last_json('{"mbps": 1.5} CHR0200: connection timed out')
+    prose = _last_json("set {a} to {b}")
     ok = (dry.returncode == 0 and isinstance(data, dict)
-          and data.get("dry_run") is True and data.get("pairs") == 50)
+          and data.get("dry_run") is True and data.get("pairs") == 50
+          and glued == {"mbps": 283.63, "samples": [1]}
+          and tailed == {"mbps": 1.5} and prose is None)
     print("[%s] chariot_perf.py runs under this interpreter (py%d, --dry-run)"
           % ("PASS" if ok else "FAIL", sys.version_info[0]))
     if not ok:
@@ -389,18 +398,65 @@ def main():
                "dynamic")
     _failed_result = _s.fail("刻意失败")
     _public = [n for n in dir(_Sess) if not n.startswith("_")]
-    ok = (not hasattr(model_driver, "apply")          # 没有裸 apply 动词
+    # **_verified 的写者必须只有这三个**,而且这一条是从源码 AST 数出来的,
+    # 不是靠人读:随便哪个新动词偷偷写一次 self._verified,这里就红。
+    # (record_applied 只写 applied,所以它不许出现在这个集合里。)
+    import ast as _ast
+    with open(os.path.join(ROOT, "models", "_driver.py"), encoding="utf-8") as fh:
+        _tree = _ast.parse(fh.read())
+    _writers = set()
+    for _fn in _ast.walk(_tree):
+        if not isinstance(_fn, (_ast.FunctionDef, _ast.AsyncFunctionDef)):
+            continue
+        for _node in _ast.walk(_fn):
+            _tgts = []
+            if isinstance(_node, _ast.Assign):
+                _tgts = _node.targets
+            elif isinstance(_node, (_ast.AugAssign, _ast.AnnAssign)):
+                _tgts = [_node.target]
+            for _t in _tgts:
+                if (isinstance(_t, _ast.Attribute) and _t.attr == "_verified"
+                        and isinstance(_t.value, _ast.Name)
+                        and _t.value.id == "self"):
+                    _writers.add(_fn.name)
+    # 型号脚本可以改返回结果里的**报告字段**(TPLink 那台要把 model 换成样机
+    # 自己报的 hostName),但绝不许改判定字段 —— 那是绕开回读守卫最省事的一条
+    # 路:res = s.fail(...); res["success"] = True。扫一遍 models/*.py。
+    _judge_keys = ("success", "read_back", "verified")
+    _tamper = []
+    for _mf in sorted(os.listdir(os.path.join(ROOT, "models"))):
+        if not _mf.endswith(".py") or _mf.startswith("_"):
+            continue
+        with open(os.path.join(ROOT, "models", _mf), encoding="utf-8") as fh:
+            for _node in _ast.walk(_ast.parse(fh.read())):
+                if not isinstance(_node, _ast.Assign):
+                    continue
+                for _t in _node.targets:
+                    if (isinstance(_t, _ast.Subscript)
+                            and isinstance(_t.slice, _ast.Constant)
+                            and _t.slice.value in _judge_keys):
+                        _tamper.append("%s: [%r]" % (_mf, _t.slice.value))
+    ok = (not _tamper
+          and not hasattr(model_driver, "apply")      # 没有裸 apply 动词
           and not hasattr(model_driver, "run")        # 老的成功出口已改名
           and hasattr(model_driver, "default_run")
           and _failed_result["success"] is False
-          # 公开动词就这 9 个。新增一个"成功判定类"动词必须让这条先红:
-          # 那是方案里唯一"永远不许新增"的一类。
+          # 写 _verified 的只有这三处:初始化、浏览器回读、非浏览器回读。
+          and _writers == {"__init__", "set_mode", "record_verified"}
+          # 公开动词就这 11 个。新增一个"成功判定类"动词必须让这条先红:
+          # 那是方案里唯一"永远不许新增"的一类。record_verified / record_applied
+          # 都不是成功出口 —— 前者只写 _verified(和 set_mode 并列,仅此两个),
+          # 后者只写 applied,success 仍旧只能从 apply_and_verify 出来。
           and sorted(_public) == ["apply_and_verify", "ensure_enabled", "fail",
                                   "fill_params", "goto_iframe", "login",
-                                  "navigate", "set_mode", "warn"])
-    print("[%s] 回读守卫:success 只有 apply_and_verify 一个出口" % ("PASS" if ok else "FAIL"))
+                                  "navigate", "record_applied",
+                                  "record_verified", "set_mode", "warn"])
+    print("[%s] 回读守卫:success 只有 apply_and_verify;_verified 只有 %s 写"
+          % ("PASS" if ok else "FAIL", "/".join(sorted(_writers))))
     if not ok:
         print("        Session 公开成员=%s" % sorted(_public))
+        if _tamper:
+            print("        型号脚本改了判定字段(绕开守卫):%s" % _tamper)
     passed += ok
     failed += not ok
 
@@ -412,6 +468,284 @@ def main():
     if not ok:
         print("        缺 docstring 的动词:%s"
               % [n for n, d in _verbs if not d.strip()])
+    passed += ok
+    failed += not ok
+
+    # ②c4 browser=False:根本不走 Web UI 的路线(有 HTTP API,或只能靠 py2
+    #      桥接的机型)。这条路线是假成功的新入口候选,三件事必须同时成立:
+    #        ① 真的不开浏览器(把 Browser 换成炸弹来证明),但 mode_overrides
+    #           合并、凭据、result、_aborted 全照旧,退出时不截图;
+    #        ② 浏览器动词一个都不许静默通过 —— page 是 None,静默 return 会让
+    #           run() 带着别处写的 _verified 一路走到 apply_and_verify();
+    #        ③ record_verified 精确相等:"PPPoEv6" 绝不能算成 "PPPoE",空回读
+    #           绝不算通过(两边都空时 _norm 是相等的 —— 那是什么都没读到)。
+    print("\n=== browser=False(不开浏览器的路线)===")
+    HTTP_FACTS = {"brand": "X", "model": "Y", "url": "http://10.0.0.1",
+                  "modes": {"pppoe": "PPPoE", "dynamic": "Dynamic IP"},
+                  "mode_overrides": {"pppoe": {"apply": "#save-v2"}}}
+
+    class _Boom:
+        def __init__(self, *a, **kw):
+            raise AssertionError("browser=False 时不该实例化 Browser")
+
+    _real_browser = model_driver.Browser
+    model_driver.Browser = _Boom
+    try:
+        # ① 骨架照旧,只少了浏览器;没记回读就不许成功
+        with model_driver.session(HTTP_FACTS, "pppoe", apply=True,
+                                  admin_pass="pw", browser=False) as s:
+            skeleton = (s.page is None
+                        and s.facts["apply"] == "#save-v2"   # overrides 合并了
+                        and s.label == "PPPoE"
+                        and s._admin_pass == "pw")           # 凭据带进来了
+            r_bare = s.apply_and_verify()
+        # 模式名没声明:browser=False 也照样 abort,原因保留
+        with model_driver.session(HTTP_FACTS, "nosuch", browser=False) as s:
+            r_abort = s.fail("这条不该盖掉 abort 的原因")
+        ok = (skeleton and r_bare["success"] is False
+              and r_bare["applied"] is False        # 没有保存键可点
+              and r_bare["screenshot"] == ""        # 没有页面可截
+              and bool(r_bare["message"])
+              and "nosuch" in r_abort["message"])
+        print("[%s] browser=False:不开浏览器,骨架照旧(page=%s screenshot=%r)"
+              % ("PASS" if ok else "FAIL", None, r_bare["screenshot"]))
+        if not ok:
+            print("        skeleton=%s bare=%s abort=%r"
+                  % (skeleton, r_bare, r_abort["message"]))
+        passed += ok
+        failed += not ok
+
+        # ② 六个浏览器动词全都必须当场报错
+        raised = {}
+        with model_driver.session(HTTP_FACTS, "pppoe", browser=False) as s:
+            for vname in ("login", "navigate", "goto_iframe", "ensure_enabled",
+                          "set_mode", "fill_params"):
+                try:
+                    getattr(s, vname)()
+                    raised[vname] = "静默通过了"
+                except RuntimeError as exc:
+                    raised[vname] = ("browser=False" in str(exc)
+                                     and vname in str(exc))
+        ok = all(v is True for v in raised.values())
+        print("[%s] browser=False:浏览器动词全部当场报错(%d/6)"
+              % ("PASS" if ok else "FAIL",
+                 sum(1 for v in raised.values() if v is True)))
+        if not ok:
+            print("        没报错/文案不对的动词:%s"
+                  % {k: v for k, v in raised.items() if v is not True})
+        passed += ok
+        failed += not ok
+
+        # ③ record_verified:精确相等,且它写不出 success
+        with model_driver.session(HTTP_FACTS, "pppoe", apply=True,
+                                  browser=False) as s:
+            v6 = s.record_verified("PPPoEv6", s.label)      # 子串诱饵
+            after_v6 = dict(s._result)
+            empty = s.record_verified("", "")               # 什么都没读到
+            good = s.record_verified("  pppoe ", "PPPoE")   # 空白/大小写不计
+            r_http = s.apply_and_verify()
+        ok = (v6 is False and empty is False and good is True
+              and after_v6["read_back"] == "PPPoEv6"   # 不对也记,那是证据
+              and after_v6["success"] is False         # 它写不出 success
+              and r_http["success"] is True            # 判定仍走唯一出口
+              and r_http["read_back"] == "pppoe"
+              and r_http["applied"] is False           # HTTP 路线不点保存
+              and r_http["message"] == "")             # 上一次的失败话术已清掉
+        print("[%s] record_verified:PPPoEv6/空回读都不算通过,精确相等才算"
+              % ("PASS" if ok else "FAIL"))
+        if not ok:
+            print("        v6=%s empty=%s good=%s result=%s"
+                  % (v6, empty, good, r_http))
+        passed += ok
+        failed += not ok
+
+        # ④ record_applied:只写 applied,对判定没有任何权力。
+        #    报告里那句"已保存"要如实(桥接真的 dial 过),但"下发了"绝不能
+        #    变成"成功了" —— 回读不过照样 success=False。
+        with model_driver.session(HTTP_FACTS, "pppoe", apply=True,
+                                  browser=False) as s:
+            s.record_applied()                       # 下发发生了
+            s.record_verified("PPPoEv6", s.label)    # 但回读不是目标
+            r_lie = s.apply_and_verify()
+        with model_driver.session(HTTP_FACTS, "pppoe", apply=True,
+                                  browser=False) as s:
+            s.record_applied()
+            s.record_verified("PPPoE", s.label)
+            r_true = s.apply_and_verify()
+        ok = (r_lie["applied"] is True and r_lie["success"] is False
+              and r_true["applied"] is True and r_true["success"] is True)
+        print("[%s] record_applied:下发≠成功(applied=True 时 success=%s/%s)"
+              % ("PASS" if ok else "FAIL", r_lie["success"], r_true["success"]))
+        if not ok:
+            print("        lie=%s true=%s" % (r_lie, r_true))
+        passed += ok
+        failed += not ok
+    finally:
+        model_driver.Browser = _real_browser
+
+    # 浏览器路线不许手写 applied:那边只能由"真的点了保存键"来写。
+    with model_driver.session(HTTP_FACTS, "nosuch") as s:      # 短路,不开浏览器
+        try:
+            s.record_applied()
+            guard = "静默通过了"
+        except RuntimeError as exc:
+            guard = "browser=False" in str(exc)
+    ok = guard is True
+    print("[%s] record_applied 在浏览器路线上被拒绝" % ("PASS" if ok else "FAIL"))
+    if not ok:
+        print("        %s" % guard)
+    passed += ok
+    failed += not ok
+
+    # --- TPLink:桥接路线的 py3 那一侧 ---------------------------------------
+    # 桥接本身(tools/routerctrl_bridge.py)是 py2.6,只有台架能验,这里**没有
+    # 模拟 RouterCtrl**。假的只有那条命令行契约(tests/mock_bridge.py:stdout
+    # 一行 JSON + 退出码 0/2/3),被测的是 py3 侧会不会把它读错:
+    #   ① 正常一档:success + 报告里的型号换成样机自己报的 hostName;
+    #   ② **wan_type 对上、但桥接说没拨上** -> 绝不许报成功。这是这条路线最
+    #      危险的一格:回读串是对的,只有桥接知道 WAN 根本没拿到地址;
+    #   ③ 桥接没吐 JSON(退出码 3)-> 如实失败,不猜"可能切成功了";
+    #   ④ 不加 --apply 什么都不做(这条路线一调用就真下发,没有预览);
+    #   ⑤ 没配 chariot.python -> 开跑前就报错,并说清该改哪个文件哪一行。
+    print("\n=== TPLink(RouterCtrl 桥接路线的 py3 一侧)===")
+    import models.TPLink_RouterCtrl as _tp
+    _tp_facts = dict(_tp.FACTS, bridge="tests/mock_bridge.py")
+    _real_py2 = _tp._perf_python
+    _tp._perf_python = lambda name: (sys.executable,
+                                     "perf_configs/%s.yaml" % name)
+
+    def _tp_run(mode, scenario, **kw):
+        os.environ["MOCK_BRIDGE"] = scenario
+        return _tp.run(_tp_facts, mode,
+                       params={"pppoe_user": "u", "pppoe_pass": "p"},
+                       admin_pass="pw", url="192.168.0.1", **kw)
+
+    try:
+        r_ok = _tp_run("pppoe", "ok", apply=True)
+        r_noisy = _tp_run("dynamic", "noisy", apply=True)
+        r_bad = _tp_run("pppoe", "readback_fail", apply=True)
+        r_nojson = _tp_run("pppoe", "usage", apply=True)
+        r_dry = _tp_run("pppoe", "ok", apply=False)
+        _tp._perf_python = lambda name: ("", "perf_configs/%s.yaml" % name)
+        r_nopy2 = _tp_run("pppoe", "ok", apply=True)
+    finally:
+        _tp._perf_python = _real_py2
+        os.environ.pop("MOCK_BRIDGE", None)
+
+    ok = (r_ok["success"] and r_ok["read_back"] == "PPPoE"
+          and r_ok["applied"] is True
+          and r_ok["model"] == "ArcherAX1800"      # 报告里是真实型号,没写死
+          and r_ok["warnings"]                     # 桥接的 status 警告透传上来
+          and r_noisy["success"] and r_noisy["read_back"] == "Dynamic IP")
+    print("[%s] 桥接一档正常:success=%s model=%r(hostName,不是写死的)"
+          % ("PASS" if ok else "FAIL", r_ok["success"], r_ok.get("model")))
+    if not ok:
+        print("        ok=%s noisy=%s" % (r_ok, r_noisy))
+    passed += ok
+    failed += not ok
+
+    ok = (r_bad["success"] is False and r_bad["read_back"] == "PPPoE"
+          and "wan_ip is empty" in r_bad["message"]
+          and r_bad["applied"] is True)     # 下发确实发生了,只是没拨上
+    print("[%s] wan_type 对上但桥接说没拨上 -> 仍然失败(success=%s)"
+          % ("PASS" if ok else "FAIL", r_bad["success"]))
+    if not ok:
+        print("        这一条红就是假成功回来了:%s" % r_bad)
+    passed += ok
+    failed += not ok
+
+    ok = (r_nojson["success"] is False and r_nojson["applied"] is False
+          and "退出码 3" in r_nojson["message"]
+          and r_dry["success"] is False and r_dry["applied"] is False
+          and "只看不切" in r_dry["message"]
+          and r_nopy2["success"] is False
+          and "chariot" in r_nopy2["message"]
+          and "TPLink_RouterCtrl.yaml" in r_nopy2["message"])
+    print("[%s] 三种「没跑成」都如实失败:无 JSON / 不加 --apply / 没配 py2"
+          % ("PASS" if ok else "FAIL"))
+    if not ok:
+        print("        nojson=%r\n        dry=%r\n        nopy2=%r"
+              % (r_nojson["message"][:80], r_dry["message"][:80],
+                 r_nopy2["message"][:80]))
+    passed += ok
+    failed += not ok
+
+    # 「要不要管理密码」只有一处判据。以前四个入口各自看 facts["login"] ——
+    # 那是**登录页的选择器**,桥接路线没有它但一样要密码,于是入口连问都不问,
+    # 还把空密码显式传下去:2026-08-11 台架上整轮六档全 FAIL,报"没有管理密码",
+    # 而 router.yaml 里明明写着。三条一起守:判据本身、整轮入口、向导。
+    from models._driver import needs_admin_pass as _needs_pw
+    ok = (_needs_pw(_tp.FACTS) is True                     # 桥接路线:要
+          and _needs_pw(TENDA_FACTS) is True               # 有 login 选择器:要
+          and _needs_pw({"modes": {"a": "A"}}) is False)   # 都没有:不要
+    print("[%s] needs_admin_pass:桥接路线也要密码(login 键不是判据)"
+          % ("PASS" if ok else "FAIL"))
+    passed += ok
+    failed += not ok
+
+    # 整轮入口:没密码要在**开跑前**拦住,而不是每一档各失败一次。
+    _blocked = _sp.run(
+        [sys.executable, os.path.join(ROOT, "run_matrix.py"),
+         "--model", "TPLink_RouterCtrl"],
+        capture_output=True, text=True, errors="replace", timeout=120)
+    ok = (_blocked.returncode != 0
+          and "缺管理密码" in (_blocked.stdout + _blocked.stderr))
+    print("[%s] run_matrix:桥接型号没给密码 -> 开跑前拦住(rc=%s)"
+          % ("PASS" if ok else "FAIL", _blocked.returncode))
+    if not ok:
+        print("        stdout=%r stderr=%r" % (_blocked.stdout[-200:],
+                                               _blocked.stderr[-200:]))
+    passed += ok
+    failed += not ok
+
+    # 向导:桥接型号也要问密码,而且**绝不能传空的 --pass** —— 空值会盖掉
+    # run_matrix 自己那个"默认取 router.yaml"的默认值。这里把 run_matrix 的
+    # 入口换成"记下 argv 就返回",走真的 start.py 菜单。
+    _tp_idx = _list_models().index("TPLink_RouterCtrl") + 1
+    _harness = (
+        "import sys;sys.path.insert(0, %r);"
+        "import matrix.run as mr;"
+        "mr.main=lambda argv=None: (sys.stdout.write('ARGV=%%r\\n' %% (argv,)), 0)[1];"
+        "import start;sys.exit(start.main(['--headless']))" % ROOT)
+    _wiz = _sp.run(
+        [sys.executable, "-c", _harness],
+        input="%d\n1\nadmin123\n%s" % (_tp_idx, "\n" * 24),
+        capture_output=True, text=True, errors="replace", timeout=180)
+    _argv_line = [ln for ln in _wiz.stdout.splitlines()
+                  if ln.startswith("ARGV=")]
+    _argv = eval(_argv_line[0][5:]) if _argv_line else []      # 自己产的字面量
+    ok = ("管理密码" in _wiz.stdout                 # 问了(以前对桥接路线不问)
+          and "--pass" in _argv
+          and _argv[_argv.index("--pass") + 1] == "admin123")  # 传的不是空串
+    print("[%s] start.py 整轮:桥接型号问密码并传下去(argv=%s)"
+          % ("PASS" if ok else "FAIL", _argv))
+    if not ok:
+        print("        stdout 尾部=%r" % _wiz.stdout[-300:])
+    passed += ok
+    failed += not ok
+
+    # 复合模式名的参数映射(modes.py)。少一个键就静默出事:merge_params 只留
+    # needed 里的字段 -> router.yaml 里那档的账密被整块丢掉,而桥接有自己的历史
+    # 默认账号,于是拿默认账号拨上去、报告照样绿。家族块(pptp:/l2tp:)也必须
+    # 对复合名生效 —— 台架给 PPTP 和 L2TP 的是两套账号。
+    _saved = {"pppoe_user": "flat", "pppoe_pass": "flatpw",
+              "pptp": {"vpn_server": "10.0.0.1", "vpn_user": "pu",
+                       "vpn_pass": "pp"},
+              "l2tp": {"vpn_server": "10.0.0.2", "vpn_user": "lu",
+                       "vpn_pass": "lp"}}
+    _p_pptp = merge_params("pptp_dynamic_public", _saved, {})
+    _p_l2tp = merge_params("l2tp_dynamic_internet", _saved, {})
+    _p_pppoe = merge_params("pppoe_static_internet", _saved, {})
+    ok = (_p_pptp == {"vpn_server": "10.0.0.1", "vpn_user": "pu",
+                      "vpn_pass": "pp"}
+          and _p_l2tp == {"vpn_server": "10.0.0.2", "vpn_user": "lu",
+                          "vpn_pass": "lp"}
+          and _p_pppoe == {"pppoe_user": "flat", "pppoe_pass": "flatpw"}
+          and "vpn_user" not in merge_params("dynamic", _saved, {}))
+    print("[%s] 复合模式名按家族取账密(pptp/l2tp 两套不混)"
+          % ("PASS" if ok else "FAIL"))
+    if not ok:
+        print("        pptp=%s l2tp=%s pppoe=%s" % (_p_pptp, _p_l2tp, _p_pppoe))
     passed += ok
     failed += not ok
 
@@ -478,6 +812,49 @@ def main():
     from tools.check_model import main as check_main
     ok = check_main(["--all"]) == 0
     print("[%s] check_model --all" % ("PASS" if ok else "FAIL"))
+    passed += ok
+    failed += not ok
+
+    # route="bridge":不走 Web UI 的机型(py2 侧走 HTTP API)。体检必须换一套
+    # 必填项 —— 拿浏览器那套去要求它,只会逼人往 FACTS 里填假选择器,那比不
+    # 检查更糟。同时它得继续抓住这条路线**自己**的致命错:
+    #   * 模式名和桥接的 MODES 不一致 -> 桥接退出码 3,一次都不会下发;
+    #   * 真正的回读撞车(两个模式回读同一个串,而它们下发的**不是**同一支)。
+    # 唯一放行的撞车是只差 _internet/_public 的那对 —— 桥接里同一支 elif,
+    # 后缀只决定 Chariot 打哪个远端。
+    from tools.check_model import check_facts as _cf
+    _SRC = "FACTS = {}\ndef run(facts=None, mode='dynamic', **kw):\n    pass\n" \
+           "sys.exit(run_cli(FACTS, runner=run))\n"
+    _bridge_facts = {
+        "brand": "TPLink", "model": "Demo", "route": "bridge",
+        "url": "http://192.168.0.1", "bridge": "tools/routerctrl_bridge.py",
+        "modes": {"dynamic": "Dynamic IP", "static": "Static IP",
+                  "pppoe": "PPPoE",
+                  "pptp_dynamic_internet": "PPTP",
+                  "pptp_dynamic_public": "PPTP",
+                  "l2tp_dynamic_internet": "L2TP",
+                  "l2tp_dynamic_public": "L2TP"},
+    }
+    good = _cf("TPLink_Demo", _bridge_facts, _SRC)
+    typo = _cf("t", dict(_bridge_facts, modes=dict(
+        _bridge_facts["modes"], pptp_dyanamic_internet="PPTP")), _SRC)
+    clash = _cf("t", dict(_bridge_facts, modes={
+        "pppoe": "PPPoE", "pptp_dynamic_internet": "PPPoE"}), _SRC)
+    nobridge = _cf("t", {k: v for k, v in _bridge_facts.items()
+                         if k != "bridge"}, _SRC)
+    ok = (good.ok                                    # 没有 dial/apply 也算自洽
+          and any("同一支下发" in n for n in good.notes)   # 那对撞车只是说明
+          and not typo.ok
+          and any("MODES" in e for e in typo.errors)
+          and not clash.ok
+          and any("分不开" in e for e in clash.errors)
+          and not nobridge.ok)
+    print("[%s] check_model 认 route=bridge(好的过、模式名错的拦、真撞车的拦)"
+          % ("PASS" if ok else "FAIL"))
+    if not ok:
+        print("        good.errors=%s notes=%s\n        typo=%s clash=%s "
+              "nobridge=%s" % (good.errors, good.notes, typo.errors,
+                               clash.errors, nobridge.errors))
     passed += ok
     failed += not ok
 

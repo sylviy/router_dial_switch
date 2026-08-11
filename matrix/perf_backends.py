@@ -91,22 +91,33 @@ class SimulatorBackend(PerfBackend):
 
 # --------------------------------------------------------------------------
 def _last_json(text: str) -> Optional[dict]:
-    """从后往前找第一行能解析成 JSON 对象的,没有就 None。
+    """从后往前找第一个能解析成 JSON 对象的片段,没有就 None。
 
     不能直接取最后一行:台架实测 PyChariot 自己带 logging,一 import 就打
     `DEBUG:ChariotApi:...` 之类的行,收尾时也可能再吐几行。结果 JSON 是
     chariot_perf.py 打的最后一条**有效**输出,不一定是最后一条输出。
+
+    也不能要求 JSON **正好起一行**:Chariot 的错误是它自己的原生库直接写
+    stdout 的,不走 Python 的缓冲、而且末尾**没有换行**,于是我们那行 JSON 会
+    被接在它后面:
+
+        Error was detected at M{"mbps": 283.63, "samples": [...]}
+
+    2026-08-10 台架实测:PPTP 那一格明明测到了 283.63 Mbps,却因为这一条被
+    记成 `err`("输出里没有 JSON 结果")—— 一次**成功的测量被报成失败**。
+    所以这里改成:每一行从任意 `{` 开始试着解析,并容忍后面还有别的字符。
     """
+    decoder = json.JSONDecoder()
     for line in reversed((text or "").strip().splitlines()):
-        line = line.strip()
-        if not line.startswith("{"):
-            continue
-        try:
-            data = json.loads(line)
-        except ValueError:
-            continue
-        if isinstance(data, dict):
-            return data
+        at = line.find("{")
+        while at >= 0:
+            try:
+                data, _end = decoder.raw_decode(line[at:])
+            except ValueError:
+                data = None
+            if isinstance(data, dict):
+                return data
+            at = line.find("{", at + 1)
     return None
 
 

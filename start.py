@@ -182,6 +182,8 @@ def main(argv=None) -> int:
         return run_setup()
 
     from matrix.run import all_modes, runner_for
+    # "要不要管理密码"只有一处判据(桥接路线没有 login 键但一样要密码)。
+    from models._driver import needs_admin_pass
 
     print("==== 路由器拨号切换 / WAN 性能测试 ====")
     names = list_models()
@@ -233,12 +235,12 @@ def main(argv=None) -> int:
         if not _ensure_perf_config(name):
             return 0
         pw = ""
-        if facts.get("login"):
+        if needs_admin_pass(facts):
             pw = _ask_secret("管理密码%s: " % ("(回车=用 router.yaml 存的)"
                                               if saved.get("pass") else ""),
                              str(saved.get("pass") or ""))
             if not pw:
-                print("[X] 这台机要登录,必须给管理密码。")
+                print("[X] 这台机切档要管理密码,不能空着。")
                 return 2
         # 整轮要用到的宽带账号:把缺的问齐,并存进 router.yaml 供逐模式取用
         # 逐档问,不合并成一个字段清单:L2TP 和 PPTP 用同一套字段名
@@ -274,7 +276,13 @@ def main(argv=None) -> int:
             print("已存进 router.yaml(仅本机,git 忽略)。")
         print("开始整轮:每档拨号方式都会真正下发。开跑前会先把参数逐条核一遍,"
               "有问题会拦住并告诉你改哪一行。")
-        cmd = ["--model", name, "--pass", pw]
+        # **空密码就别传 --pass。** 显式的空字符串会盖掉 run_matrix 的默认值
+        # (它的默认值就是 router.yaml 里的 pass)—— 于是"yaml 明明配了、
+        # 整轮却每一档都说没有管理密码"。传空值覆盖已配好的默认,是这一类
+        # 故障的通用形状,别只在这一处防。
+        cmd = ["--model", name]
+        if pw:
+            cmd += ["--pass", pw]
         if args.headless:
             cmd.append("--headless")
         return matrix_main(cmd)
@@ -289,12 +297,12 @@ def main(argv=None) -> int:
     mode = modes[_pick("选模式", len(modes)) - 1]
 
     pw = ""
-    if facts.get("login"):
+    if needs_admin_pass(facts):
         pw = _ask_secret("管理密码%s: " % ("(回车=用 router.yaml 存的)"
                                           if saved.get("pass") else ""),
                          str(saved.get("pass") or ""))
         if not pw:
-            print("[X] 这台机要登录,必须给管理密码。")
+            print("[X] 这台机切档要管理密码,不能空着。")
             return 2
 
     params = merge_params(mode, saved.get("params") or {}, {})
@@ -310,7 +318,10 @@ def main(argv=None) -> int:
                 typed_params[field] = val
 
     # 台架语义:切了就下发(想只看回读不保存,用 python models/<型号>.py <mode>)
-    print("运行中(会打开 Chrome,别动它;切换会真正下发)...")
+    print("运行中(%s;切换会真正下发)..."
+          % ("会打开 Chrome,别动它"
+             if (facts.get("route") or "browser") == "browser"
+             else "不开浏览器,走 HTTP 桥接"))
     # 型号脚本自带 run() 就用它(Buffalo 那类特例 UI),否则用共享驱动。
     res = runner_for(name)(facts, mode, params=params, apply=True,
                            admin_pass=pw, url=args.url,
