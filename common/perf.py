@@ -122,7 +122,7 @@ class Cfg(dict):
             return
         raise ConfigError("\n".join(
             ["配置没填全,这一轮没有开始(没有碰路由器):"]
-            + ["  * %s:%s 没填 —— %s" % (self.where(d), d, _HINTS.get(d, ""))
+            + ["  * %s:%s 没填 —— %s" % (self.where(d), d, _hint(d))
                for d in missing]
             + ["", "用记事本打开 %s 补上;每一项该填什么见 %s。"
                % (self.source or CONFIG_PATH, os.path.basename(EXAMPLE_PATH))]))
@@ -155,8 +155,20 @@ _HINTS = {
                      "如 C:\\Python26\\python.exe(只有 TPLink 路线用)",
     "bench.injector_ip": "注入机 IP:接在被测机 LAN 口上、装了 Chariot "
                          "Endpoint 的那台电脑",
-    "bench.endpoints": "各档的对端(e2)IP,按拨号方式写,如 {pppoe: 192.168.203.1}",
+    "bench.endpoints": "这一档的对端(e2)IP —— 切到这一档之后,Chariot 打哪台",
+    "bench.wan_up_hosts": "这一档拨通后 ping 谁算通(直连档和隧道档不在同一网段)",
 }
+
+
+def _hint(dotted: str) -> str:
+    """这一项该填什么。按档写的项(bench.endpoints.pppoe)回落到父级说明,
+    这样每加一档都不用再补一条提示。"""
+    if dotted in _HINTS:
+        return _HINTS[dotted]
+    parent, _, leaf = dotted.rpartition(".")
+    if parent in _HINTS:
+        return "%s(这一档是 %s)" % (_HINTS[parent], leaf)
+    return ""
 
 
 def load(path: str = CONFIG_PATH, model: str = "") -> Cfg:

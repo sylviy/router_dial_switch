@@ -119,6 +119,37 @@ def _is_new_shape(name: str) -> bool:
                             "switch", None))
 
 
+def _empty(value) -> bool:
+    return (value is None or not str(value).strip()
+            or str(value).strip() == "FILL_ME")
+
+
+def _is_chariot(cfg) -> bool:
+    return str(cfg.at("run.backend") or "").lower() == "chariot"
+
+
+def _bench_needs(cfg, planned) -> list:
+    """整轮**测吞吐**还缺哪些台架接线。只切档(菜单 1/2)一项都不用。
+
+    simulate 后端不碰仪表,所以整段跳过。chariot 才逐档核对:对端打谁、
+    拨通后 ping 谁 —— 这两样猜错都不会报错,只会给一份打错了口、数字却很
+    正常的报告,所以宁可开跑前拦住。写了全局的 public_ip/internet_ip
+    (或 wan_up_host)就算有兜底,不再逐档要求。
+    """
+    if not _is_chariot(cfg):
+        return []
+    need = ["bench.injector_ip"]
+    has_peer_fallback = not (_empty(cfg.at("bench.public_ip"))
+                             or _empty(cfg.at("bench.internet_ip")))
+    has_ping_fallback = not _empty(cfg.at("bench.wan_up_host"))
+    for mode in planned:
+        if not has_peer_fallback and _empty(cfg.at("bench.endpoints.%s" % mode)):
+            need.append("bench.endpoints.%s" % mode)
+        if not has_ping_fallback and _empty(cfg.at("bench.wan_up_hosts.%s" % mode)):
+            need.append("bench.wan_up_hosts.%s" % mode)
+    return need
+
+
 def _run_new_shape(name: str) -> int:
     """新形状型号的向导。**不问密码** —— 配置只有 config.yaml 一处,
     缺什么会指到具体哪一行,用记事本补完再来。"""
@@ -159,17 +190,29 @@ def _run_new_shape(name: str) -> int:
     for m in (planned if action == 3 else modes):
         needs += list((getattr(mod, "NEEDS", {}) or {}).get(m, {}).values())
     if action == 5:
+        # 只切档(菜单 1/2)用不到 bench 段,所以分开说 —— 免得同事以为
+        # "还没填注入机 IP 就不能试切"。
         try:
             cfg.require(*sorted(set(needs)))
+            print("切换要用的配置都填好了(%s)。" % cfg.source)
         except SystemExit as exc:
             print(exc)
-            return 1
-        print("config.yaml 该填的都填了(%s)。" % cfg.source)
+        bench = _bench_needs(cfg, planned)
+        if bench:
+            print("\n---- 以上够用来切档了。下面这些只有整轮测吞吐(菜单 3)才要 ----")
+            try:
+                cfg.require(*bench)
+            except SystemExit as exc:
+                print(exc)
+        else:
+            print("整轮测吞吐要用的台架接线也齐了。" if _is_chariot(cfg) else
+                  "backend 现在是 simulate(离线模拟),bench 段不用填 —— "
+                  "要出真数字时改成 chariot,再回来看这一项。")
         return 0
 
     if action == 3:
         try:
-            cfg.require("router.ip", "router.pass")
+            cfg.require("router.ip", "router.pass", *_bench_needs(cfg, planned))
         except SystemExit as exc:
             print(exc)
             return 1
