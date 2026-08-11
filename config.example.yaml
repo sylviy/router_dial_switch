@@ -8,6 +8,10 @@
 # 空字符串 "" 和 FILL_ME 都算「没填」。
 # 只有这一个配置文件:旧的 router.yaml / perf.yaml / perf_configs/*.yaml
 # 全部并进来了(哪一项去了哪一节,见 MIGRATION.md)。
+#
+# **换一台被测机要改的只有两处**:router.ip,和 run.dial_modes(这轮测哪几档)。
+# 下面 bench 段的台架接线是按**拨号方式**走的 —— pppoe 拨通后对端就是那个
+# 隧道网段,换哪台路由器都一样 —— 所以换机器不用动它。
 
 # ===========================================================================
 # router —— 被测路由器本身:管理地址、管理密码、各档要用的拨号账号
@@ -62,11 +66,17 @@ bench:
   # **别省着不写**:不写的档会回落到"名字里像直连就打 public_ip、
   # 否则打 internet_ip"那条猜路规则 —— 猜错不会报错,只会给你一份
   # 打错了口、数字却很正常的报告(日本 IPoE 四档就会被猜错)。
-  endpoints: {}
-  # endpoints:
-  #   dynamic:   192.168.202.99
-  #   pppoe:     192.168.203.1
-  #   transix:   192.168.202.66
+  #
+  # 这里按档写,不按机器写:哪台路由器拨的 pppoe,对端都是同一个隧道网段。
+  # 某台机才有的档(BUFFALO 的 transix / TPLink 的 pptp_dynamic_public)
+  # 也一起写在这里,别的机器用不到它,多写无害。
+  endpoints:
+    dynamic: ""        # 直连侧,如 192.168.202.99
+    pppoe:   ""        # 隧道侧,如 192.168.203.1
+    pptp:    ""
+    l2tp:    ""
+    # transix:               192.168.202.66   # 只有 BUFFALO 有
+    # pptp_dynamic_public:   192.168.202.99   # 只有 TPLink 有
 
   # 上面 endpoints 没写到的档回落到这两个:直连侧 / 隧道侧。
   public_ip:   ""
@@ -76,11 +86,12 @@ bench:
   # 所以按档写。不写的档用 wan_up_host;ping 不通不会判失败,只是白等满
   # perf.wan_up_timeout_sec 再开测(一档浪费一分钟)。
   wan_up_method: ping        # ping = 真去 ping;wait = 只固定等待
-  wan_up_host: ""
-  wan_up_hosts: {}
-  # wan_up_hosts:
-  #   dynamic: 192.168.202.66
-  #   pppoe:   192.168.203.1
+  wan_up_host: ""            # 没在下面按档写的,用这个
+  wan_up_hosts:
+    dynamic: ""
+    pppoe:   ""
+    pptp:    ""
+    l2tp:    ""
 
   # --- 以下是 Chariot 自己的参数,台架配好一次就不用动 ---------------------
   scripts:                   # 上行 / 下行各用哪个 Chariot 脚本
@@ -112,8 +123,12 @@ perf:
 # ===========================================================================
 run:
   model: ""                  # 型号脚本名,即 models/<这里>.py。如 Cudy_AX1500
-  dial_modes: []             # **留空 = 该型号支持的档全测**(推荐)。
-                             # 只想测其中几档 / 换顺序时才写,如 [dynamic, pppoe]
+  # 这一轮测哪几档,按这里的顺序跑。默认是四种常见拨号方式。
+  # **这台机不支持的、这轮不想测的,自己删掉。** 开跑前会核对:写了这台机
+  # 不支持的档会当场拦住,并把它支持哪些列给你看(还没碰路由器)。
+  # 某台机才有的档(BUFFALO 的 transix/v6plus/ocnvc/v6connect)也写在这里。
+  # 留空 [] = 该型号声明的档全测。
+  dial_modes: [dynamic, pppoe, pptp, l2tp]
   headless: false            # true = 不弹浏览器窗口(台架上一般留 false,
                              # 出问题时能亲眼看见它点到哪儿)
   backend: simulate          # simulate = 离线模拟,不碰路由器和仪表,用来验流程
@@ -122,26 +137,4 @@ run:
 
 report:
   dir: artifacts             # 报告和截图放哪
-  title: WAN 性能矩阵
-
-# ===========================================================================
-# models —— 按型号覆盖上面任何一项。只在"这台机和别的机不一样"时才写。
-# 台架上六台机的对端 IP、要跑的档各不相同,写在这里就不用换机器时改上面。
-# 写法:models: <型号脚本名>: 后面照抄上面的结构,只写要改的那几项。
-# ===========================================================================
-models: {}
-# models:
-#   BUFFALO_WSR6000AX8:
-#     router:
-#       ip: 192.168.11.1
-#     bench:
-#       endpoints:           # JP 四档是原生直连,必须按档写死,否则会被猜成隧道档
-#         transix:   192.168.202.66
-#         v6plus:    192.168.202.66
-#     report:
-#       title: WAN 性能矩阵 BUFFALO WSR-6000AX8(含日本 IPoE)
-#
-#   TPLink_RouterCtrl:
-#     run:
-#       dial_modes: [dynamic, pppoe, pptp_dynamic_internet, pptp_dynamic_public,
-#                    l2tp_dynamic_internet, l2tp_dynamic_public]
+  title: WAN 性能矩阵        # 报告标题(型号会自动加在文件名里)

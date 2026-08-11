@@ -159,22 +159,19 @@ _HINTS = {
 }
 
 
-def _merge(base: dict, over: dict) -> dict:
-    """深合并:over 里写了的键覆盖 base,没写的保留。列表整个替换。"""
-    out = dict(base or {})
-    for key, value in (over or {}).items():
-        if isinstance(value, dict) and isinstance(out.get(key), dict):
-            out[key] = _merge(out[key], value)
-        else:
-            out[key] = value
-    return out
-
-
 def load(path: str = CONFIG_PATH, model: str = "") -> Cfg:
-    """读 config.yaml,套上 `models: <型号>:` 那一节的覆盖,返回 Cfg。
+    """读 config.yaml,返回 Cfg。
+
+    **一份全局配置,没有按型号分段。** 台架接线是按**拨号方式**走的 ——
+    pppoe 拨通后的对端就是那个隧道网段,换哪台路由器都一样 —— 所以
+    bench 段一次配好、七台机共用。换被测机时操作员只改两处:router.ip,
+    和 run.dial_modes(这轮测哪几档)。
+
+    model:调用方(--model / 向导里选的)指定的型号,盖过 run.model。它只
+    决定驱动哪个型号脚本和报告文件名,不改变任何配置值。
 
     文件不存在 / 读不动 = 当场报错。**不静默回落到默认值** —— 那样只会让
-    一轮拿着一堆默认 IP 在台架上跑，最后给出一份打错了口的报告。
+    一轮拿着一堆默认 IP 在台架上跑,最后给出一份打错了口的报告。
     """
     if yaml is None:
         raise ConfigError("没有 PyYAML,读不了 config.yaml。"
@@ -194,9 +191,7 @@ def load(path: str = CONFIG_PATH, model: str = "") -> Cfg:
         raise ConfigError("%s 的内容不是一组 `键: 值`。" % path)
 
     model = model or str(data.get("run", {}).get("model") or "")
-    per_model = (data.get("models") or {}).get(model) or {}
-    merged = _merge({k: v for k, v in data.items() if k != "models"}, per_model)
-    return Cfg(merged, source=path, lines=_line_map(text), model=model)
+    return Cfg(data, source=path, lines=_line_map(text), model=model)
 
 
 # ---------------------------------------------------------------------------
@@ -277,9 +272,16 @@ def run(switch_fn, modes, cfg: Cfg, log=print) -> dict:
     wanted = [str(m) for m in (cfg.at("run.dial_modes") or [])] or list(modes)
     unknown = [m for m in wanted if m not in modes]
     if unknown:
+        # 配置里写了这台机切不了的档。**开跑前就拦住**,别等整轮跑到那一档
+        # 才发现 —— 台架时间稀缺,而且默认的 dial_modes 是四种常见拨号方式,
+        # 遇上只支持其中两种的机器(Tenda 的 v4 列表没有 PPTP/L2TP)必然撞上。
         raise ConfigError(
-            "%s:run.dial_modes 里有这个型号不支持的档:%s(它支持:%s)"
-            % (cfg.where("run.dial_modes"), ", ".join(unknown), ", ".join(modes)))
+            "这一轮没有开始(没有碰路由器):\n"
+            "  %s:run.dial_modes 里有几档是%s切不了的 —— %s\n"
+            "  这台机支持:%s\n\n"
+            "用记事本打开 %s,把上面那几档从 run.dial_modes 里删掉。"
+            % (cfg.where("run.dial_modes"), pc.model or "该型号",
+               ", ".join(unknown), ", ".join(modes), cfg.source or CONFIG_PATH))
 
     backend = make_backend(pc)
     problem = backend.preflight()
