@@ -30,14 +30,25 @@ UI 形态:老式 **frameset** —— 登录在主文档,菜单和 WAN 表单在�
 v6,只能先升级/更换固件(升级后重新用 skill/tools/ 的探针复核)。
 
 --------------------------------------------------------------------------
+## 这个文件怎么读
+
+从上往下就是台架上会发生的事,中间不跳到别的文件:
+
+    FACTS / MODES / NEEDS   纯数据:这台机的选择器、能切哪几档、每档要哪些账密
+    _pause / _find          两个小工具。**只有这两个要先看懂**
+    switch()                主角。第 1~7 步依次是:查配置 → 开浏览器 → 登录 →
+                            走菜单 → 选档并回读 → 填账密 → 保存
+    _visible_buttons        出错时把页面上的按钮列出来当证据
+    _screenshot / main()    截图、命令行
+
 这个文件是**自足**的:除了 common/contract.py(判定)和 common/perf.py
-(整轮节拍 + 读 config.yaml),不依赖仓库里任何别的代码。下面那几个 _find /
-_poll 小工具在别的型号脚本里也有一份几乎一样的 —— **那是故意的**。共用一层
-"动词库"的代价是:改第六台机有可能悄悄弄坏前五台,而那种坏法是静默的
-(切了、看起来成功、保存的是旧值)。重复换来的是:删掉任意一个型号文件,
-其余六个照跑。
+(整轮节拍 + 读 config.yaml),不依赖仓库里任何别的代码。_pause / _find 在
+别的型号脚本里也有一份几乎一样的 —— **那是故意的**。共用一层"动词库"的
+代价是:改第六台机有可能悄悄弄坏前五台,而那种坏法是静默的(切了、看起来
+成功、保存的是旧值)。重复换来的是:删掉任意一个型号文件,其余六个照跑。
 """
 import argparse
+import json
 import os
 import sys
 
@@ -115,110 +126,125 @@ NEEDS = {
              "vpn_pass": "router.l2tp.pass"},
 }
 
-_NAV_MS, _DIAL_MS, _FIELD_MS, _LOGIN_MS = 6000, 8000, 3000, 8000
-_STEP_MS, _SETTLE_MS = 200, 300
+# 各步最多等多久(毫秒)。老 UI 是整页刷新,给得比 SPA 宽一点。
+_LOGIN_MS, _NAV_MS, _DIAL_MS, _FIELD_MS = 8000, 6000, 8000, 3000
+_STEP_MS, _PAUSE_MS = 200, 300
+
+
+class _Stop(Exception):
+    """半路走不下去了(没找到控件、登录没进去……)。
+
+    用异常而不是 return:失败也要**先截图再关浏览器**,那张截图正是排查
+    要用的东西。switch() 在一个地方接住它,截完图再把原因写进结果。
+    """
 
 
 # ---------------------------------------------------------------------------
-# 这台机自己的几个小工具(和别的型号脚本重复是故意的,见文件头)
+# 两个小工具。整个文件只有这两个需要先看懂,别的都是照着流程念下来的。
+# 别的型号脚本里会有几乎一样的两份 —— 那是故意的,见文件头。
 # ---------------------------------------------------------------------------
-def _settle(page, ms=_SETTLE_MS):
-    """等页面消化上一步操作(这台机是整页刷新的老 UI)。"""
+def _pause(page, ms=_PAUSE_MS):
+    """等一会儿,让页面消化上一步操作(这台机是整页刷新的老 UI)。"""
     try:
         page.wait_for_timeout(ms)
     except Exception:
         pass
 
 
-def _poll(page, fn, timeout_ms, step_ms=_STEP_MS):
-    """反复执行 fn 直到返回真值或超时;fn 抛异常按"还没好"处理。"""
+def _find(page, sel, wait_ms=0, visible=True):
+    """在**所有 frame** 里找一个元素;wait_ms 内没出现就返回 None。
+
+    为什么要扫所有 frame:这台机是老式 frameset —— 登录框在主文档、菜单在
+    顶部帧、WAN 表单在 tcpipwan.htm 子帧里。只看主文档的话什么都找不到。
+
+    visible=False:连隐藏的也认。被美化插件藏起来的原生 <select> 是
+    display:none 的,但它就是真控件。
+    """
     waited = 0
     while True:
-        try:
-            res = fn()
-        except Exception:
-            res = None
-        if res:
-            return res
-        if waited >= timeout_ms:
-            return None
-        _settle(page, step_ms)
-        waited += step_ms
-
-
-def _first_visible(locator):
-    try:
-        n = min(locator.count(), 25)
-    except Exception:
-        return None
-    for i in range(n):
-        el = locator.nth(i)
-        try:
-            if el.is_visible():
-                return el
-        except Exception:
-            continue
-    return None
-
-
-def _find(page, sel, require_visible=True):
-    """跨**所有 frame** 找第一个可见匹配。
-
-    这台机是老式 frameset:登录在主文档、菜单在 top frame、WAN 表单在
-    tcpipwan.htm 子 frame —— 只扫主文档的话什么都找不到。
-    require_visible=False 时也接受隐藏元素(被美化插件藏起来的原生 <select>
-    是 display:none 的)。
-    """
-    try:
-        frames = list(page.frames)
-    except Exception:
-        frames = []
-    for fr in frames:
-        try:
-            loc = fr.locator(sel)
-        except Exception:
-            continue
-        el = _first_visible(loc)
-        if el:
-            return el
-        if not require_visible:
+        for fr in list(page.frames):
             try:
-                if loc.count() > 0:
-                    return loc.first
+                loc = fr.locator(sel)
+                count = min(loc.count(), 25)
             except Exception:
-                pass
-    return None
+                continue
+            for i in range(count):
+                el = loc.nth(i)
+                try:
+                    if el.is_visible():
+                        return el
+                except Exception:
+                    continue
+            if not visible and count:
+                return loc.first
+        if waited >= wait_ms:
+            return None
+        _pause(page, _STEP_MS)
+        waited += _STEP_MS
 
 
-def _facts_for(mode):
-    """套 mode_overrides:被覆盖的键整个替换(PPTP/L2TP 各有一套 fields)。"""
-    merged = dict(FACTS)
-    for key, value in (FACTS.get("mode_overrides") or {}).get(mode, {}).items():
-        merged[key] = value
-    return merged
+# ---------------------------------------------------------------------------
+# 切换:登录 → 走菜单 → 选档(当场回读)→ 填账密 → 保存
+# ---------------------------------------------------------------------------
+def switch(mode, cfg, hook=None):
+    """把这台机的 WAN 拨号方式切成 mode,返回 contract.result(...)。
 
+    从上往下读就是这台机在浏览器里被点了些什么,中间没有跳转到别的文件。
 
-def _params_for(mode, cfg):
-    """这一档要填的账密,从 config.yaml 取。返回 (参数, 缺了哪几项)。
+    要不要真的点保存看 cfg["run"]["apply"](命令行的 --apply / 整轮时恒为
+    真)。默认**只切换不下发** —— 切错档会当场断网,台架上没人能远程救回来。
 
-    **只取这一档要的**:PPPoE 账密绝不会漏进 dynamic 的运行。
+    hook: 可选 callable(page),关浏览器前调用,返回值存进 result["verify"]。
+    冒烟测试用它读页面上的 toast(证明保存键真的按下去了、而且按的是对的
+    那个);将来接"WAN 真拨通"验证也在这。
     """
+    # --- 0. 这一档要用的事实和账密 -----------------------------------------
+    facts = dict(FACTS)
+    for key, value in (FACTS.get("mode_overrides") or {}).get(mode, {}).items():
+        facts[key] = value                  # PPTP/L2TP 各有一套 fields
+    label = (facts.get("modes") or {}).get(mode, "")
+    ident = {"brand": FACTS["brand"], "model": FACTS["model"], "mode": mode}
+    warnings, filled = [], []
+
+    def done(read_back, message="", applied=False, screenshot="", verify=None):
+        """这个函数唯一的出口。success 只能由 contract.verify() 算出来 ——
+        回读值等于目标措辞才算数,空回读永远判假。"""
+        res = contract.result(contract.verify(read_back, label), read_back,
+                              label, message=message, screenshot=screenshot,
+                              applied=applied, filled=filled,
+                              warnings=warnings, **ident)
+        if hook is not None:
+            res["verify"] = verify
+        return res
+
+    # --- 1. 碰路由器之前:档位对不对、配置齐不齐 -----------------------------
+    if mode not in MODES:
+        return done("", "这台机不支持 %r(支持:%s)" % (mode, ", ".join(MODES)))
+
     params, missing = {}, []
     for concept, where in NEEDS.get(mode, {}).items():
-        value = cfg.at(where)
-        if value is None or not str(value).strip():
-            missing.append(where)
+        value = cfg.at(where)               # 只取这一档要的:PPPoE 账密绝不
+        if value is None or not str(value).strip():   # 会漏进 dynamic 的运行
+            missing.append("%s(%s)" % (where, cfg.where(where)))
         else:
             params[concept] = str(value)
-    return params, missing
+    if missing:
+        return done("", "切 %s 缺配置:%s。用记事本补上,这一档没有碰路由器。"
+                        % (mode, "、".join(missing)))
 
+    admin_pass = str(cfg.at("router.pass") or "")
+    if not admin_pass:
+        return done("", "没有管理密码:%s 的 router.pass 没填。"
+                        % cfg.where("router.pass"))
 
-def _launch(cfg):
-    """开浏览器,返回 (playwright, browser, context, page)。
+    url = str(cfg.at("router.ip") or FACTS["url"]).strip()
+    if not url.startswith("http"):
+        url = "http://" + url
+    apply_it = bool(cfg.at("run.apply"))
 
-    离线优先级:config.yaml 写死的可执行文件 -> 系统装的 Chrome(channel)
-    -> Playwright 自带的 chromium(要预置浏览器包)。台架是离线的,不会去下载。
-    """
+    # --- 2. 开浏览器 --------------------------------------------------------
+    # 离线优先级:config.yaml 写死的可执行文件 -> 系统装的 Chrome ->
+    # Playwright 自带的 chromium(要预置浏览器包)。台架离线,不会去下载。
     from playwright.sync_api import sync_playwright
 
     exe = cfg.at("bench.browser_path") or os.environ.get("ROUTER_BROWSER_PATH")
@@ -240,10 +266,148 @@ def _launch(cfg):
     context = browser.new_context(ignore_https_errors=True)
     context.set_default_timeout(15000)
     context.set_default_navigation_timeout(30000)
-    return pw, browser, context, context.new_page()
+    page = context.new_page()
+
+    read_back, message, applied = "", "", False
+    try:
+        page.goto(url, wait_until="domcontentloaded")
+
+        # --- 3. 登录 --------------------------------------------------------
+        # 密码框没出现 = 已经在会话里,直接往下走。填了却还停在登录页 =
+        # 如实报登录失败,不能带着未登录状态往下走再误报"找不到拨号控件"。
+        pw_sel = facts["login"]["password"]
+        pwd = _find(page, pw_sel, wait_ms=_LOGIN_MS)
+        if pwd:
+            pwd.fill(admin_pass)
+            btn = _find(page, facts["login"]["button"], wait_ms=2000)
+            if btn:
+                btn.click()
+            else:
+                pwd.press("Enter")
+            waited = 0
+            while _find(page, pw_sel) is not None:      # 等密码框消失
+                if waited >= _LOGIN_MS:
+                    raise _Stop("登录失败 —— 仍停在登录页。检查 %s 的管理密码;"
+                                "另外这台机同一时间只允许一个 Web 会话,"
+                                "先关掉其他已登录的页签。"
+                                % cfg.where("router.pass"))
+                _pause(page, _STEP_MS)
+                waited += _STEP_MS
+
+        # --- 4. 走菜单:Network -> WAN ---------------------------------------
+        # 登录后默认落在 Management/Status,必须点过去。两个锚点分别在顶部
+        # 菜单帧和左侧菜单帧里(所以 _find 是全 frame 扫的)。
+        for item in facts["wan_path"]:
+            el = _find(page, item[4:], wait_ms=_NAV_MS)    # "sel:" 前缀
+            if el:
+                el.click()
+                _pause(page)
+            else:
+                warnings.append("菜单没找到:%r" % item)
+
+        # --- 5. 选档,当场真实回读 -------------------------------------------
+        # 原生 <select>,可能被美化插件藏起来,所以 visible=False +
+        # select_option(force=True):它会派发 input+change,美化皮和路由器
+        # 自己的 JS 都监听得到。
+        css = facts["dial"]["selector"]
+        dial = _find(page, css, wait_ms=_DIAL_MS, visible=False)
+        if not dial:
+            raise _Stop("没找到拨号控件:%s" % css)
+        try:
+            dial.select_option(label=label, force=True)
+        except Exception as exc:
+            try:
+                seen = dial.evaluate(
+                    "el => Array.from(el.options).map(o => o.text).join(' / ')")
+            except Exception:
+                seen = ""
+            raise _Stop("select_option(%r) 失败:%s%s"
+                        % (label, exc, "(选项有:%s)" % seen if seen else ""))
+        _pause(page)
+        try:
+            read_back = (dial.evaluate(
+                "el => el.options[el.selectedIndex]"
+                " ? el.options[el.selectedIndex].text : ''") or "").strip()
+        except Exception:
+            read_back = ""
+
+        # --- 6. 填账密 --------------------------------------------------------
+        # **回读没通过就不填**:页面状态还不明,填进去等于往未知表单里打字。
+        if contract.verify(read_back, label):
+            for concept in NEEDS.get(mode, {}):
+                field_sel = (facts.get("fields") or {}).get(concept)
+                if not field_sel:
+                    warnings.append("FACTS.fields 缺 %r 的选择器" % concept)
+                    continue
+                # 账密框在选完模式后才挂载,等它出现。
+                el = _find(page, field_sel, wait_ms=_FIELD_MS)
+                if el:
+                    el.fill(params[concept])
+                    filled.append(concept)
+                else:
+                    warnings.append("输入框没出现:%s -> %s" % (concept, field_sel))
+
+            # --- 7. 保存(只有回读通过、且这一轮要求下发时才点)---------------
+            # 保存键旁边埋着 8 个隐藏的 Connect/Disconnect 提交按钮,全是诱饵
+            # —— 只认 input[name='save_apply'],绝不按文字 "Connect" 找。
+            if apply_it:
+                btn = _find(page, facts["apply"], wait_ms=_FIELD_MS)
+                if btn:
+                    btn.click()
+                    applied = True
+                    _pause(page, FACTS.get("apply_settle_ms", 500))
+                else:
+                    warnings.append("保存键没找到:%s%s"
+                                    % (facts["apply"], _visible_buttons(page)))
+    except _Stop as stop:
+        message = str(stop)
+    finally:
+        # 成败都走到这:失败时的截图正是排查要用的证据。
+        verify_out = None
+        if hook is not None:
+            try:
+                verify_out = hook(page)
+            except Exception as exc:
+                warnings.append("hook: %s" % exc)
+        shot = _screenshot(page, cfg, mode)
+        for closer in (context, browser):
+            try:
+                closer.close()
+            except Exception:
+                pass
+        try:
+            pw.stop()
+        except Exception:
+            pass
+
+    return done(read_back, message, applied=applied, screenshot=shot,
+                verify=verify_out)
 
 
-def _shot(page, cfg, mode):
+def _visible_buttons(page):
+    """页面上真正可见的按钮清单,拼进"保存键没找到"的警告里。
+
+    证据优先:真机上出过一次"按钮文字在里层 span,选择器漏了"—— 有这张
+    清单就不用为了看一眼页面再上一次台架。
+    input[type=submit] 的文字在 value 里,所以两种都读。
+    """
+    seen = []
+    for fr in list(page.frames):
+        try:
+            loc = fr.locator("button, input[type=submit], input[type=button]")
+            for i in range(min(loc.count(), 12)):
+                b = loc.nth(i)
+                if not b.is_visible():
+                    continue
+                txt = (b.inner_text() or "").strip() or (b.input_value() or "").strip()
+                if txt and txt not in seen:
+                    seen.append(txt)
+        except Exception:
+            continue
+    return "(页面可见按钮:%s)" % " / ".join(seen) if seen else ""
+
+
+def _screenshot(page, cfg, mode):
     """整页截图存进 artifacts/;失败返回空串,绝不因此中断一轮。"""
     try:
         out_dir = cfg.at("report.dir") or "artifacts"
@@ -255,205 +419,6 @@ def _shot(page, cfg, mode):
         return path
     except Exception:
         return ""
-
-
-# ---------------------------------------------------------------------------
-# 切换:登录 → 走菜单 → 选档(当场回读)→ 填账密 → 保存
-# ---------------------------------------------------------------------------
-def switch(mode, cfg, hook=None):
-    """把这台机的 WAN 拨号方式切成 mode,返回 contract.result(...)。
-
-    要不要真的点保存看 cfg["run"]["apply"](CLI 的 --apply / 整轮时恒为真)。
-    默认**只切换不下发** —— 切错档会当场断网,台架上没人能远程救回来。
-
-    hook: 可选 callable(page),关浏览器前调用,返回值存进 result["verify"]。
-    冒烟测试用它读页面上的 toast(证明保存键真的按下去了、而且按的是对的
-    那个);将来接"WAN 真拨通"验证也在这。
-    """
-    facts = _facts_for(mode)
-    label = (facts.get("modes") or {}).get(mode, "")
-    ident = {"brand": FACTS["brand"], "model": FACTS["model"], "mode": mode}
-    warnings = []
-
-    def failed(message, read_back=""):
-        # 失败也只能走 verify():空回读永远判假,伪造不出成功。
-        return contract.result(contract.verify(read_back, label), read_back,
-                               label, message=message, warnings=warnings, **ident)
-
-    if mode not in MODES:
-        return failed("这台机不支持 %r(支持:%s)" % (mode, ", ".join(MODES)))
-
-    # --- 碰路由器之前:配置齐不齐 -------------------------------------------
-    params, missing = _params_for(mode, cfg)
-    if missing:
-        return failed(
-            "切 %s 缺配置:%s。用记事本补 %s,这一档没有碰路由器。"
-            % (mode, "、".join("%s(%s)" % (m, cfg.where(m)) for m in missing),
-               cfg.source or "config.yaml"))
-    admin_pass = str(cfg.at("router.pass") or "")
-    if not admin_pass:
-        return failed("没有管理密码:%s 的 router.pass 没填。"
-                      % cfg.where("router.pass"))
-    url = str(cfg.at("router.ip") or FACTS["url"]).strip()
-    if not url.startswith("http"):
-        url = "http://" + url
-
-    apply_it = bool(cfg.at("run.apply"))
-    pw = browser = context = page = None
-    read_back, verdict, message, applied, filled = "", None, "", False, []
-    verify_out, shot = None, ""
-
-    def drive(page):
-        """开着浏览器的那一段。返回失败原因(空串 = 走完了)。
-
-        **中途失败不 return 出去**,而是把原因交回给外面 —— 外面统一截图 +
-        跑 hook 再关浏览器。失败时那张截图正是排查要用的东西,早退就没有了。
-        """
-        nonlocal read_back, verdict, applied, filled
-
-        # --- 登录 -----------------------------------------------------------
-        # 登录框是主文档里的 #pwd。没出现 = 已经在会话里(直接往下走);
-        # 填了却还停在登录页 = 如实报登录失败,不能带着未登录状态往下走再
-        # 误报"找不到拨号控件"。
-        pw_sel = facts["login"]["password"]
-        pwd = _poll(page, lambda: _find(page, pw_sel), _LOGIN_MS)
-        if pwd:
-            pwd.fill(admin_pass)
-            btn = _poll(page, lambda: _find(page, facts["login"]["button"]), 2000)
-            if btn:
-                btn.click()
-            else:
-                pwd.press("Enter")
-            if not _poll(page, lambda: _find(page, pw_sel) is None, _LOGIN_MS):
-                return ("登录失败 —— 仍停在登录页。检查 %s 的管理密码;"
-                        "另外这台机同一时间只允许一个 Web 会话,"
-                        "先关掉其他已登录的页签。" % cfg.where("router.pass"))
-
-        # --- 走菜单:Network -> WAN ------------------------------------------
-        # 登录后默认落在 Management/Status,必须点过去。两个锚点分别在顶部
-        # 菜单帧和左侧菜单帧里 —— 所以 _find 是全 frame 扫的。
-        for item in facts["wan_path"]:
-            sel = item[4:] if item.startswith("sel:") else item
-            el = _poll(page, lambda s=sel: _find(page, s), _NAV_MS)
-            if el:
-                el.click()
-                _settle(page)
-            else:
-                warnings.append("菜单没找到:%r" % item)
-
-        # --- 选档 + 当场真实回读 ---------------------------------------------
-        # 原生 <select>,可能被美化插件藏起来(display:none),所以
-        # require_visible=False + select_option(force=True):它会派发
-        # input+change,美化皮和路由器自己的 JS 都监听得到。
-        css = facts["dial"]["selector"]
-        sel_el = _poll(page, lambda: _find(page, css, require_visible=False),
-                       _DIAL_MS)
-        if not sel_el:
-            return "没找到拨号控件:%s" % css
-        try:
-            sel_el.select_option(label=label, force=True)
-        except Exception as exc:
-            try:
-                seen = sel_el.evaluate(
-                    "el => Array.from(el.options).map(o => o.text).join(' / ')")
-            except Exception:
-                seen = ""
-            return ("select_option(%r) 失败:%s%s"
-                    % (label, exc, "(选项有:%s)" % seen if seen else ""))
-        _settle(page)
-        try:
-            read_back = (sel_el.evaluate(
-                "el => el.options[el.selectedIndex]"
-                " ? el.options[el.selectedIndex].text : ''") or "").strip()
-        except Exception:
-            read_back = ""
-        # **这一行是这个脚本唯一的判定**:控件自己显示的当前值 == 目标措辞。
-        verdict = contract.verify(read_back, label)
-
-        # --- 填账密(回读没过就不填:页面状态还不明,填进去等于往未知表单
-        #     里打字)----------------------------------------------------------
-        if verdict:
-            for concept in NEEDS.get(mode, {}):
-                field_sel = (facts.get("fields") or {}).get(concept)
-                if not field_sel:
-                    warnings.append("FACTS.fields 缺 %r 的选择器" % concept)
-                    continue
-                # 账密框在选完模式后才挂载,等它出现。
-                el = _poll(page, lambda s=field_sel: _find(page, s), _FIELD_MS)
-                if el:
-                    el.fill(params[concept])
-                    filled.append(concept)
-                else:
-                    warnings.append("输入框没出现:%s -> %s"
-                                    % (concept, field_sel))
-
-        # --- 保存(只有回读通过、且这一轮要求下发时才点)---------------------
-        # 保存键旁边埋着 8 个隐藏的 Connect/Disconnect 提交按钮,全是诱饵 ——
-        # 只认 input[name='save_apply'],绝不按文字 "Connect" 找。
-        if verdict and apply_it:
-            btn = _poll(page, lambda: _find(page, facts["apply"]), _FIELD_MS)
-            if btn:
-                btn.click()
-                applied = True
-                _settle(page, FACTS.get("apply_settle_ms", 500))
-            else:
-                # 证据优先:把页面上真正可见的按钮列出来。真机上出过一次
-                # "按钮文字在里层 span,选择器漏了"—— 有这张清单就不用为了
-                # 看一眼页面再上一次台架。input[type=submit] 的文字在 value 里。
-                seen = []
-                for fr in page.frames:
-                    try:
-                        loc = fr.locator(
-                            "button, input[type=submit], input[type=button]")
-                        for i in range(min(loc.count(), 12)):
-                            b = loc.nth(i)
-                            if not b.is_visible():
-                                continue
-                            txt = (b.inner_text() or "").strip()
-                            if not txt:
-                                txt = (b.input_value() or "").strip()
-                            if txt and txt not in seen:
-                                seen.append(txt)
-                    except Exception:
-                        continue
-                warnings.append(
-                    "保存键没找到:%s%s"
-                    % (facts["apply"],
-                       "(页面可见按钮:%s)" % " / ".join(seen) if seen else ""))
-        return ""
-
-    try:
-        pw, browser, context, page = _launch(cfg)
-        page.goto(url, wait_until="domcontentloaded")
-        message = drive(page)
-        # 成败都跑到这:失败时的截图正是排查要用的证据。
-        if hook is not None:
-            try:
-                verify_out = hook(page)
-            except Exception as exc:
-                warnings.append("hook: %s" % exc)
-        shot = _shot(page, cfg, mode)
-    finally:
-        for closer in (context, browser):
-            try:
-                if closer:
-                    closer.close()
-            except Exception:
-                pass
-        try:
-            if pw:
-                pw.stop()
-        except Exception:
-            pass
-
-    res = contract.result(verdict if verdict is not None
-                          else contract.verify(read_back, label),
-                          read_back, label, message=message, screenshot=shot,
-                          applied=applied, filled=filled, warnings=warnings,
-                          **ident)
-    if hook is not None:
-        res["verify"] = verify_out
-    return res
 
 
 # ---------------------------------------------------------------------------
@@ -480,12 +445,11 @@ def main(argv=None):
     cfg.require("router.ip", "router.pass")
 
     if args.perf:
-        cfg.setdefault("run", {})["apply"] = True    # 整轮必定下发
+        cfg.setdefault("run", {})["apply"] = True        # 整轮必定下发
         return 0 if perf.run(switch, MODES, cfg)["ok"] else 2
 
     cfg.setdefault("run", {})["apply"] = bool(args.apply)
     res = switch(args.mode, cfg)
-    import json
     print(json.dumps(res, ensure_ascii=False, indent=2))
     if res["success"] and not args.apply:
         print("[hint] 已确认切换(回读=%r)但未点保存;加 --apply 真正下发。"
