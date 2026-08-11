@@ -106,6 +106,111 @@ def _ensure_perf_config(name: str) -> bool:
     return False
 
 
+def _is_new_shape(name: str) -> bool:
+    """这个型号脚本迁到新形状了吗(有 switch(mode, cfg))?
+
+    迁移期间两种形状并存:迁过的走 config.yaml + common/,没迁的还走
+    router.yaml + models/_driver.py。这里分派,免得同事在菜单里选到一台
+    还没迁的机器就撞一个 AttributeError。全部迁完后这个函数连同下面的老
+    分支一起删掉。
+    """
+    import importlib
+    return callable(getattr(importlib.import_module("models.%s" % name),
+                            "switch", None))
+
+
+def _run_new_shape(name: str) -> int:
+    """新形状型号的向导。**不问密码** —— 配置只有 config.yaml 一处,
+    缺什么会指到具体哪一行,用记事本补完再来。"""
+    import importlib
+
+    from common import perf as perf_mod
+
+    mod = importlib.import_module("models.%s" % name)
+    modes = list(getattr(mod, "MODES", []))
+    try:
+        cfg = perf_mod.load(model=name)
+    except SystemExit as exc:                 # config.yaml 不在 / 语法坏了
+        print(exc)
+        return 1
+
+    planned = [m for m in (cfg.at("run.dial_modes") or modes)]
+    unknown = [m for m in planned if m not in modes]
+    print("\n型号:%s" % name)
+    print("这台机支持:%s" % " / ".join(modes))
+    print("这轮要测(config.yaml 的 run.dial_modes):%s" % " / ".join(planned))
+    if unknown:
+        print("  [!] %s 这台机切不了,整轮会被拦住 —— 把它从 run.dial_modes"
+              " 里删掉(%s)。" % ("/".join(unknown), cfg.where("run.dial_modes")))
+    print("\n要做什么:")
+    print("  1. 只切一档,**只看回读不下发**(最安全,台架第一步该做这个)")
+    print("  2. 只切一档,并**真正下发**(会改路由器,切错档当场断网)")
+    print("  3. 整轮性能测试:逐档切换 → 等 WAN → 测吞吐 → 出报告(必定下发)")
+    print("  4. 离线自检:拿假路由器页面跑一遍,不碰真机")
+    print("  5. 看看 config.yaml 还差什么")
+    action = _pick("选操作", 5)
+
+    if action == 4:
+        from tests import mock_test
+        return mock_test.main([])
+
+    # 这轮要用到的配置项 = 每档要的账密(型号脚本自己声明的 NEEDS)+ 地址密码
+    needs = ["router.ip", "router.pass"]
+    for m in (planned if action == 3 else modes):
+        needs += list((getattr(mod, "NEEDS", {}) or {}).get(m, {}).values())
+    if action == 5:
+        try:
+            cfg.require(*sorted(set(needs)))
+        except SystemExit as exc:
+            print(exc)
+            return 1
+        print("config.yaml 该填的都填了(%s)。" % cfg.source)
+        return 0
+
+    if action == 3:
+        try:
+            cfg.require("router.ip", "router.pass")
+        except SystemExit as exc:
+            print(exc)
+            return 1
+        print("\n开始整轮:每档都会**真正下发**。缺账密的档会被记成失败并跳过,"
+              "不会拿空账号去覆盖路由器配置。")
+        cfg.setdefault("run", {})["apply"] = True
+        return 0 if perf_mod.run(mod.switch, modes, cfg)["ok"] else 2
+
+    # ---- 1 / 2:只切一档 ----------------------------------------------------
+    print("\n该型号支持的模式:")
+    for i, m in enumerate(modes, 1):
+        print("  %d. %s" % (i, m))
+    mode = modes[_pick("选模式", len(modes)) - 1]
+
+    if action == 2:
+        print("\n[!] 这一步会**真的改路由器**。切错档会当场断网,"
+              "台架上没人能远程救回来。")
+        print("    建议先用操作 1 看一眼回读值对不对,再回来下发。")
+        if _ask("确认下发 %s?输入 yes 继续: " % mode).lower() != "yes":
+            print("已取消,没有碰路由器。")
+            return 0
+
+    cfg.setdefault("run", {})["apply"] = (action == 2)
+    res = mod.switch(mode, cfg)
+    print("\n==== 结果 ====")
+    print("  切换   : %s" % ("成功" if res["success"] else "失败"))
+    print("  回读值 : %r   (目标措辞:%r)" % (res["read_back"], res["expected"]))
+    print("  已下发 : %s" % ("是" if res["applied"] else "否"))
+    if res["filled"]:
+        print("  填了   : %s" % "、".join(res["filled"]))
+    if res["message"]:
+        print("  说明   : %s" % res["message"])
+    for w in res["warnings"]:
+        print("  提醒   : %s" % w)
+    if res["screenshot"]:
+        print("  截图   : %s" % res["screenshot"])
+    if res["success"] and not res["applied"]:
+        print("\n回读值和目标一致 = 这一档切对了。确认无误后回来选操作 2 下发。")
+    return 0 if res["success"] else 2
+
+
 def _console_safe() -> None:
     """台架 Windows 控制台是 GBK(cp936),管道时 Python 也按 GBK 编码输出。
     路由器回读的文字里只要有一个 GBK 编不出的字符,print 就会抛
@@ -198,6 +303,10 @@ def main(argv=None) -> int:
         print("  %d. %-18s (%s)"
               % (i, name, "/".join(all_modes(facts_all[name]))))
     name = names[_pick("选型号", len(names)) - 1]
+    # 迁到新形状的型号(有 switch(mode, cfg))走 config.yaml 那条路;
+    # 还没迁的照旧走下面的老流程。全部迁完后这一行和老流程一起删。
+    if _is_new_shape(name):
+        return _run_new_shape(name)
     facts = facts_all[name]
     declared = all_modes(facts)
     # 整轮跑哪几档由 perf.yaml 说了算(没写才是全部)—— 菜单要说实话,

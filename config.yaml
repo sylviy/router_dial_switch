@@ -8,7 +8,7 @@
 # 台架接线(下面 bench 段)是按**拨号方式**走的,换机器不用动。
 
 router:
-  ip: 192.168.0.1        # 路由器管理页地址
+  ip: 192.168.10.1       # 路由器管理页地址(台架那台 Cudy AX1500)
   pass: ""               # 管理密码
   pppoe_user: ""         # 宽带账号(测 pppoe 档要用)
   pppoe_pass: ""
@@ -64,7 +64,7 @@ perf:
   protocols:  [TCP]
 
 run:
-  model: ""              # 型号脚本名,即 models/<这里>.py
+  model: Cudy_AX1500     # 型号脚本名,即 models/<这里>.py
   # 这一轮测哪几档。默认是四种常见拨号方式;这台机不支持的、这轮不想测的,
   # 自己删掉。开跑前会核对:写了这台机不支持的档会当场拦住并列出它支持哪些。
   dial_modes: [dynamic, pppoe, pptp, l2tp]
