@@ -151,10 +151,13 @@ _HINTS = {
     "router.l2tp.server": "L2TP 服务器地址",
     "router.l2tp.user": "L2TP 账号(和 PPTP 不是同一个)",
     "router.l2tp.pass": "L2TP 密码",
-    "bench.python2": "台架上装了 RouterCtrl 的那个 Python 2 的绝对路径,"
-                     "如 C:\\Python26\\python.exe(只有 TPLink 路线用)",
+    "bench.python2": "装了 PyChariot 的那个 python 的绝对路径,如 "
+                     "C:\\Python26\\python.exe。所有机型测吞吐都用它,"
+                     "不是只有 TPLink(确认:该 python -c \"import PyChariot\")",
     "bench.injector_ip": "注入机 IP:接在被测机 LAN 口上、装了 Chariot "
-                         "Endpoint 的那台电脑",
+                         "Endpoint 的那台电脑(所有频段共用一台时填它)",
+    "bench.injectors": "这个频段的注入机 IP:连在该频段上、装了 Chariot "
+                       "Endpoint 的那台电脑",
     "bench.endpoints": "这一档的对端(e2)IP —— 切到这一档之后,Chariot 打哪台",
     "bench.wan_up_hosts": "这一档拨通后 ping 谁算通(直连档和隧道档不在同一网段)",
 }
@@ -167,7 +170,7 @@ def _hint(dotted: str) -> str:
         return _HINTS[dotted]
     parent, _, leaf = dotted.rpartition(".")
     if parent in _HINTS:
-        return "%s(这一档是 %s)" % (_HINTS[parent], leaf)
+        return "%s —— 这一条是 %s 的" % (_HINTS[parent], leaf)
     return ""
 
 
@@ -222,12 +225,15 @@ def _perf_config(cfg: Cfg):
     run = cfg.get("run") or {}
     report = cfg.get("report") or {}
 
-    injectors = dict(bench.get("injectors") or {})
-    if bench.get("injector_ip"):
-        # 单台注入机(brief 里的 injector_ip)= 所有频段都用它;
-        # 按频段各有一台时用 injectors: 覆盖。
+    # 注入机(e1):按频段。injectors 里没写到的频段回落到单台的 injector_ip;
+    # 两个都没有的频段就是**没有注入机** —— 由 run() 在开跑前拦住,不猜。
+    # (以前这里空着会回落到代码里写死的历史 IP,那等于拿一个来路不明的地址
+    #  测出一份看起来很正常的报告。)
+    injectors = {str(k): str(v) for k, v in (bench.get("injectors") or {}).items()
+                 if str(v or "").strip() and str(v).strip() != "FILL_ME"}
+    if str(bench.get("injector_ip") or "").strip():
         for band in perf.get("bands") or ["lan"]:
-            injectors.setdefault(str(band), str(bench["injector_ip"]))
+            injectors.setdefault(str(band), str(bench["injector_ip"]).strip())
 
     pc = perf_config.PerfConfig()
     pc.model = cfg.model
@@ -254,7 +260,7 @@ def _perf_config(cfg: Cfg):
         internet_ip=str(bench.get("internet_ip") or base.internet_ip),
         public_ip=str(bench.get("public_ip") or base.public_ip),
         e2_ip={str(k): str(v) for k, v in (bench.get("endpoints") or {}).items()},
-        endpoints=injectors or dict(base.endpoints),
+        endpoints=injectors,
         scripts=dict(bench.get("scripts") or base.scripts),
         pairs={str(k).upper(): int(v)
                for k, v in (bench.get("pairs") or base.pairs).items()},
@@ -289,11 +295,36 @@ def run(switch_fn, modes, cfg: Cfg, log=print) -> dict:
         # 遇上只支持其中两种的机器(Tenda 的 v4 列表没有 PPTP/L2TP)必然撞上。
         raise ConfigError(
             "这一轮没有开始(没有碰路由器):\n"
-            "  %s:run.dial_modes 里有几档是%s切不了的 —— %s\n"
+            "  %s:run.dial_modes 里有几档是 %s 切不了的 —— %s\n"
             "  这台机支持:%s\n\n"
             "用记事本打开 %s,把上面那几档从 run.dial_modes 里删掉。"
             % (cfg.where("run.dial_modes"), pc.model or "该型号",
                ", ".join(unknown), ", ".join(modes), cfg.source or CONFIG_PATH))
+
+    if pc.backend == "chariot":
+        # 每个频段都得有自己的注入机。**对不上号的频段以前会悄悄改用 lan
+        # 那台** —— 于是测的是有线,报告上却写着 5GHz,数字还很正常。
+        blind = [b for b in pc.bands if not pc.chariot.endpoints.get(b)]
+        if blind:
+            raise ConfigError(
+                "这一轮没有开始(没有碰路由器):\n"
+                + "\n".join(
+                    "  %s:%s 频段没有注入机 —— 填 bench.injectors.%s"
+                    "(接在被测机 %s 上、装了 Chariot Endpoint 的那台电脑的 IP)"
+                    % (cfg.where("bench.injectors.%s" % b), b, b,
+                       "LAN 口" if b == "lan" else "%s 无线" % b)
+                    for b in blind)
+                + "\n\n所有频段共用一台就填 bench.injector_ip。"
+                  "频段名要和 perf.bands 里写的一模一样(大小写也是)。")
+        # lan 和无线共用一个 IP 基本是填错了(一台机的有线和无线是两个地址);
+        # 2GHz 和 5GHz 共用是正常的 —— 同一块网卡换 SSID 连。
+        lan_ip = pc.chariot.endpoints.get("lan")
+        same = [b for b in pc.bands
+                if b != "lan" and lan_ip and pc.chariot.endpoints.get(b) == lan_ip]
+        if same:
+            log("[!] %s 和 lan 用的是同一台注入机(%s)—— 确认一下不是填错:"
+                "同一台电脑的有线和无线是两个不同的地址,写成一个的话这几个"
+                "频段测的其实是同一条路。" % ("/".join(same), lan_ip))
 
     backend = make_backend(pc)
     problem = backend.preflight()

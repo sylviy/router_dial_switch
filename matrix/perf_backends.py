@@ -122,13 +122,18 @@ def _last_json(text: str) -> Optional[dict]:
 
 
 _PY_HINT = """
-  chariot_perf.py 在 **Python 2 和 Python 3 上都能跑**,决定它跑在哪个
-  python 里的是 perf.yaml 的 chariot.python:
-    * 留空(默认)= 用跑本工具的这个 python。**Python 3 的 Chariot 台架
-      (日本 IPoE 那套)就该留空** —— PyChariot 装在同一个 python 里。
-    * 老台架的 PyChariot 只在 Python 2 里(ActivePython 2.6.5),那里必须
-      写绝对路径:chariot.python: C:\\Python26\\python.exe
-      (那台机的 Playwright 要 3.8,两个 python 只能靠子进程隔开。)
+  chariot_perf.py 在 **Python 2 和 Python 3 上都能跑**(它的语法两边通用),
+  但 PyChariot 是装在**某一个具体解释器**里的库 —— 装在哪就只能在哪 import。
+  决定它跑在哪个 python 里的是:
+    * config.yaml 的 bench.python2 —— 已经迁到新形状的型号走这一条;
+    * perf_configs/<型号>.yaml 的 chariot.python —— 还没迁的型号走这一条。
+  怎么填:
+    * 留空(默认)= 用跑本工具的这个 python。**PyChariot 装在同一个 python
+      里的台架(日本 IPoE 那套是 Python 3)才留空。**
+    * 台架自带的 vendor\\python 是 3.8,里面**没有** PyChariot;老台架的
+      PyChariot 只在 ActivePython 2.6.5 里,那就要写绝对路径:
+          bench.python2: C:\\Python26\\python.exe
+      (同一台机的 Playwright 要 3.8,两个 python 只能靠子进程隔开。)
   确认办法:<你写的那个 python> -c "import PyChariot; print('ok')" """
 
 

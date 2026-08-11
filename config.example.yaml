@@ -57,23 +57,31 @@ bench:
   browser_path: ""
   browsers_dir: ""
 
-  # 台架上装了 RouterCtrl 的那个 Python 2 的**绝对路径**,
+  # 跑 Chariot 的解释器:装了 PyChariot 的那个 python 的**绝对路径**,
   # 例:C:\Python26\python.exe
-  # 只有 TPLink_RouterCtrl 那条路线用它(RouterCtrl 只装在那个 python 里)。
-  # 别的机型留空。同一行也是 Chariot 用的解释器:留空 = 用跑本工具的这个
-  # python(Python 3 的 Chariot 台架就留空)。
+  #
+  # **所有机型测吞吐都用这一行**,不是只有 TPLink —— TPLink 是在这之外还拿
+  # 它调 RouterCtrl。留空 = 用跑本工具的这个 python;台架上那就是
+  # vendor\python\python.exe(3.8),**里面没有 PyChariot**,整轮会在开跑前
+  # 被拦住并让你回来填这一行。PyChariot 装在同一个 python 里的台架(日本
+  # IPoE 那套是 Python 3)才留空。
+  # 确认办法:<你写的那个 python> -c "import PyChariot; print('ok')"
   python2: ""
 
   # 注入机(Chariot 的 e1):接在被测机 LAN 口上、装了 Chariot Endpoint 的
-  # 那台电脑的 IP。
+  # 那台电脑的 IP。所有频段共用这一台时填它就够。
   injector_ip: ""
 
-  # 各频段各有一台注入机时用这里按频段写(写了就盖过上面的 injector_ip)。
-  # 两个频段写同一个 IP = 把同一条路测了两遍。
-  injectors: {}
-  # injectors:
-  #   lan:  192.168.0.79
-  #   5GHz: 192.168.0.132
+  # 各频段各有一台注入机时按频段写(盖过上面的 injector_ip)。
+  # **键名要和 perf.bands 里写的一模一样**,大小写也是 —— 对不上的频段会被
+  # 当成"没有注入机",开跑前拦住(以前是悄悄改用 lan 那台,于是测的是有线、
+  # 报告上却写着 5GHz)。
+  # 2GHz 和 5GHz 常常是同一台电脑的同一块网卡(换 SSID 连),写同一个 IP
+  # 是正常的;lan 和无线写同一个 IP 基本是填错了。
+  injectors:
+    lan:  ""
+    2GHz: ""
+    5GHz: ""
 
   # 各档的**对端**(Chariot 的 e2)IP,按拨号方式写。
   # **别省着不写**:不写的档会回落到"名字里像直连就打 public_ip、

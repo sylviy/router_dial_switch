@@ -28,9 +28,18 @@ bench:
 
   # ↓↓↓ 以下全是台架接线:**只有整轮测吞吐(菜单 3)且 backend: chariot
   #     时才用得到**。只切拨号方式(菜单 1/2)一项都不读,可以先空着。
-  python2: ""            # 装了 RouterCtrl 的 Python 2 绝对路径(只 TPLink 用)
-  injector_ip: ""        # 注入机(e1):接在被测机 LAN 口上的那台
-  injectors: {}          # 按频段各有一台注入机时写这里
+  # 跑 Chariot 的解释器 = 装了 PyChariot 的那个 python 的绝对路径,
+  # 例:C:\Python26\python.exe。**所有机型测吞吐都用这一行**,不是只有
+  # TPLink(TPLink 另外还拿它调 RouterCtrl)。留空 = 用跑本工具的这个
+  # python(vendor\python\python.exe,里面没有 PyChariot)。
+  # 确认:<你写的那个 python> -c "import PyChariot; print('ok')"
+  python2: ""
+
+  injector_ip: ""        # 注入机(e1):接在被测机 LAN 口上的那台。所有频段共用
+  injectors:             # 各频段各有一台时写这里(键名要和 perf.bands 一模一样)
+    lan:  ""
+    2GHz: ""
+    5GHz: ""
 
   # 各档的对端(e2)IP。按拨号方式写死,别让它猜。
   endpoints:

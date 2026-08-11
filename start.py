@@ -138,7 +138,15 @@ def _bench_needs(cfg, planned) -> list:
     """
     if not _is_chariot(cfg):
         return []
-    need = ["bench.injector_ip"]
+    need = []
+    # 注入机按频段要。对不上号的频段以前会悄悄改用 lan 那台 —— 测的是有线,
+    # 报告上却写着 5GHz。所以逐个频段核对;共用一台时 injector_ip 兜底。
+    has_injector_fallback = not _empty(cfg.at("bench.injector_ip"))
+    for band in (cfg.at("perf.bands") or ["lan"]):
+        if not has_injector_fallback and _empty(cfg.at("bench.injectors.%s" % band)):
+            need.append("bench.injectors.%s" % band)
+    if not need and not has_injector_fallback:
+        need.append("bench.injector_ip")
     has_peer_fallback = not (_empty(cfg.at("bench.public_ip"))
                              or _empty(cfg.at("bench.internet_ip")))
     has_ping_fallback = not _empty(cfg.at("bench.wan_up_host"))
