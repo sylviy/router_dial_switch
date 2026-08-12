@@ -35,6 +35,16 @@ CREDS = {
     "l2tp": {"server": "10.0.0.9", "user": "u", "pass": "p"},
 }
 
+# 某几条用例要用和默认不一样的账密(逐条抄自重构前的 smoke_test)
+CRED_OVERRIDE = {
+    "mercusys l2tp 填字段": {"l2tp": {"server": "10.0.0.1", "user": "u", "pass": "p"}},
+    "tenda pppoev6(IPv6 页)": {"pppoe_user": "u6", "pppoe_pass": "p6"},
+    "cudy-ax3000 pppoe(LuCI)": {"pppoe_user": "u", "pppoe_pass": "p"},
+    "cudy-ax3000 l2tp(AJAX 挂的字段)": {"l2tp": {"server": "10.0.0.9",
+                                                 "user": "vu", "pass": "vp"}},
+    "buffalo pppoe 账密在别页": {"pppoe_user": "u", "pppoe_pass": "p"},
+}
+
 # (名字, 型号脚本, mock 页面, 模式, 下发?, 期望)
 CASES = [
     ("cudy-ax1500 dynamic 不下发", "Cudy_AX1500", "cudy.html", "dynamic", False,
@@ -58,6 +68,70 @@ CASES = [
     # 事实对不上的页面必须**诚实失败**,而不是零交互的假成功:
     # 拿 Cudy 的 FACTS 去跑 Tenda 页,控件全对不上 -> success=False + 有原因。
     ("cudy-ax1500 错页守卫", "Cudy_AX1500", "tenda.html", "dynamic", False,
+     dict(success=False, read_back="", filled=set(), applied=False,
+          verify="")),
+
+    # --- 第 2 种 UI:Vue 自定义下拉(Tenda / Mercusys)-----------------------
+    ("tenda pppoe+Connect", "Tenda_AX3000", "tenda.html", "pppoe", True,
+     dict(success=True, read_back="PPPoE",
+          filled={"pppoe_user", "pppoe_pass"}, applied=True,
+          verify="Connected: PPPoE")),
+    # 触发器初始就是 Dynamic IP:走"已是目标"的可信短路;默认不点保存。
+    ("tenda dynamic 已是目标", "Tenda_AX3000", "tenda.html", "dynamic", False,
+     dict(success=True, read_back="Dynamic IP", filled=set(), applied=False,
+          verify="")),
+    # IPv6 独立页:换菜单路径 + 使能开关门控 + v6 flavor;
+    # LAN 区那个同名 "DHCPv6" radio 诱饵绝不能被点到(点到 = 回读错)。
+    ("tenda dhcpv6(门控页)", "Tenda_AX3000", "tenda_ipv6.html", "dhcpv6", True,
+     dict(success=True, read_back="DHCPv6", filled=set(), applied=True,
+          verify="Saved: DHCPv6")),
+    ("tenda pppoev6(IPv6 页)", "Tenda_AX3000", "tenda_ipv6.html", "pppoev6",
+     True, dict(success=True, read_back="PPPoEv6",
+                filled={"pppoe_user", "pppoe_pass"}, applied=True,
+                verify="Saved: PPPoEv6")),
+    ("mercusys pppoe+Save", "Mercusys_BE3600", "custom.html", "pppoe", True,
+     dict(success=True, read_back="PPPoE",
+          filled={"pppoe_user", "pppoe_pass"}, applied=True,
+          verify="Saved: PPPoE")),
+    ("mercusys l2tp 填字段", "Mercusys_BE3600", "custom.html", "l2tp", True,
+     dict(success=True, read_back="L2TP",
+          filled={"vpn_server", "vpn_user", "vpn_pass"}, applied=True,
+          verify="Saved: L2TP")),
+
+    # --- 第 3 种 UI:LuCI / CBI(Cudy AX3000)--------------------------------
+    # 守的是 LuCI 特有的三个坑:CBI 的 id 含点号(只能 [id='...'])、页面上
+    # 4 个 name=cbi.apply 必须靠 form:has(拨号控件) 锚定(点错 form 的话
+    # mock 的 toast 会喊 WRONG FORM)、选完 proto 后整段 DOM 被 XHR 重建。
+    ("cudy-ax3000 pppoe(LuCI)", "Cudy_AX3000", "cudy_luci.html", "pppoe", True,
+     dict(success=True, read_back="PPPoE",
+          filled={"pppoe_user", "pppoe_pass"}, applied=True,
+          verify="Saved & Applied: PPPoE")),
+    ("cudy-ax3000 l2tp(AJAX 挂的字段)", "Cudy_AX3000", "cudy_luci.html", "l2tp",
+     True, dict(success=True, read_back="L2TP",
+                filled={"vpn_server", "vpn_user", "vpn_pass"}, applied=True,
+                verify="Saved & Applied: L2TP")),
+
+    # --- 第 4 种 UI:外壳页 + iframe(BUFFALO)-------------------------------
+    # 这三条守的是这台机的三条真机事实:设置页必须以 iframe 打开且要等它的
+    # 配置对象 CA 加载完;页面脚本会把 iframe 地址改回去一次(要重试);
+    # radio 和保存键被皮盖住(要 force 点)。
+    ("buffalo v6plus 不下发", "BUFFALO_WSR6000AX8", "buffalo_advanced.html",
+     "v6plus", False,
+     dict(success=True, read_back="v6plus", filled=set(), applied=False,
+          verify="")),
+    ("buffalo dynamic 真保存", "BUFFALO_WSR6000AX8", "buffalo_advanced.html",
+     "dynamic", True,
+     dict(success=True, read_back="dynamic", filled=set(), applied=True,
+          verify="Saved & Applied: dynamic")),
+    # 账密框在别页(pppoe_reg.html):必须逐条发警告,绝不静默装作填过了。
+    ("buffalo pppoe 账密在别页", "BUFFALO_WSR6000AX8", "buffalo_advanced.html",
+     "pppoe", False,
+     dict(success=True, read_back="pppoe", filled=set(), applied=False,
+          verify="", warnings=2, warn_has="pppoe_reg.html")),
+    # 直接打开设置页(没有外壳 iframe)必须**诚实失败**。真机上这条路径最危险:
+    # 页面照样渲染、radio 照样点、回读照样通过,保存提交的却是旧值。
+    ("buffalo 没有外壳页时诚实失败", "BUFFALO_WSR6000AX8", "buffalo_wan.html",
+     "dynamic", True,
      dict(success=False, read_back="", filled=set(), applied=False,
           verify="")),
 ]
@@ -84,10 +158,14 @@ def _toast(page):
     return ""
 
 
-def _cfg_for(url, apply_it, headless):
+def _cfg_for(url, apply_it, headless, creds=None):
     """一份指向 mock 的 config —— 除了地址和账密,和现场那份是同一个结构。"""
+    router = dict(CREDS)
+    for key, value in (creds or {}).items():
+        router[key] = dict(router.get(key), **value) if isinstance(value, dict) \
+            else value
     cfg = perf.load()
-    cfg["router"] = dict(CREDS, ip=url)
+    cfg["router"] = dict(router, ip=url)
     cfg.setdefault("run", {})
     cfg["run"]["apply"] = apply_it
     cfg["run"]["headless"] = headless
@@ -108,8 +186,12 @@ def main(argv=None):
     print("==== 离线自检(假路由器,不碰真机)====")
     for name, model, page_file, mode, apply_it, want in CASES:
         mod = importlib.import_module("models.%s" % model)
+        if model == "BUFFALO_WSR6000AX8":
+            # mock 里那一页叫 buffalo_wan.html,真机上叫 wan.html。**只改这
+            # 一处**,别的事实原样用。
+            mod.FACTS["iframe_target"] = "buffalo_wan.html"
         cfg = _cfg_for("http://127.0.0.1:%d/%s" % (port, page_file), apply_it,
-                       not show)
+                       not show, CRED_OVERRIDE.get(name))
         res = mod.switch(mode, cfg, hook=_toast)
         ok = (res["success"] is want["success"]
               and res["read_back"] == want["read_back"]
@@ -119,6 +201,10 @@ def main(argv=None):
         # 失败的用例必须给得出原因,不能只是静静地不成功
         if not want["success"]:
             ok = ok and bool(res["message"])
+        # 该发几条警告就发几条(少一条 = 少报了一个问题)
+        if want.get("warnings") is not None:
+            ok = ok and len(res["warnings"]) == want["warnings"] and all(
+                want["warn_has"] in w for w in res["warnings"])
         print("[%s] %-28s 回读=%-12r 填了=%s 已保存=%s 页面回应=%r"
               % ("PASS" if ok else "FAIL", name, res["read_back"],
                  res["filled"], res["applied"], res.get("verify")))
