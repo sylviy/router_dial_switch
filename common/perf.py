@@ -46,7 +46,7 @@ except Exception:                      # pragma: no cover - yaml 是硬依赖
     yaml = None
 
 CONFIG_PATH = os.path.join(ROOT, "config.yaml")
-EXAMPLE_PATH = os.path.join(ROOT, "config.example.yaml")
+EXAMPLE_PATH = os.path.join(ROOT, "docs", "config.example.yaml")
 
 
 # ---------------------------------------------------------------------------
@@ -125,7 +125,7 @@ class Cfg(dict):
             + ["  * %s:%s 没填 —— %s" % (self.where(d), d, _hint(d))
                for d in missing]
             + ["", "用记事本打开 %s 补上;每一项该填什么见 %s。"
-               % (self.source or CONFIG_PATH, os.path.basename(EXAMPLE_PATH))]))
+               % (self.source or CONFIG_PATH, os.path.relpath(EXAMPLE_PATH, ROOT))]))
 
 
 def _blank(value) -> bool:
@@ -194,7 +194,7 @@ def load(path: str = CONFIG_PATH, model: str = "") -> Cfg:
     if not os.path.exists(path):
         raise ConfigError(
             "找不到 %s。把 %s 复制成 config.yaml,用记事本按里面的中文注释"
-            "填一遍。" % (path, os.path.basename(EXAMPLE_PATH)))
+            "填一遍。" % (path, os.path.relpath(EXAMPLE_PATH, ROOT)))
     with open(path, "r", encoding="utf-8") as fh:
         text = fh.read()
     try:
@@ -336,8 +336,10 @@ def run(switch_fn, modes, cfg: Cfg, log=print) -> dict:
                           % (pc.backend, problem))
 
     stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    # 报告和这一轮的 .tst 原始记录都归到 artifacts/reports/
     out_dir = (pc.report_dir if os.path.isabs(pc.report_dir)
                else os.path.join(ROOT, pc.report_dir))
+    out_dir = os.path.join(out_dir, "reports")
     if pc.chariot.save_tests:
         pc.chariot.tst_dir = os.path.join(
             out_dir, "wanperf_%s_%s_tst"

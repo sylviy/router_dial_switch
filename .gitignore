@@ -18,6 +18,14 @@ vendor/wheels/
 # 命令就会失败(2026-07-30 实测)。所以用 artifacts/* + 放行 .gitkeep。
 artifacts/*
 !artifacts/.gitkeep
+!artifacts/README.md
+!artifacts/reports/
+!artifacts/shots/
+!artifacts/probes/
+artifacts/reports/*
+artifacts/shots/*
+artifacts/probes/*
+!artifacts/*/.gitkeep
 recordings/
 
 __pycache__/

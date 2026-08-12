@@ -65,7 +65,7 @@ def main(argv=None):
 
     dial = [r for r in rows if _probe.looks_like_dial(r)]
     out = args.out or os.path.join(
-        _probe.ROOT, "artifacts",
+        _probe.ROOT, "artifacts", "probes",
         "probe_%s.json" % re.sub(r"[^A-Za-z0-9]+", "_",
                                  _probe.url_of(cfg)).strip("_"))
     os.makedirs(os.path.dirname(out), exist_ok=True)

@@ -75,8 +75,8 @@ python skill/tools/try_switch.py  --menu "sel:#Network,sel:#WAN" \
 
 **逐档**把回读值和截图摆给人看,人点头才允许 `--apply`:
 
-> dynamic → 回读 'DHCP Client' ✅ 截图 artifacts/try_switch_DHCP_Client.png
-> pppoe   → 回读 'PPPoE'       ✅ 截图 artifacts/try_switch_PPPoE.png
+> dynamic → 回读 'DHCP Client' ✅ 截图 artifacts/probes/try_switch_DHCP_Client.png
+> pppoe   → 回读 'PPPoE'       ✅ 截图 artifacts/probes/try_switch_PPPoE.png
 > 六档全部回读一致。**要我真正下发吗?** 下发会改路由器配置,切错会断网。
 
 人点头后才:
@@ -93,4 +93,4 @@ python models/<品牌>_<型号>.py <档> --apply
 新踩到的坑写进 `reference.md` 对应的节(没有就新开一节,按 UI 家族)。
 下一个人少花的时间就是从这里省的。
 
-`GOTCHAS.md` 是给人看的历史记录,**不要加载它**,也不要把它的内容搬进本文件。
+`docs/GOTCHAS.md` 是给人看的历史记录,**不要加载它**,也不要把它的内容搬进本文件。

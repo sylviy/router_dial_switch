@@ -39,7 +39,7 @@ python models/Cudy_AX1500.py pppoe --perf     # 整轮
 `config.yaml`,现场用记事本改。**换被测机只改两处**:`router.ip`,和
 `run.dial_modes`(这轮测哪几档)。
 
-每一项该填什么见 `config.example.yaml` 的中文注释;缺什么**不用猜** ——
+每一项该填什么见 `config.example.yaml` 的中文注释(和本文件同目录);缺什么**不用猜** ——
 菜单 5 会把缺的项连**行号**一起列出来,而且分两段:先是"切档要用的",
 再是"整轮测吞吐才要的"(`bench` 段只有 `backend: chariot` 的整轮才用得到)。
 
@@ -75,8 +75,18 @@ python skill/tools/check_model.py --all # 型号脚本离线体检
 ## 项目结构
 
 ```
-start.bat / start.py     唯一入口(菜单)
-config.yaml              唯一配置        config.example.yaml  带注释的模板
+start.bat                唯一入口 —— 双击它
+config.yaml              唯一要填的文件 —— 用记事本改
+CLAUDE.md                给 AI 助手看的地图(Claude Code 只认根目录这个位置)
+
+app/                     程序入口和环境脚本
+  start.py                 向导本体
+  _py.bat                  挑解释器(vendor\python 还是 .venv)
+  setup.bat                没有 vendor\ 时用它建 .venv
+  smoke.bat                双击跑离线自检
+  requirements.txt         重建 vendor/ 时用
+docs/                    文档
+  README.md  WINDOWS.md  MIGRATION.md  GOTCHAS.md  config.example.yaml
 models/<品牌>_<型号>.py    交付物:一台机一个文件,自足
 common/contract.py       判定与结果格式(全仓库唯一)
 common/perf.py           整轮时序 + 读/校验 config.yaml
@@ -84,8 +94,8 @@ matrix/                  读侧:测吞吐 / 出报告 / 等 WAN 拨通
 skill/                   适配新机型:SKILL.md + reference.md + tools/(七个工具)
 tools/routerctrl_bridge.py   TPLink 那条路线的 py2.6 桥接
 tests/                   离线自检 + 假路由器页面 + 假桥接
+artifacts/               跑动产物:reports/ 报告、shots/ 截图、probes/ 探针产物
 vendor/python/           离线运行时(别动)
-artifacts/               报告、截图、探针产物(git 忽略)
 ```
 
 ## 为什么这样设计

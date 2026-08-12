@@ -20,7 +20,7 @@
 #
 # ─── 为什么没用 argparse(和最初的要求不一样,这里说清)──────────────────────
 # **argparse 是 2.7 才进标准库的。** 2026-07-28 台架实测:PATH 上的 Python 是
-# ActivePython 2.6.5,`import argparse` 直接 ImportError(见 GOTCHAS.md 的
+# ActivePython 2.6.5,`import argparse` 直接 ImportError(见 docs/GOTCHAS.md 的
 # Environment 一节,以及 matrix/chariot_perf.py 第 27 行的同一条教训)。
 # 用 argparse 的话这个桥接会在台架上**连参数都没解析到就死在 import**,
 # 而那看起来像"桥接坏了",其实是解释器少个模块。所以参数是手写解析的 ——

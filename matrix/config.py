@@ -3,7 +3,7 @@
 现在只剩数据类:值由 `common/perf.py` 从 `config.yaml` 翻译过来填进去
 (见那边的 `_perf_config`)。以前这里还负责读 `perf.yaml` /
 `perf_configs/<型号>.yaml`,那两个文件已经并进 `config.yaml` 并删掉了
-(对照表见 MIGRATION.md)。
+(对照表见 docs/MIGRATION.md)。
 
 `matrix/` 是**读侧**:测吞吐(perf_backends / chariot_perf)、等 WAN 拨通
 (wanup)、出报告(report)。这次重构没有改它们的逻辑。

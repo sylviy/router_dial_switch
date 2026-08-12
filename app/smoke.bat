@@ -7,7 +7,7 @@ REM  Needs Chrome installed (channel="chrome").  Add --show to watch it click.
 REM  Expected result: "40 passed, 0 failed".
 REM ==========================================================================
 setlocal
-pushd "%~dp0"
+pushd "%~dp0.."      REM 回到仓库根(本文件在 app\ 里)
 
 call "%~dp0_py.bat"
 if not defined PY (
@@ -17,7 +17,7 @@ if not defined PY (
   exit /b 1
 )
 
-"%PY%" tests\mock_test.py %*
+"%PY%" "%~dp0..\tests\mock_test.py" %*
 set "rc=%errorlevel%"
 popd
 endlocal

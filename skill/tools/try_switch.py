@@ -205,10 +205,15 @@ def main(argv=None):
                     "保存键没找到:%s" % args.apply_sel
         shot = ""
         try:
-            os.makedirs(os.path.join(_probe.ROOT, "artifacts"), exist_ok=True)
-            shot = os.path.join(_probe.ROOT, "artifacts",
-                                "try_switch_%s.png"
-                                % re.sub(r"[^A-Za-z0-9]+", "_", args.label))
+            probes = os.path.join(_probe.ROOT, "artifacts", "probes")
+            os.makedirs(probes, exist_ok=True)
+            # 文件名带上被测机地址:适配下一台机时不会把上一台的截图盖掉
+            # (关卡二要拿这些图给人看,盖错了就是拿着 A 机的图说 B 机)。
+            who = re.sub(r"[^A-Za-z0-9]+", "_",
+                         _probe.url_of(cfg).split("//")[-1]).strip("_")
+            shot = os.path.join(probes,
+                                "try_switch_%s_%s.png"
+                                % (who, re.sub(r"[^A-Za-z0-9]+", "_", args.label)))
             page.screenshot(path=shot, full_page=True)
         except Exception:
             shot = ""

@@ -410,9 +410,12 @@ def _visible_buttons(page):
 def _screenshot(page, cfg, mode):
     """整页截图存进 artifacts/;失败返回空串,绝不因此中断一轮。"""
     try:
+        # 截图归到 artifacts/shots/,和报告分开放(artifacts/ 下三个子目录:
+        # reports 报告、shots 截图、probes 探针产物)。
         out_dir = cfg.at("report.dir") or "artifacts"
         if not os.path.isabs(out_dir):
             out_dir = os.path.join(ROOT, out_dir)
+        out_dir = os.path.join(out_dir, "shots")
         os.makedirs(out_dir, exist_ok=True)
         path = os.path.join(out_dir, "model_cudy_ax1500_%s.png" % mode)
         page.screenshot(path=path, full_page=True)

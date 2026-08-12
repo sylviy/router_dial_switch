@@ -17,7 +17,7 @@ REM  is referenced by a RELATIVE path -- that keeps working even when the
 REM  folder lives under a path with spaces, e.g. C:\Users\Li Ming\Desktop\.
 REM ==========================================================================
 setlocal
-pushd "%~dp0"
+pushd "%~dp0.."      REM 回到仓库根(本文件在 app\ 里)
 
 set "PY="
 set "MODE="
@@ -77,11 +77,11 @@ if errorlevel 1 (
 echo.
 if exist "vendor\wheels" (
   echo === Step 2/3: installing dependencies from vendor\wheels ^(offline^) ===
-  ".venv\Scripts\python.exe" -m pip install --no-index --find-links "vendor\wheels" -r requirements.txt
+  ".venv\Scripts\python.exe" -m pip install --no-index --find-links "vendor\wheels" -r "%~dp0requirements.txt"
 ) else (
   echo === Step 2/3: installing dependencies with pip ^(needs internet^) ===
   ".venv\Scripts\python.exe" -m pip install --upgrade pip
-  ".venv\Scripts\python.exe" -m pip install -r requirements.txt
+  ".venv\Scripts\python.exe" -m pip install -r "%~dp0requirements.txt"
 )
 if errorlevel 1 (
   echo [ERROR] Dependency install failed.

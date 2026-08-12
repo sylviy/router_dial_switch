@@ -16,4 +16,4 @@ description: 为一台新路由器型号产出专属拨号切换脚本 models/<�
   * 卡住了按节查   → `skill/reference.md`(**按节读,别整篇读**)
   * 七个工具       → `skill/tools/`(`--help` 都可用;退出码 0=过 1=不过 2=用法错)
 
-`GOTCHAS.md` 是给人看的历史记录,**不要加载**。
+`docs/GOTCHAS.md` 是给人看的历史记录,**不要加载**。

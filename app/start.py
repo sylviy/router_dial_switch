@@ -1,6 +1,6 @@
 """交互式入口 —— 双击 start.bat,选型号、选操作,没有别的要记。
 
-    python start.py
+    python app/start.py            (Windows 上双击根目录的 start.bat)
 
 菜单按**危险程度**排:先"只看回读不下发",再"单档下发"(要输 yes),
 最后才是整轮。配置只有一处 config.yaml,现场用记事本改;缺什么由菜单 5
@@ -17,7 +17,8 @@ import argparse
 import os
 import sys
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
+# 本文件在 app\ 里,仓库根要多退一层(models / common / tests 都在根下)
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 

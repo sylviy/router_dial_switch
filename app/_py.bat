@@ -1,8 +1,8 @@
 @echo off
 REM ==========================================================================
 REM  _py.bat  --  shared interpreter resolver.  Not meant to be double-clicked:
-REM  the other .bat files `call` it right after they pushd into this folder,
-REM  then use "%PY%".  Leaves PY empty (after explaining) when nothing usable
+REM  the other .bat files `call` it (paths inside are anchored to this file's
+REM  own folder, so it works no matter what the caller pushd'd), then use "%PY%".  Leaves PY empty (after explaining) when nothing usable
 REM  is present, so each caller can bail out its own way.
 REM
 REM  Two supported runtimes, in this order:
@@ -17,13 +17,13 @@ REM  would surface as a baffling SyntaxError deep inside the tool.
 REM ==========================================================================
 set "PY="
 
-if exist ".venv\Scripts\python.exe" (
-  set "PY=.venv\Scripts\python.exe"
+if exist "%~dp0..\.venv\Scripts\python.exe" (
+  set "PY=%~dp0..\.venv\Scripts\python.exe"
   goto :eof
 )
 
-if exist "vendor\python\python.exe" (
-  set "PY=vendor\python\python.exe"
+if exist "%~dp0..\vendor\python\python.exe" (
+  set "PY=%~dp0..\vendor\python\python.exe"
   goto :eof
 )
 

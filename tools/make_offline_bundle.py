@@ -10,7 +10,7 @@ bench, nothing is registered, the system Python 2 never learns we exist -- the
 folder is copied over and `start.bat` runs.
 
 That bundle is checked in, so normally you do NOT need this script.  Run it
-when you bump `requirements.txt`, move to another Python patch level, or need
+when you bump `app/requirements.txt`, move to another Python patch level, or need
 the 32-bit build:
 
     python3 tools/make_offline_bundle.py                    # defaults below
@@ -137,7 +137,7 @@ def main() -> int:
                     help="Windows architecture of the BENCH (default: %(default)s)")
     ap.add_argument("--out", default=os.path.join(REPO, "vendor", "python"),
                     help="where to write the runtime (default: vendor/python)")
-    ap.add_argument("--requirements", default=os.path.join(REPO, "requirements.txt"))
+    ap.add_argument("--requirements", default=os.path.join(REPO, "app", "requirements.txt"))
     ap.add_argument("--embed-zip", default=None,
                     help="use this already-downloaded embeddable zip instead "
                          "of fetching one (for a half-offline build machine)")
