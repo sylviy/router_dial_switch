@@ -293,13 +293,16 @@ def run(switch_fn, modes, cfg: Cfg, log=print) -> dict:
         # 配置里写了这台机切不了的档。**开跑前就拦住**,别等整轮跑到那一档
         # 才发现 —— 台架时间稀缺,而且默认的 dial_modes 是四种常见拨号方式,
         # 遇上只支持其中两种的机器(Tenda 的 v4 列表没有 PPTP/L2TP)必然撞上。
+        # 措辞里**不带型号名**:能切哪几档是型号脚本的 MODES 说了算,而型号名
+        # 来自 config.yaml 的 run.model —— 万一两者对不上(调用方传了另一台机
+        # 的 MODES),带上型号名就会指着 A 机说 B 机的档,把人往错路上带。
         raise ConfigError(
             "这一轮没有开始(没有碰路由器):\n"
-            "  %s:run.dial_modes 里有几档是 %s 切不了的 —— %s\n"
+            "  %s:run.dial_modes 里有几档是这台机切不了的 —— %s\n"
             "  这台机支持:%s\n\n"
             "用记事本打开 %s,把上面那几档从 run.dial_modes 里删掉。"
-            % (cfg.where("run.dial_modes"), pc.model or "该型号",
-               ", ".join(unknown), ", ".join(modes), cfg.source or CONFIG_PATH))
+            % (cfg.where("run.dial_modes"), ", ".join(unknown),
+               ", ".join(modes), cfg.source or CONFIG_PATH))
 
     if pc.backend == "chariot":
         # 每个频段都得有自己的注入机。**对不上号的频段以前会悄悄改用 lan
