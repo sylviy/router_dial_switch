@@ -17,7 +17,7 @@ if not defined PY (
   exit /b 1
 )
 
-"%PY%" tests\smoke_test.py %*
+"%PY%" tests\mock_test.py %*
 set "rc=%errorlevel%"
 popd
 endlocal

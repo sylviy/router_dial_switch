@@ -1,13 +1,12 @@
-"""加载 perf.yaml —— WAN 性能矩阵的全部可调项。
+"""读侧那几个**参数对象**的定义(时序、台架拓扑、报告位置)。
 
-分工:
-  * perf_configs/<型号>.yaml  描述 **测什么、怎么测**(测试矩阵、后端、台架
-                拓扑、WAN 拨通判据、报告位置)。一台机一份,不含密码,已提交
-                —— 模板是 perf_configs/_template.yaml。
-  * router.yaml 存 **密码**(管理密码 / 宽带账密),由 settings.py 读,git 忽略。
+现在只剩数据类:值由 `common/perf.py` 从 `config.yaml` 翻译过来填进去
+(见那边的 `_perf_config`)。以前这里还负责读 `perf.yaml` /
+`perf_configs/<型号>.yaml`,那两个文件已经并进 `config.yaml` 并删掉了
+(对照表见 MIGRATION.md)。
 
-两者分开:换台架拓扑改 perf.yaml,换密码改 router.yaml,互不干扰。
-perf.yaml 缺项一律回落到下面的默认值 —— 一个空文件也能跑(内置 dynamic+pppoe 矩阵)。
+`matrix/` 是**读侧**:测吞吐(perf_backends / chariot_perf)、等 WAN 拨通
+(wanup)、出报告(report)。这次重构没有改它们的逻辑。
 """
 from __future__ import annotations
 
@@ -16,26 +15,8 @@ import sys
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
-try:
-    import yaml
-except Exception:  # pragma: no cover - yaml 是硬依赖,这里只是防御
-    yaml = None
-
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DEFAULT_PATH = os.path.join(ROOT, "perf.yaml")
-# 每台机一份参数:perf_configs/<型号脚本名>.yaml。选了型号就自动用它,
-# 不用再复制/改一个全局 perf.yaml —— 台架上有六台机,一个全局文件意味着
 # 换机就得重改一遍,改错了还看不出来(用户 2026-07-31)。
-CONFIG_DIR = os.path.join(ROOT, "perf_configs")
-TEMPLATE_PATH = os.path.join(CONFIG_DIR, "_template.yaml")
-
-
-@dataclass
-class DialStep:
-    """矩阵里的一档拨号方式:mode 必须是该型号脚本声明过的模式;
-    params 是切它需要的账密/服务器(会传给 _driver.run)。"""
-    mode: str
-    params: Dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -111,7 +92,6 @@ class ChariotCfg:
 class PerfConfig:
     model: str = ""
     backend: str = "simulate"      # simulate(离线模拟) | chariot(真台架)
-    dial_modes: List[DialStep] = field(default_factory=list)
     bands: List[str] = field(default_factory=lambda: ["lan"])
     directions: List[str] = field(default_factory=lambda: ["up", "down", "bi"])
     protocols: List[str] = field(default_factory=lambda: ["TCP"])
@@ -124,109 +104,3 @@ class PerfConfig:
 
 
 # --------------------------------------------------------------------------
-_DEFAULT_MATRIX = [DialStep("dynamic"),
-                   DialStep("pppoe", {"pppoe_user": "pppoe",
-                                      "pppoe_pass": "pppoe"})]
-
-
-def _dial_steps(raw) -> List[DialStep]:
-    steps: List[DialStep] = []
-    for item in raw or []:
-        if isinstance(item, str):
-            steps.append(DialStep(item))
-        elif isinstance(item, dict):
-            steps.append(DialStep(str(item.get("mode", "")).strip(),
-                                  dict(item.get("params") or {})))
-    return [s for s in steps if s.mode]
-
-
-def path_for_model(model: str) -> str:
-    """这台机的参数文件路径(可能还不存在)。"""
-    return os.path.join(CONFIG_DIR, "%s.yaml" % model)
-
-
-def resolve_path(path: str = DEFAULT_PATH, model: str = "") -> str:
-    """决定这一轮**实际读哪个文件**,并把它记在 PerfConfig.source 上。
-
-    优先级(从高到低):
-      1. --config 显式给的路径 —— 说了算,不再猜;
-      2. perf_configs/<型号>.yaml —— 每台机一份,选了型号就自动用它;
-      3. perf.yaml —— 老的全局配置,已经配好的台架不用动。
-    一个都没有 -> 全默认(仍能 --demo 跑通)。模板见 perf_configs/_template.yaml。
-    """
-    if path and path != DEFAULT_PATH:
-        return path
-    if model:
-        per_model = path_for_model(model)
-        if os.path.exists(per_model):
-            return per_model
-    if os.path.exists(DEFAULT_PATH):
-        return DEFAULT_PATH
-    return DEFAULT_PATH        # 不存在也返回它:load() 会退回全默认
-
-
-def load(path: str = DEFAULT_PATH, model: str = "") -> PerfConfig:
-    """读参数文件 -> PerfConfig。缺失/为空 -> 全默认(仍可 --demo 跑通)。
-
-    model 给了就优先用 perf_configs/<model>.yaml(见 resolve_path)。
-    """
-    path = resolve_path(path, model)
-    data: dict = {}
-    if yaml is not None and os.path.exists(path):
-        try:
-            with open(path, "r", encoding="utf-8") as fh:
-                data = yaml.safe_load(fh) or {}
-        except Exception:
-            data = {}
-    if not isinstance(data, dict):
-        data = {}
-
-    cfg = PerfConfig()
-    cfg.source = path
-    # 型号:调用方给的(--model / 向导里选的)优先,它决定了读哪个文件;
-    # 没给才用文件里写的。
-    cfg.model = model or str(data.get("model", "") or "")
-    cfg.backend = str(data.get("backend", cfg.backend) or cfg.backend).lower()
-    # dial_modes 不写 = 留空,由 run.py 用"该型号声明的全部模式"补齐
-    # (工具的本意:跑一次遍历所有支持的拨号方式)。--demo 无型号时才用
-    # _DEFAULT_MATRIX。
-    cfg.dial_modes = _dial_steps(data.get("dial_modes"))
-    cfg.bands = list(data.get("bands") or cfg.bands)
-    cfg.directions = list(data.get("directions") or cfg.directions)
-    cfg.protocols = [str(p).upper() for p in (data.get("protocols")
-                                              or cfg.protocols)]
-    cfg.report_dir = str(data.get("report", {}).get("dir")
-                         or data.get("report_dir") or cfg.report_dir)
-    cfg.report_title = str(data.get("report", {}).get("title")
-                           or cfg.report_title)
-    cfg.reset_mode = data.get("reset_mode") or None
-
-    wu = data.get("wan_up") or {}
-    cfg.wan_up = WanUpCfg(method=str(wu.get("method", cfg.wan_up.method)),
-                          host=str(wu.get("host", "") or ""),
-                          hosts=dict((str(k), str(v)) for k, v
-                                     in (wu.get("hosts") or {}).items()),
-                          timeout_s=int(wu.get("timeout_s", cfg.wan_up.timeout_s)),
-                          settle_s=int(wu.get("settle_s", cfg.wan_up.settle_s)))
-
-    ch = data.get("chariot") or {}
-    base = ChariotCfg()
-    cfg.chariot = ChariotCfg(
-        duration_s=int(ch.get("duration_s", base.duration_s)),
-        internet_ip=str(ch.get("internet_ip", base.internet_ip)),
-        public_ip=str(ch.get("public_ip", base.public_ip)),
-        e2_ip=dict((str(k), str(v))
-                   for k, v in (ch.get("e2_ip") or {}).items()),
-        endpoints=dict(ch.get("endpoints") or base.endpoints),
-        scripts=dict(ch.get("scripts") or base.scripts),
-        pairs={str(k).upper(): int(v)
-               for k, v in (ch.get("pairs") or base.pairs).items()},
-        nofrag_bytes={str(k): int(v)
-                      for k, v in (ch.get("nofrag_bytes") or {}).items()},
-        stability_ratio=float(ch.get("stability_ratio", base.stability_ratio)),
-        save_tests=bool(ch.get("save_tests", base.save_tests)),
-        # python2: 是 2026-07 之前的键名(那时只有 Py2 台架)。仍然认它,
-        # 免得已经配好的台架升级后突然回到"跟着 PATH 走"。
-        python=str(ch.get("python", ch.get("python2", base.python)) or ""),
-        script=str(ch.get("script", "") or ""))
-    return cfg

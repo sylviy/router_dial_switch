@@ -62,7 +62,7 @@ FACTS = {
     # 这个文件不绑定某一台样机。运行时会用 get_wan_info()['hostName'] 覆盖
     # 报告里的型号(台架那台是 ArcherAX1800)。
     "model": "RouterCtrl",
-    "route": "bridge",                          # 不开浏览器
+    "route": "bridge",                          # 不开浏览器,走 py2 桥接
     "bridge": "tools/routerctrl_bridge.py",
     # 档名和别的六台机对齐(2026-08-12 用户定):PPTP/L2TP 就是一档隧道拨号,
     # 不再拆 _internet / _public 两份。那两个后缀对**下发没有任何影响**

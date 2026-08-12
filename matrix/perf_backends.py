@@ -6,9 +6,9 @@
                       没有路由器的机器上也能跑通(--demo、CI、演示)。
   * ChariotBackend    真台架:把每次测量交给 matrix/chariot_perf.py(旧 Dial.py
                       的 Chariot 逻辑),用子进程隔开跑它的那个解释器,读它
-                      打印的 JSON。那个解释器由 perf.yaml 的 chariot.python
-                      决定:Python 3 台架留空即可(同一个 python),Python 2
-                      台架写 C:\\Python26\\python.exe。
+                      打印的 JSON。那个解释器由 config.yaml 的 bench.python2
+                      决定:PyChariot 装在同一个 python 里就留空,老台架
+                      (只在 Python 2.6.5 里)写 C:\\Python26\\python.exe。
 
 新增后端 = 继承 PerfBackend、实现 measure 即可,编排器和报告都不用改。
 """
@@ -125,9 +125,7 @@ _PY_HINT = """
   chariot_perf.py 在 **Python 2 和 Python 3 上都能跑**(它的语法两边通用),
   但 PyChariot 是装在**某一个具体解释器**里的库 —— 装在哪就只能在哪 import。
   决定它跑在哪个 python 里的是:
-    * config.yaml 的 bench.python2 —— 已经迁到新形状的型号走这一条;
-    * perf_configs/<型号>.yaml 的 chariot.python —— 还没迁的型号走这一条。
-  怎么填:
+    config.yaml 的 bench.python2。怎么填:
     * 留空(默认)= 用跑本工具的这个 python。**PyChariot 装在同一个 python
       里的台架(日本 IPoE 那套是 Python 3)才留空。**
     * 台架自带的 vendor\\python 是 3.8,里面**没有** PyChariot;老台架的

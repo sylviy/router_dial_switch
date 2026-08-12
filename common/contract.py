@@ -65,7 +65,7 @@ def _norm(text: Optional[str]) -> str:
     """规整空白与大小写:首尾去掉,内部的连续空白/换行折成一个空格。
 
     折叠内部空白是**重构前就在真机上跑了几个月的行为**(旧的
-    models/_driver._norm),这里原样保留 —— 界面措辞里带个换行或双空格的
+    引擎里那个 _norm),这里原样保留 —— 界面措辞里带个换行或双空格的
     机型(`"PPPoE  拨号"`),严格按首尾规整会把它判成失败,而那种失败只有
     重上台架才发现得了。
 
@@ -104,7 +104,7 @@ def result(success, read_back, expected, message: str = "",
     还会再核一次:success 为真时,`verify(read_back, expected)` 必须同样为真。
     这挡住"拿 A 的回读算判定、把 B 写进报告"这种手滑。
 
-    返回的字段和重构前 models/_driver.Session 那份结果字典一致(报告读的就是
+    返回的字段和重构前那份结果字典一致(报告读的就是
     它):brand / model / mode / success / read_back / filled / applied /
     message / warnings / screenshot,另加一个 expected(失败时的证据,报告
     不读它)。

@@ -30,7 +30,7 @@
 
 > **为什么台架的 Python 2 不碍事:** 需要 Python 3.8 的只有"点浏览器切拨号"
 > 这半边,它跑在 `vendor\python\` 里。而整轮里跑 Chariot 吞吐的那半边在**那台
-> 老台架上**只有 Python 2 能跑(PyChariot 就装在那儿),用 `perf.yaml` 的
+> 老台架上**只有 Python 2 能跑(PyChariot 就装在那儿),用 `config.yaml` 的
 > `chariot.python` 指向它自己的 `python.exe` 即可。两个解释器各干各的,互不
 > 打扰。测吞吐的 `matrix\chariot_perf.py` 本身 Py2 / Py3 都能跑 —— 换成
 > Python 3 的台架(日本 IPoE 那套)时 `chariot.python` 留空就行。
@@ -53,45 +53,28 @@
 
 ---
 
-## 日常使用
+## 日常怎么用
 
-**最简单:双击 `start.bat`。** 它列出支持的型号,按数字选一台,回车 ——
-默认就是整轮:**遍历该型号的全部拨号方式,每档真切换 → 等 WAN → 测吞吐 →
-出报告**(台架语义,不问"要不要保存")。密码/宽带账号问一次存进
-`router.yaml`,以后全程回车。**不需要提前准备任何文件。**
+**双击 `start.bat`**,选型号、选操作。菜单按危险程度排:
+1 只看回读不下发 / 2 单档下发(要输 yes)/ 3 整轮 / 4 离线自检 /
+5 看看 config.yaml 还差什么。
 
-命令行版(想脚本化/传参数时):
+配置只有一个文件 `config.yaml`,现场用记事本改 —— 换被测机只改
+`router.ip` 和 `run.dial_modes`。**不需要提前准备任何别的文件**,
+缺什么菜单 5 会连行号一起告诉你。
+
+命令行版(不想走菜单时):
 
 ```bat
-start.bat                            :: 菜单 4 = 一次性存路由器 IP / 管理密码 /
-                                     ::   宽带账号(写进 router.yaml,不进仓库)
-
-dial.bat Tenda_AX3000 dynamic        :: 切模式,只切换不保存(先看回读)
-dial.bat Tenda_AX3000 pppoe --apply  :: 确认无误后,真正下发保存
-dial.bat Cudy_AX1500 l2tp --apply
-
-dial.bat                             :: 不带参数 = 列出有哪些已适配的型号
-
-adapt.bat                            :: 适配一台新机器的向导(探测->生成->体检->验证)
-
-matrix.bat --demo                    :: 整轮演示:不碰路由器,出样例 HTML 报告
-matrix.bat --model Tenda_AX3000      :: 整轮真跑:自动遍历该型号的全部拨号方式,
-                                     ::   每档真正下发并测吞吐(整轮没有 --apply)
+vendor\python\python.exe models\Cudy_AX1500.py pppoe            :: 只看回读,不下发
+vendor\python\python.exe models\Cudy_AX1500.py pppoe --apply    :: 真下发
+vendor\python\python.exe models\Cudy_AX1500.py pppoe --perf     :: 整轮
 ```
 
-- **`dial.bat` 是命令行版切模式**:第一个参数是型号脚本名(`models\` 里的
-  文件名去掉 `.py`),后面的参数原样传给它。
-- **`matrix.bat` 是整轮命令**(组里性能脚本已合并进来):对配置里的每档拨号
-  方式,切模式 → ping 等 WAN 拨通 → 跑吞吐并判稳 → 出自包含 HTML + CSV 报告
-  (落在 `artifacts\`)。测什么写在 `perf_configs/<型号>.yaml`(复制 `_template.yaml` 改,
-  git 忽略);真跑 Chariot 吞吐要在装了 IxChariot 的台架上,并在 `perf.yaml`
-  的 `chariot.python` 指定装了 PyChariot 的那个解释器(Py3 台架留空即可,
-  老台架写 `C:\Python26\python.exe`);没有台架就用默认的
-  `simulate` 后端(离线模拟值,报告里会标明非实测)。
-- **`dial.bat` 不加 `--apply` 就不会点保存** —— 单模式调试期这样跑,不会把在
-  用的网切断。整轮(`start.bat` / `matrix.bat`)是台架语义:每档都真正下发。
-- 输出是一段 JSON:看 `success` 和 `read_back`(界面回读到的实际值)是否等于
-  你要的模式;失败时 `message` / `warnings` 会指出卡在哪一步。
+- **不加 `--apply` 就不会点保存** —— 调试期这样跑,不会把台架上正在用的
+  拨号方式改掉;
+- **整轮必定下发**:不下发的话吞吐测的就不是这档模式;
+- 报告和截图落在 `artifacts\`。
 
 ### 还没适配过的路由器
 
@@ -99,18 +82,22 @@ matrix.bat --model Tenda_AX3000      :: 整轮真跑:自动遍历该型号的全
 `models\<品牌>_<型号>.py` → 离线体检 → 逐个拨号方式真机验证。前三步不改路由器
 任何配置,最后才问你要不要真正保存一次。
 
-想手动分步跑:
+想手动分步跑(七个工具,每步都有明确的通过条件):
 
 ```bat
-_py.bat & %PY% tools\probe_router.py --url http://192.168.1.1 --pass <管理密码> ^
-    --brand <品牌> --model <型号> --emit models\<品牌>_<型号>.py
-_py.bat & %PY% tools\check_model.py <品牌>_<型号>
+_py.bat & %PY% skill\tools\env_check.py
+_py.bat & %PY% skill\tools\probe_dump.py  --menu "sel:#Network,sel:#WAN"
+_py.bat & %PY% skill\tools\list_modes.py  --menu "..." --dial "#wanType_id"
+_py.bat & %PY% skill\tools\probe_count.py --menu "..." --sel "#wanType_id"
+_py.bat & %PY% skill\tools\try_switch.py  --menu "..." --dial "#wanType_id" --label "PPPoE"
+_py.bat & %PY% skill\tools\make_facts.py  ... --write models\<品牌>_<型号>.py
+_py.bat & %PY% skill\tools\check_model.py <品牌>_<型号>
 ```
 
-完整方法论照 `.claude\skills\adapt-router-model\SKILL.md`(把 Claude 接到那台
+完整方法论照 `skill\SKILL.md`(把 Claude 接到那台
 机上走一遍也行)。产出就是**一个文件**:`models\<品牌>_<型号>.py`,写清这台机
 的全部事实(登录、菜单路径、控件选择器、各模式措辞、保存按钮)。拷进
-`models\` 就能用 `dial.bat` 和 `start.bat` 了,不需要改任何其它文件。
+`models\` 就能用 `start.bat` 了,不需要改任何其它文件。
 
 ### 自检(可选,不需要路由器)
 
@@ -130,15 +117,13 @@ smoke.bat
 | `setup.bat` 装依赖失败(联网机) | 公司代理拦了 pip。设 `HTTP_PROXY`/`HTTPS_PROXY` 后重试,或直接用自带运行时(方式 A,根本不装)。 |
 | `.bat` 报 `No Python 3 runtime found` | 文件夹是**不带 `vendor\`** 拷过来的。重新拷整个文件夹,或双击 `setup.bat` 建 `.venv`。 |
 | 报 `imports OK` 之外的导入错误 | `vendor\` 拷坏了(常见于用杀毒软件"清理"过 `node.exe`,或压缩包只解压了一部分)。删掉 `vendor\` 重拷一份。 |
-| `dial.bat` 报 `No such model script` | 型号名拼错了。不带参数跑 `dial.bat` 看可用列表。 |
+| 菜单里没有你要的型号 | `models\` 里没有那个脚本 —— 照 `skill\SKILL.md` 适配一台。 |
 | 运行后卡在登录页 / `login failed` | ① 管理密码不对;② 有些机型(Tenda/Mercusys)**同一时间只允许一个 Web 会话** —— 先把浏览器里登录着的路由器页签退出。 |
-| 提示缺少宽带账号密码 | 先用 `start.bat` 菜单 4 存进 router.yaml,或本次加 `--param pppoe_user=账号 --param pppoe_pass=密码`。 |
-| `matrix.bat` 真跑时吞吐格全是 `err` | 台架没装 IxChariot / `perf.yaml` 的 `chariot.python` 没指到装了 PyChariot 的那个解释器。先用 `--demo` 或 `simulate` 后端确认链路,再配台架。 |
+| 提示缺少宽带账号密码 | 用记事本填 `config.yaml` 的 `router.pppoe_user` / `pppoe_pass`。跑 `start.bat` 菜单 5 会告诉你缺哪几项、在第几行。 |
+| 整轮真跑时吞吐格全是 `err` | 台架没装 IxChariot,或 `config.yaml` 的 `bench.python2` 没指到装了 PyChariot 的那个解释器。先把 `run.backend` 设成 `simulate` 确认链路,再配台架。 |
 | 换一台 Windows | 整个文件夹拷过去直接双击 `start.bat`(自带运行时是可搬的)。**但 `.venv` 不要跨机拷** —— 里面写死了原机器的绝对路径,拷过去反而会被优先选中然后失败;删掉它即可。 |
 
 ## 安全提示
 
-- `router.yaml` 存着管理密码和宽带账号,`perf.yaml` 的 `dial_modes.params`
-  里也可能有宽带账密 —— **都已被 git 忽略**,不要提交、不要贴进工单。
-- `artifacts\probe_*.json`(适配新型号时产生)可能含会话 token 和表单值,也已被 git 忽略;
-  回传给别人前先过一眼。
+- `config.yaml` 里有管理密码和宽带账号。仓库里那份是**空值模板**;
+  台架上填了真密码之后别再提交它。

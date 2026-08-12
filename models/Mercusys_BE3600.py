@@ -80,7 +80,7 @@ FACTS = {
 
     # IPv6:在 Advanced → IPv6 独立分区,真机 DOM 还没观察过 —— 按项目规矩
     # 不猜没见过的页面,所以本脚本不含 ipv6。等在真机跑一次
-    # `python tools/probe_router.py` 取证后,照 Tenda_AX3000.py 的 mode_overrides 补上。
+    # skill/tools 的探针取证后,照 Tenda_AX3000.py 的 mode_overrides 补上。
 }
 
 # 这台机能切哪几档,按台架轮次的顺序。

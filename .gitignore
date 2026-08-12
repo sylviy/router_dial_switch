@@ -5,11 +5,11 @@
 vendor/wheels/
 .bundle-cache/
 
-# local run defaults incl. admin/broadband passwords (cli.py setup)
-router.yaml
-
-# local perf-matrix config (topology / creds in dial_modes params); commit perf.example.yaml instead
-perf.yaml
+# config.yaml 里有管理密码和宽带账号。仓库里那份是**空值模板**,可以提交;
+# 台架上填了真密码之后就别再提交它了(要么在本机 git update-index
+# --skip-worktree config.yaml,要么干脆别在台架上用 git)。
+# 旧的 router.yaml / perf.yaml / perf_configs/ 已经并进 config.yaml 并删掉,
+# 对照表见 MIGRATION.md。
 
 # 运行产物:截图/诊断证据。都是每次跑动现场生成的,不进仓库
 # (diagnose 产物可能含会话 token / 表单里的账号密码 —— 回传前先脱敏)
