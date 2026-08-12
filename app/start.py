@@ -106,6 +106,38 @@ def _bench_needs(cfg, planned) -> list:
     return need
 
 
+def _reachable(cfg, name, mod) -> str:
+    """被测机地址打得开吗?打不开就返回一句人话,打得开返回空串。
+
+    **换了被测机但 router.ip 忘了改**是现场最常见的那个错(上一台还在
+    192.168.0.1,这一台在 192.168.10.1)。不先查这一下的话,菜单 3 会开着
+    浏览器一档一档去超时,几分钟后才发现;查一下只花几秒。
+
+    **绕开系统代理**:代理会把这一下变成"问代理服务器通不通",而不是"问那台
+    路由器在不在" —— 台架直连没有代理,但办公网的机器上有,那会给出相反的答案。
+    """
+    import urllib.error
+    import urllib.request
+
+    url = str(cfg.at("router.ip") or "").strip()
+    if url and not url.startswith("http"):
+        url = "http://" + url
+    if not url:
+        return "%s 的 router.ip 没填。" % cfg.where("router.ip")
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    try:
+        opener.open(url, timeout=8)
+    except urllib.error.HTTPError:
+        return ""          # 401/403 也算通:机器在,只是要认证
+    except Exception as exc:
+        return ("打不开 %s(%s)。\n"
+                "  router.ip(%s)现在写的是这个地址,而 %s 的默认地址是 %s。\n"
+                "  换被测机要改两处:router.ip,和 run.dial_modes(这轮测哪几档)。"
+                % (url, exc, cfg.where("router.ip"), name,
+                   (getattr(mod, "FACTS", {}) or {}).get("url", "(这条路线没有 url)")))
+    return ""
+
+
 def _run_new_shape(name: str) -> int:
     """新形状型号的向导。**不问密码** —— 配置只有 config.yaml 一处,
     缺什么会指到具体哪一行,用记事本补完再来。"""
@@ -165,6 +197,13 @@ def _run_new_shape(name: str) -> int:
                   "backend 现在是 simulate(离线模拟),bench 段不用填 —— "
                   "要出真数字时改成 chariot,再回来看这一项。")
         return 0
+
+    # 菜单 1/2/3 都要碰路由器 —— 先花几秒确认地址打得开,别开着浏览器去超时。
+    problem = _reachable(cfg, name, mod)
+    if problem:
+        print("\n这一步没有开始(没有碰路由器):\n  " + problem)
+        print("\n用记事本打开 %s 改掉,再回来。" % cfg.source)
+        return 1
 
     if action == 3:
         try:

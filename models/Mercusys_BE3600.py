@@ -309,7 +309,18 @@ def switch(mode, cfg, hook=None):
 
     read_back, message, applied = "", "", False
     try:
-        page.goto(url, wait_until="domcontentloaded")
+        try:
+            page.goto(url, wait_until="domcontentloaded")
+        except Exception as exc:
+            # **打不开地址是现场最常见的那个错**:换了被测机,但 config.yaml 的
+            # router.ip 还是上一台的。它不该甩一个 traceback 出去 —— 那既看不出
+            # 病因,又会把整轮打断在第一档(后面几档连试都没试)。收敛成这一档
+            # 的失败,把地址、该改哪一行、这台机的默认地址一次说清。
+            raise _Stop("打不开 %s(%s)。八成是换了被测机但地址没改:"
+                        "router.ip(%s)现在写的是这个地址,而这台机的默认地址"
+                        "是 %s。"
+                        % (url, str(exc).strip().splitlines()[-1].strip(),
+                           cfg.where("router.ip"), FACTS["url"]))
 
         # --- 3. 登录 --------------------------------------------------------
         # 密码框没出现 = 已经在会话里,直接往下走。填了却还停在登录页 =
