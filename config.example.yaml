@@ -89,15 +89,15 @@ bench:
   # 打错了口、数字却很正常的报告(日本 IPoE 四档就会被猜错)。
   #
   # 这里按档写,不按机器写:哪台路由器拨的 pppoe,对端都是同一个隧道网段。
-  # 某台机才有的档(BUFFALO 的 transix / TPLink 的 pptp_dynamic_public)
-  # 也一起写在这里,别的机器用不到它,多写无害。
+  # 某台机才有的档(BUFFALO 的 transix / v6plus / ocnvc / v6connect)也一起
+  # 写在这里,别的机器用不到它,多写无害。
   endpoints:
     dynamic: ""        # 直连侧,如 192.168.202.99
     pppoe:   ""        # 隧道侧,如 192.168.203.1
-    pptp:    ""
-    l2tp:    ""
-    # transix:               192.168.202.66   # 只有 BUFFALO 有
-    # pptp_dynamic_public:   192.168.202.99   # 只有 TPLink 有
+    pptp:    ""        # 隧道侧,同上
+    l2tp:    ""        # 隧道侧,同上
+    # transix:   192.168.202.66   # 只有 BUFFALO 有,而且是**原生直连**,
+    # v6plus:    192.168.202.66   # 不写死会被名字猜成隧道档打错口
 
   # 上面 endpoints 没写到的档回落到这两个:直连侧 / 隧道侧。
   public_ip:   ""

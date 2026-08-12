@@ -172,6 +172,73 @@ def _cfg_for(url, apply_it, headless, creds=None):
     return cfg
 
 
+def _bridge_cases():
+    """TPLink 那条路线:不开浏览器,下发和回读都在 py2 侧的桥接里。
+
+    这里用 tests/mock_bridge.py 顶替真桥接 —— 它**只复现命令行契约**
+    (stdout 一行 JSON;退出码 0/2/3),不模拟 RouterCtrl。被测的是 py3 这一
+    侧:档名有没有翻译对、桥接说"不行"的时候会不会仍然报成功。
+    """
+    import os
+
+    import models.TPLink_RouterCtrl as tp
+
+    print("\n==== TPLink 桥接路线(假桥接,不碰真机)====")
+    real_bridge, tp.BRIDGE = tp.BRIDGE, "tests/mock_bridge.py"
+    cfg = perf.load()
+    cfg["router"] = {"ip": "192.168.0.1", "pass": "pw",
+                     "pppoe_user": "acc", "pppoe_pass": "s3",
+                     "pptp": {"server": "1.2.3.4", "user": "u", "pass": "p"},
+                     "l2tp": {"server": "1.2.3.4", "user": "u", "pass": "p"}}
+    cfg["bench"]["python2"] = sys.executable
+    cfg.setdefault("run", {})["apply"] = True
+
+    cases = [
+        # (名字, 场景, 模式, 期望 success, 期望回读)
+        ("桥接 dynamic", "ok", "dynamic", True, "Dynamic IP"),
+        ("桥接 pppoe", "ok", "pppoe", True, "PPPoE"),
+        # 档名翻译:这一侧说 pptp,桥接收到的必须是它认得的复合名
+        ("桥接 pptp(档名翻译)", "ok", "pptp", True, "PPTP"),
+        ("桥接 l2tp(档名翻译)", "ok", "l2tp", True, "L2TP"),
+        # **这一条是重点**:wan_type 回读完全正确,只有桥接知道 WAN 没拿到
+        # 地址。少查桥接那道关就会出现"类型对了、其实没拨上"的绿格子。
+        ("类型对了但没拨上 -> 必须判失败", "readback_fail", "pptp", False, "PPTP"),
+        # 桥接没吐 JSON:不许猜"可能切成功了"
+        ("桥接没吐 JSON -> 诚实失败", "usage", "l2tp", False, ""),
+        # RouterCtrl 自己很吵,JSON 不一定是唯一的那行
+        ("JSON 前面混日志行", "noisy", "dynamic", True, "Dynamic IP"),
+    ]
+    passed = failed = 0
+    for name, scenario, mode, want_ok, want_read in cases:
+        os.environ["MOCK_BRIDGE"] = scenario
+        res = tp.switch(mode, cfg)
+        ok = (res["success"] is want_ok and res["read_back"] == want_read
+              and tp.BRIDGE_MODE[mode] in tp.BRIDGE_MODE.values())
+        if not want_ok:
+            ok = ok and bool(res["message"])
+        print("[%s] %-32s success=%-6s 回读=%-11r 桥接收到=%s"
+              % ("PASS" if ok else "FAIL", name, res["success"],
+                 res["read_back"], tp.BRIDGE_MODE[mode]))
+        if not ok:
+            print("      期望 success=%s 回读=%r" % (want_ok, want_read))
+            print("      message: %s" % res["message"])
+        passed += ok
+        failed += not ok
+
+    # 不加 --apply 时这条路线什么都不做(它没有"只看不切")
+    cfg["run"]["apply"] = False
+    res = tp.switch("pppoe", cfg)
+    ok = (not res["success"]) and not res["applied"] and bool(res["message"])
+    print("[%s] %-32s success=%s" % ("PASS" if ok else "FAIL",
+                                     "不加 --apply 时什么都不做", res["success"]))
+    passed += ok
+    failed += not ok
+
+    os.environ.pop("MOCK_BRIDGE", None)
+    tp.BRIDGE = real_bridge
+    return passed, failed
+
+
 def main(argv=None):
     import importlib
     show = "--show" in (argv if argv is not None else sys.argv[1:])
@@ -214,6 +281,11 @@ def main(argv=None):
             print("      warnings: %s" % res["warnings"])
         passed += ok
         failed += not ok
+
+    # --- TPLink 那条桥接路线(不开浏览器,用假桥接)-------------------------
+    p, f = _bridge_cases()
+    passed += p
+    failed += f
 
     print("\n%d passed, %d failed" % (passed, failed))
     if failed:

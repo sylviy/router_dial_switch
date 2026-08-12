@@ -24,12 +24,14 @@ py3 写法去"现代化"它**)负责下发 + 回读,只从 stdout 吐一行 JSON
   * **回读和桥接必须都同意才算成功。** 桥接除了比对 wan_type,还查 WAN 有没有
     真拿到地址(空 / 0.0.0.0 都算没拨上)。少查一条就会出现"类型对了、其实
     没拨上"的绿格子。
-  * **模式名一个字符都不要改** —— 桥接和历史 Excel 都按这些名字对行。
+  * **档名和别的六台机对齐**(dynamic / pppoe / pptp / l2tp),这样一份全局的
+    run.dial_modes 七台机通用。桥接自己那套复合名(`pptp_dynamic_internet`
+    这种)一个字符都没改 —— 翻译在下面的 BRIDGE_MODE 里,只发生在 py3 这一侧。
 
 单跑:
 
     python models/TPLink_RouterCtrl.py dynamic --apply
-    python models/TPLink_RouterCtrl.py pptp_dynamic_public --apply
+    python models/TPLink_RouterCtrl.py pptp --apply
 
 --------------------------------------------------------------------------
 ## 这个文件怎么读
@@ -60,16 +62,19 @@ FACTS = {
     # 这个文件不绑定某一台样机。运行时会用 get_wan_info()['hostName'] 覆盖
     # 报告里的型号(台架那台是 ArcherAX1800)。
     "model": "RouterCtrl",
-    "route": "bridge",                          # 不开浏览器,见 _driver.session
+    "route": "bridge",                          # 不开浏览器
     "bridge": "tools/routerctrl_bridge.py",
+    # 档名和别的六台机对齐(2026-08-12 用户定):PPTP/L2TP 就是一档隧道拨号,
+    # 不再拆 _internet / _public 两份。那两个后缀对**下发没有任何影响**
+    # (桥接里同一支 elif 收下它们),只决定 Chariot 打哪个远端 —— 而那个现在
+    # 由 config.yaml 的 bench.endpoints.<档> 说了算,隧道档统一打 203.1。
+    # 值是 get_wan_info()['wan_type'] 的**回读串**,不是界面措辞。
     "modes": {
         "dynamic": "Dynamic IP",
         "static": "Static IP",
         "pppoe": "PPPoE",                       # 无第二连接
-        "pptp_dynamic_internet": "PPTP",
-        "pptp_dynamic_public": "PPTP",
-        "l2tp_dynamic_internet": "L2TP",
-        "l2tp_dynamic_public": "L2TP",
+        "pptp": "PPTP",
+        "l2tp": "L2TP",
     },
     # 下发后等多久再回读。老脚本(dial_perf.py)给 dynamic 的是 30+15=45 秒、
     # 其余 15 秒;这里统一 20 秒,dynamic 按老口径单独给 45 —— DHCP 拿地址是
@@ -80,13 +85,9 @@ FACTS = {
     },
 }
 
-# 整轮实际会跑的档,按台架轮次的顺序。**只列实测接线跑过的**(2026-08-10
-# 用户口径):PPPoE 只测无第二连接那档;PPTP/L2TP 只测第二连接为动态的,
-# 没有"第二连接为静态"的接线。多列一档就等于让整轮去切一个没人验过的组合。
-# static 也故意不列:切过去会是静态 IP 且不填任何地址(要测请手动单跑)。
-MODES = ["dynamic", "pppoe",
-         "pptp_dynamic_internet", "pptp_dynamic_public",
-         "l2tp_dynamic_internet", "l2tp_dynamic_public"]
+# 这台机能切哪几档 —— 和别的六台机同一套档名。
+# static 故意不列:切过去会是静态 IP 且不填任何地址(要测请手动单跑)。
+MODES = ["dynamic", "pppoe", "pptp", "l2tp"]
 
 # 每档要 config.yaml 里的哪几项 -> 填进哪个概念(概念名和桥接的 --param 键
 # 一一对应)。**碰路由器之前**核对:桥接一调用就真下发了,缺账密再去调用,
@@ -95,18 +96,27 @@ NEEDS = {
     "dynamic": {},
     "pppoe": {"pppoe_user": "router.pppoe_user",
               "pppoe_pass": "router.pppoe_pass"},
-    "pptp_dynamic_internet": {"vpn_server": "router.pptp.server",
-                              "vpn_user": "router.pptp.user",
-                              "vpn_pass": "router.pptp.pass"},
-    "pptp_dynamic_public": {"vpn_server": "router.pptp.server",
-                            "vpn_user": "router.pptp.user",
-                            "vpn_pass": "router.pptp.pass"},
-    "l2tp_dynamic_internet": {"vpn_server": "router.l2tp.server",
-                              "vpn_user": "router.l2tp.user",
-                              "vpn_pass": "router.l2tp.pass"},
-    "l2tp_dynamic_public": {"vpn_server": "router.l2tp.server",
-                            "vpn_user": "router.l2tp.user",
-                            "vpn_pass": "router.l2tp.pass"},
+    "pptp": {"vpn_server": "router.pptp.server", "vpn_user": "router.pptp.user",
+             "vpn_pass": "router.pptp.pass"},
+    "l2tp": {"vpn_server": "router.l2tp.server", "vpn_user": "router.l2tp.user",
+             "vpn_pass": "router.l2tp.pass"},
+}
+
+# 上面这套档名 -> 桥接认的档名。**桥接只认复合名**(它的 MODES 里根本没有裸的
+# pptp/l2tp,传裸名会被当用法错误挡掉,退出码 3),而复合名的两个后缀是:
+#   <家族>_<第二连接>_<对端>
+# 台架上只有"第二连接为动态"这一种接线,所以第二段固定 dynamic;第三段
+# (internet/public)对**下发没有任何影响** —— 桥接里同一支 elif 收下它们 ——
+# 只决定 Chariot 打哪个远端,而那个现在由 config.yaml 的 bench.endpoints.<档>
+# 说了算。所以这里各留一个就够,报告里的档名和别的机型对得上。
+#
+# **桥接文件一个字没动**(它是 py2.6),翻译只发生在这一侧。
+BRIDGE_MODE = {
+    "dynamic": "dynamic",
+    "static": "static",
+    "pppoe": "pppoe",                       # 无第二连接
+    "pptp": "pptp_dynamic_internet",
+    "l2tp": "l2tp_dynamic_internet",
 }
 
 BRIDGE = "tools/routerctrl_bridge.py"
@@ -174,12 +184,21 @@ def switch(mode, cfg, hook=None):
     ident = {"brand": FACTS["brand"], "model": FACTS["model"], "mode": mode}
     warnings = []
 
-    def done(read_back, message="", applied=False, model=""):
-        """这个函数唯一的出口。success 只能由 contract.verify() 算出来 ——
-        桥接回读的 wan_type 等于目标串才算数,空回读永远判假。"""
-        res = contract.result(contract.verify(read_back, label), read_back,
-                              label, message=message, applied=applied,
-                              warnings=warnings, **ident)
+    def done(read_back, message="", applied=False, model="", bridge_ok=True):
+        """这个函数唯一的出口。**两道关都过了才算成功:**
+
+          ① 回读 —— 桥接读回的 wan_type 精确等于目标串(contract.verify);
+          ② 桥接自己的判定 —— 它看得比回读串多,还查 WAN 有没有真拿到地址
+             (空 / 0.0.0.0 都算没拨上)。
+
+        少查第二条就会出现"**类型对了、其实没拨上**"的绿格子:wan_type 明明
+        写着 PPTP、回读也对得上,可这一档根本没连上,吞吐照测、报告照绿。
+        桥接说不行时这里传 bridge_ok=False,success 直接判负 —— contract 只
+        接受字面量 False 这一种"不用回读就判负"的写法,伪造不出成功。
+        """
+        verdict = contract.verify(read_back, label) if bridge_ok else False
+        res = contract.result(verdict, read_back, label, message=message,
+                              applied=applied, warnings=warnings, **ident)
         if model:
             # **只改 model 这一个报告字段**(换成样机自己报的 hostName)。
             # success / read_back 一律由上面那行算出来 —— 在这里补第二次赋值
@@ -230,7 +249,7 @@ def switch(mode, cfg, hook=None):
     # --- 2. 真的切一次 -------------------------------------------------------
     # 契约(见桥接文件顶部):stdout 只有一行 JSON;退出码 0=成功、
     # 2=跑完了但判定不过(仍有 JSON)、3=参数用错了(**stdout 是空的**)。
-    argv = [py2, script, mode, "--ip", ip, "--pass", admin_pass,
+    argv = [py2, script, BRIDGE_MODE[mode], "--ip", ip, "--pass", admin_pass,
             "--settle", str(settle), "--brand", FACTS.get("brand", ""),
             "--model", FACTS.get("model", "")]
     user = str(cfg.at("router.user") or "").strip()
@@ -265,10 +284,15 @@ def switch(mode, cfg, hook=None):
     # 桥接看得比回读串多(它还查 WAN 有没有真拿到地址)。它说不行就不行 ——
     # 哪怕 wan_type 正好对上,那也是"类型对了、没拨上"。
     if not out.get("success"):
+        # **bridge_ok=False 这个参数是承重的**:这条路径上 read_back 往往和目标
+        # 完全一致(wan_type 就是 PPTP),只有桥接知道 WAN 根本没拿到地址。
+        # 不传它,success 会被回读算成 True —— 一个"类型对了、其实没拨上"的
+        # 绿格子,吞吐照测、报告照绿。
         return done(read_back,
                     out.get("message") or "桥接判定不通过,但没给原因(退出码 %s)"
                                           % proc.returncode,
-                    applied=bool(out.get("applied")), model=host)
+                    applied=bool(out.get("applied")), model=host,
+                    bridge_ok=False)
     return done(read_back, "", applied=bool(out.get("applied")), model=host)
 
 
