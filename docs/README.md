@@ -115,7 +115,15 @@ vendor/python/           离线运行时(别动)
 
 ## 适配一台新型号
 
-照 `skill/SKILL.md` 那张表跑 `skill/tools/` 里的七个工具:
+**产出只有一个文件:`models/<品牌>_<型号>.py`。** 拷进 `models/` 就完事 ——
+没有注册表要改,`start.bat` 的菜单自动认出它。已实测:把这一个文件拷进一份
+干净的仓库,命令行、体检、菜单三样立刻都能用。
+
+(唯一的例外:如果这台机有别人没有的档名 —— 比如 BUFFALO 的 `transix` ——
+那么**测吞吐**时要在 `config.yaml` 的 `bench.endpoints` / `bench.wan_up_hosts`
+里给那几档补上对端和 ping 目标。那是接线,不是代码;只切档不需要。)
+
+流程照 `skill/SKILL.md` 那张表跑 `skill/tools/` 里的七个工具:
 
 ```
 env_check → probe_dump → list_modes → probe_count → ⛔问人 → try_switch → make_facts → check_model → ⛔问人
@@ -124,6 +132,35 @@ env_check → probe_dump → list_modes → probe_count → ⛔问人 → try_sw
 每一步都有明确的通过条件(退出码 0),前四步**一档都不改路由器**。
 `make_facts.py --write` 会照最像的那台已交付脚本生成新文件。
 卡住了按现象查 `skill/reference.md`,**按节读,别整篇读**。
+
+### 让 AI 助手来做:把下面这段整段发给它
+
+助手要能**从它运行的那台机器访问到路由器**(同一局域网)。整段复制,把
+尖括号里的三样换成实际值:
+
+```
+适配一台新路由器型号:<品牌> <型号>,管理页地址 <IP>。
+管理密码我已经填在 config.yaml 的 router.pass 里,你直接用,别问我要。
+
+照 skill/SKILL.md 那张流程表做,从第 0 步开始,一步一步来:
+- 每一步都用 skill/tools/ 里的现成工具,**不要自己另写探测脚本**;
+- 每一步把工具的 stdout 原样给我看,退出码不是 0 就先按那一列去
+  skill/reference.md 查对应的节,别跳过去继续;
+- **两处 ⛔ 关卡必须停下来等我回答**:选择器认定、下发确认。没有我的
+  明确答复不许往下走,更不许 --apply。
+
+产出只要一个文件 models/<品牌>_<型号>.py。
+不要改 common/、不要改别的型号脚本、不要改 config.yaml 里我填好的值。
+最后跑 python skill/tools/check_model.py <品牌>_<型号> 把结果给我。
+```
+
+两个常见的坑:
+
+* **别催它"一次做完"。** 那两处关卡是流程里唯一需要人的地方 —— 命中 1 只
+  说明页面上只有一个控件,不说明它是对的;而切错档会当场断网。催它跳过关卡,
+  等于把这两件事交给概率。
+* **上下文断了不要紧。** 让它重新读 `skill/SKILL.md`,从"上一步跑到哪个工具"
+  接着做;前四步都是只读的,重跑一遍不会有副作用。
 
 ## 已知限制
 
