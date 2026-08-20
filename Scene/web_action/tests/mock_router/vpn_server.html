@@ -1,0 +1,140 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Mock VPN Server</title>
+<!--
+  离线自检用的**假设备页**。不是样板,别照它抄产出脚本。
+
+  它存在的理由只有一个:证明 Tools/act.py 的几种控件形态在真的浏览器里
+  真的работает —— checkbox / toggle(图标开关 + 隐藏 input)/ text / button,
+  以及 --expect-after 和 --reload-verify。
+
+  关键设计:**没点 Save 的改动不会活过刷新。**
+  这样 "--reload-verify 能抓出假成功" 才是可验证的,而不是一句承诺。
+-->
+<style>
+  body { font-family: sans-serif; margin: 24px; }
+  .hidden { display: none; }
+  .row { margin: 10px 0; }
+  i.fa { cursor: pointer; font-style: normal; border: 1px solid #888;
+         padding: 2px 8px; }
+  #dlg { border: 2px solid #333; padding: 12px; width: 260px; }
+</style>
+
+<div id="login">
+  <div class="row">Local Password: <input type="password" id="pw"></div>
+  <button id="loginBtn">LOGIN</button>
+  <div id="loginErr" class="hidden">wrong password</div>
+</div>
+
+<div id="app" class="hidden">
+  <div class="row">
+    <span id="m_map">Network Map</span> |
+    <span id="m_adv">Advanced</span>
+  </div>
+
+  <div id="side" class="hidden">
+    <div class="row"><span id="vpn_server">VPN Server</span></div>
+  </div>
+
+  <div id="vpn" class="hidden">
+    <div class="row">
+      Protocol:
+      <select id="proto">
+        <option>PPTP</option>
+        <option>L2TP/IPSec</option>
+      </select>
+    </div>
+
+    <div class="row">
+      <label for="enable">Enable</label>
+      <input type="checkbox" id="enable">
+    </div>
+
+    <!-- LuCI 那种形态:要点的是 <i>,真实值在旁边的 hidden input 里 -->
+    <div class="row" id="cbi-vpn-config-ipsec">
+      <label>IPSec</label>
+      <input type="hidden" id="cbid.vpn.config.ipsec" value="0">
+      <i class="fa fa-toggle-off" id="ipsec_icon">off</i>
+    </div>
+
+    <div class="row">
+      <label for="psk">IPSec Pre-Shared Key</label>
+      <input type="text" id="psk">
+    </div>
+
+    <div class="row">
+      <button id="addBtn">Add</button>
+      <span id="account_ok" class="hidden">account added</span>
+    </div>
+
+    <div class="row">
+      <button id="save">Save</button>
+      <button id="save_hidden" class="hidden">Save</button>
+    </div>
+  </div>
+</div>
+
+<div id="dlg" class="hidden">
+  <div class="row">Username <input type="text" id="dlg_user"></div>
+  <div class="row">Password <input type="text" id="dlg_pass"></div>
+  <button id="dlg_cancel">CANCEL</button>
+  <button id="dlg_add">ADD</button>
+</div>
+
+<script>
+  var KEY = "mock_vpn_state";
+  var $ = function (id) { return document.getElementById(id); };
+  var ipsecInput = document.querySelector("[id='cbid.vpn.config.ipsec']");
+
+  function paintToggle() {
+    var on = ipsecInput.value === "1";
+    $("ipsec_icon").className = "fa " + (on ? "fa-toggle-on" : "fa-toggle-off");
+    $("ipsec_icon").textContent = on ? "on" : "off";
+  }
+
+  // 只从**保存过的**状态恢复。没保存的改动活不过刷新 —— 这正是重点。
+  function restore() {
+    var raw = null;
+    try { raw = window.localStorage.getItem(KEY); } catch (e) { raw = null; }
+    var s = raw ? JSON.parse(raw) : {};
+    $("proto").value = s.proto || "PPTP";
+    $("enable").checked = !!s.enable;
+    ipsecInput.value = s.ipsec ? "1" : "0";
+    $("psk").value = s.psk || "";
+    $("account_ok").className = s.account ? "" : "hidden";
+    paintToggle();
+  }
+
+  $("loginBtn").onclick = function () {
+    if ($("pw").value !== "admin123") { $("loginErr").className = ""; return; }
+    $("login").className = "hidden";      // 密码框消失 = 登录成功
+    $("app").className = "";
+    restore();
+  };
+  $("pw").onkeydown = function (e) { if (e.key === "Enter") $("loginBtn").click(); };
+
+  $("m_adv").onclick = function () { $("side").className = ""; };
+  $("vpn_server").onclick = function () { $("vpn").className = ""; };
+
+  $("ipsec_icon").onclick = function () {
+    ipsecInput.value = ipsecInput.value === "1" ? "0" : "1";
+    paintToggle();
+  };
+
+  $("addBtn").onclick = function () { $("dlg").className = ""; };
+  $("dlg_cancel").onclick = function () { $("dlg").className = "hidden"; };
+  $("dlg_add").onclick = function () {
+    $("dlg").className = "hidden";
+    // 「做完的样子」:弹框关掉,页面上多出这一行
+    $("account_ok").className = "";
+  };
+
+  $("save").onclick = function () {
+    var s = {proto: $("proto").value, enable: $("enable").checked,
+             ipsec: ipsecInput.value === "1", psk: $("psk").value,
+             account: $("account_ok").className !== "hidden"};
+    try { window.localStorage.setItem(KEY, JSON.stringify(s)); } catch (e) {}
+  };
+  // 藏起来的那个同名按钮什么都不做 —— 认错了就会静默失败,和真机一样
+  $("save_hidden").onclick = function () {};
+</script>

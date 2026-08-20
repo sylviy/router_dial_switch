@@ -21,5 +21,5 @@
 # and python.org produced -- it holds node.exe, .pyd/.dll files and package
 # metadata whose hashes are recorded in the .dist-info RECORDs.  Listed LAST so
 # it beats the *.py / *.js rules above (last matching line wins).
-vendor/** -text
+Vendor/python/** -text
 

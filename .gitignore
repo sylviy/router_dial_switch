@@ -1,31 +1,31 @@
-# NOTE: vendor/python/ (the embedded Windows runtime, ~97 MB) IS committed on
+# NOTE: Vendor/python/ (the embedded Windows runtime, ~97 MB) IS committed on
 # purpose — the bench is offline and its only Python is an untouchable 2.x, so
-# "download the repo" has to be enough on its own.  See vendor/README.md;
-# rebuild with tools/make_offline_bundle.py.  Only build leftovers are ignored:
-vendor/wheels/
+# "download the repo" has to be enough on its own.  See Vendor/README.md;
+# rebuild with Vendor/make_offline_bundle.py.  Only build leftovers are ignored:
+Vendor/wheels/
 .bundle-cache/
 
 # config.yaml 里有管理密码和宽带账号。仓库里那份是**空值模板**,可以提交;
 # 台架上填了真密码之后就别再提交它了(要么在本机 git update-index
-# --skip-worktree config.yaml,要么干脆别在台架上用 git)。
+# --skip-worktree Scene/router_dial_switch/config.yaml,要么干脆别在台架上用 git)。
 # 旧的 router.yaml / perf.yaml / perf_configs/ 已经并进 config.yaml 并删掉,
 # 对照表见 MIGRATION.md。
 
 # 运行产物:截图/诊断证据。都是每次跑动现场生成的,不进仓库
 # (diagnose 产物可能含会话 token / 表单里的账号密码 —— 回传前先脱敏)
-# artifacts/ 整个忽略,但**目录本身要留着** —— skill 让 agent 把控件清单、
+# Scene/*/artifacts/ 整个忽略,但**目录本身要留着** —— skill 让 agent 把控件清单、
 # 进度文件、崩溃报告写在这里;新克隆里没有这个目录的话,第一条重定向
-# 命令就会失败(2026-07-30 实测)。所以用 artifacts/* + 放行 .gitkeep。
-artifacts/*
-!artifacts/.gitkeep
-!artifacts/README.md
-!artifacts/reports/
-!artifacts/shots/
-!artifacts/probes/
-artifacts/reports/*
-artifacts/shots/*
-artifacts/probes/*
-!artifacts/*/.gitkeep
+# 命令就会失败(2026-07-30 实测)。所以用 Scene/*/artifacts/* + 放行 .gitkeep。
+Scene/*/artifacts/*
+!Scene/*/artifacts/.gitkeep
+!Scene/*/artifacts/README.md
+!Scene/*/artifacts/reports/
+!Scene/*/artifacts/shots/
+!Scene/*/artifacts/probes/
+Scene/*/artifacts/reports/*
+Scene/*/artifacts/shots/*
+Scene/*/artifacts/probes/*
+!Scene/*/artifacts/*/.gitkeep
 recordings/
 
 __pycache__/
@@ -35,8 +35,8 @@ venv/
 .venv/
 
 # diagnose evidence dumps may contain session tokens / form values -- never commit
-artifacts/diagnose_*.json
+Scene/*/artifacts/diagnose_*.json
 
-# Chariot 的原始测试记录。正常情况下它们落在 artifacts/ 里(已忽略),
+# Chariot 的原始测试记录。正常情况下它们落在 Scene/*/artifacts/ 里(已忽略),
 # 这条是兜底:旧版本会把它们丢在仓库根目录。
 *.tst

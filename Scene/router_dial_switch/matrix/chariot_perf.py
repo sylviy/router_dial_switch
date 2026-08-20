@@ -1,0 +1,368 @@
+# -*- coding: utf-8 -*-
+"""chariot_perf.py —— 单次吞吐测量,给 matrix 的 ChariotBackend 用子进程调用。
+
+这是旧 Dial.py 里 run_up/down/bi_thr + result_judge 的**清理版**:
+  * 不再有写死的 IP / 脚本名 / 对数 —— 全部从 --json 传进来的拓扑里取;
+  * 不再直接切拨号方式、不写 Excel —— 切模式交给 Models/ 的 Web 驱动,
+    出报告交给 matrix/report.py;这个文件只负责"测一格并打印 JSON";
+  * **Python 2 和 Python 3 都能跑**,由 perf.yaml 的 chariot.python 决定跑在
+    哪个解释器里 —— 老台架的 PyChariot 只在 ActivePython 2.6.5 里,而日本
+    IPoE(v6プラス/transix/OCN バーチャルコネクト/v6 コネクト)那套拓扑是
+    Python 3。同一份代码两边都跑,是因为这个文件本身**不 import Chariot**:
+    import 推迟到真正测量的那一刻,所以别的机器 import 本文件不会炸。
+
+用法。程序调用(ChariotBackend 自动拼好,不经人手):
+    python chariot_perf.py --json '{"mode":"pppoe","band":"lan", ...}'
+人在台架上手动调试,用文件版(**别在 PowerShell 里手敲内联 JSON**,它会把
+双引号吃掉):把 matrix/cell.example.json 复制一份改好,然后
+    python chariot_perf.py --json-file cell.json --dry-run
+输出:最后一行是 {"mbps": <float>, "stable": <bool>, "samples": [...]},
+      失败则 {"error": "类型: 说明"} 且退出码非 0,**完整 traceback 打在
+      stderr** 上(stdout 要留给 JSON)。
+加 --dry-run:只解析拓扑并打印它要打给谁、用哪个脚本、多少对,不碰 PyChariot
+      —— 台架接线对不对,一眼就能看出来,不用真跑一轮。
+
+兼容 Python 2/3 的写法(**改这个文件时必须保持**,否则 Py2 那台台架会在
+最没空调试的时候炸):from __future__ print_function、不用 except X, e、
+不用 f-string、不用 argparse(标准库 2.7 才收它;2026-07-28 台架实测 PATH
+上的 Python 是 2.6.5,import argparse 直接 ImportError)、只用 // 做整除。
+Py3 上这些写法一样合法,所以"支持 Py3"不是加分支,而是**别引入 Py3 独有
+语法**。tests/smoke_test.py 有一格用当前解释器跑本文件的 --dry-run,Py3
+下的可运行性是被自动测着的。
+"""
+from __future__ import print_function
+
+import json
+import os
+import sys
+import traceback
+
+USAGE = ("usage: chariot_perf.py (--json '<topology json>'"
+         " | --json-file <path>) [--dry-run]")
+
+TCP, UDP = "TCP", "UDP"
+
+
+def _to_native(obj):
+    """Py2 上把 json.loads 出来的 unicode 递归转成 str(字节串)。
+
+    PyChariot 是 ctypes 包的 C API,绝大多数入参要的是 str;而 Py2 的
+    json.loads **所有**字符串都给 unicode。不转的话,IP、脚本名、甚至 dict 的
+    键全是 unicode,踩雷只是早晚问题。Py3 上原样返回。
+    """
+    if sys.version_info[0] >= 3:
+        return obj
+    if isinstance(obj, unicode):            # noqa: F821  仅 Py2 存在
+        return obj.encode("utf-8")
+    if isinstance(obj, dict):
+        return dict((_to_native(k), _to_native(v)) for k, v in obj.items())
+    if isinstance(obj, list):
+        return [_to_native(v) for v in obj]
+    return obj
+
+
+def _call(what, fn, *args, **kwargs):
+    """调 PyChariot 的一步,失败时把**每个参数的值和类型**一起报出来。
+
+    ctypes 的 "an integer is required" 不说是哪个参数出的问题,而这台机器
+    我看不见、每问一轮都要人跑一趟机架。所以让错误自己带上证据:一行报错
+    就能定位到是哪个参数、它当时是什么类型。
+    """
+    try:
+        return fn(*args, **kwargs)
+    except Exception as exc:
+        detail = ", ".join(
+            ["%r(%s)" % (a, type(a).__name__) for a in args]
+            + ["%s=%r(%s)" % (k, v, type(v).__name__)
+               for k, v in sorted(kwargs.items())])
+        # 消息保持纯 ASCII:它会被 json.dumps 打出来,中文会变成一串
+        # \uXXXX 转义,现场读报错时反而更费劲。
+        raise RuntimeError("%s(%s) -> %s: %s"
+                           % (what, detail, type(exc).__name__, exc))
+
+
+def _e1_ip(topo, band):
+    """客户端侧注入机:按频段取。"""
+    return topo["endpoints"].get(band, topo["endpoints"].get("lan"))
+
+
+def _e2_ip(topo, mode):
+    """对端(e2)打谁。**先看按模式显式指定的 e2_ip**,没写才用老规则:
+    动态/静态/带 public 的走公网口,其余走内网口。
+
+    为什么要这条显式出口:老规则是**从模式名字猜路**。Buffalo 的日本 IPoE
+    四档(transix / v6plus / ocnvc / v6connect)既不叫 dynamic 也不含
+    "public",会被猜成隧道档打到内网口 —— 而它们其实是原生直连。猜错的后果
+    不是报错,是一份**打错了口、数字却很漂亮**的报告,事后根本看不出来。
+    所以能写死的就写死,别让它猜(perf_configs/<型号>.yaml 的 chariot.e2_ip)。
+    """
+    override = (topo.get("e2_ip") or {}).get(mode)
+    if override:
+        return override
+    if mode in ("dynamic", "static") or ("public" in mode):
+        return topo["public_ip"]
+    return topo["internet_ip"]
+
+
+def _e2_source(topo, mode):
+    """这一格的 e2 是怎么定下来的 —— 给 --dry-run 和开跑前检查看的人话。"""
+    if (topo.get("e2_ip") or {}).get(mode):
+        return "e2_ip[%s] (显式指定)" % mode
+    if _e2_ip(topo, mode) == topo.get("public_ip"):
+        return "public_ip (direct)"
+    return "internet_ip (tunnel)"
+
+
+def _protocol(proto):
+    """协议名 -> add_pair 要的协议值。名字直接对应 PyChariot 的常量,所以
+    TCP / UDP / TCP6 / UDP6 都认(v6 那两个还需要 e1/e2 填 IPv6 地址)。
+
+    台架 2026-07-28 实测定案:`CHR_PROTOCOL_TCP` **不是整数 2,是 c_byte(2)**
+    (PyChariot 自己的日志打的就是 `protocol:c_byte(2)`),而它内部又会拿它去
+    构造一次 c_byte —— 等于 c_byte(c_byte(2)),ctypes 报
+    `TypeError: an integer is required`。所以必须取 .value 再 int()。
+    传字符串 "TCP" 同样不行(第一版就是这么错的)。
+
+    名字不认识就**报错**,不猜。以前 measure() 会把任何非 UDP 的写法悄悄当成
+    TCP —— 那样 `protocols: [TCP6]` 会安安静静地测出一份 v4 的数据,还标着
+    TCP6,比直接失败坏得多。
+    """
+    import PyChariot
+    base, _ = _split_proto(proto)
+    raw = getattr(PyChariot, "CHR_PROTOCOL_" + base, None)
+    if raw is None:
+        known = sorted(n[len("CHR_PROTOCOL_"):] for n in dir(PyChariot)
+                       if n.startswith("CHR_PROTOCOL_"))
+        raise ValueError("PyChariot 不认识协议 %r;它支持的是:%s"
+                         "(可加 -nofrag 后缀)" % (base, ", ".join(known)))
+    raw = getattr(raw, "value", raw)    # 常量可能是 c_byte/c_int 之类的包装
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return raw
+
+
+def _split_proto(label):
+    """把矩阵里的协议写法拆成 (基础协议, 变体)。
+
+        "TCP"          -> ("TCP",  None)      脚本默认发送缓冲
+        "UDP"          -> ("UDP",  None)      同上 —— 会分片,这是"分片"那一档
+        "UDP-nofrag"   -> ("UDP",  "nofrag")  按该拨号方式的 MTU 设缓冲,不分片
+        "UDP6-nofrag"  -> ("UDP6", "nofrag")
+
+    做成协议标签的后缀,而不是新开一个矩阵轴:报告和 CSV 的"协议"列原样就
+    能区分这两行,一行渲染代码都不用改。
+    """
+    if "-" not in label:
+        return label, None
+    base, variant = label.split("-", 1)
+    variant = variant.lower()
+    if variant != "nofrag":
+        raise ValueError("协议 %r 的变体只支持 -nofrag(不写后缀 = 用脚本默认"
+                         "缓冲,即分片那一档)" % label)
+    return base, variant
+
+
+def _pairs_for(topo, proto):
+    """该协议用多少对。没单独配就退回同族:UDP-nofrag -> UDP6 -> UDP。"""
+    table = topo["pairs"]
+    base, _ = _split_proto(proto)
+    for key in (proto, base, base[:-1] if base.endswith("6") else base):
+        if key in table:
+            return int(table[key])
+    return 50
+
+
+def _send_buffer(topo, proto, mode):
+    """不分片那一档要设的 send_buffer_size(字节);分片档返回 None。
+
+    值按**拨号方式**取,因为它是各自封装开销算出来的 MTU:动态 1460、
+    PPPoE 1440、L2TP/PPTP 1383(2026-07-28 用户给的台架口径)。
+
+    该模式没配就**报错,绝不猜**。猜一个 MTU 的后果是:流量照样跑、数字照样
+    漂亮,但实际上分了片 —— 一份标着"不分片"的分片数据,比测不出来坏得多。
+    """
+    _, variant = _split_proto(proto)
+    if variant != "nofrag":
+        return None
+    table = topo.get("nofrag_bytes") or {}
+    if mode not in table:
+        raise ValueError("模式 %r 没有配不分片的 send_buffer_size;"
+                         "在 perf.yaml 的 chariot.nofrag_bytes 里加一条"
+                         "(已配:%s)" % (mode, ", ".join(sorted(table)) or "无"))
+    return int(table[mode])
+
+
+def _add_pairs(chr_obj, e1, e2, proto, script, pairs, send_buffer=None,
+               half=False):
+    """proto 是矩阵里的协议标签(可能带 -nofrag 后缀)。
+
+    add_pair 的签名 2026-07-28 在台架上核对过:
+      add_pair(e1_addr, e2_addr, script_name, protocol, pair_number,   <- 必填
+               comment=None, qos_name=None, console_e1_addr=None,
+               console_e1_protocol=2, console_e1_qos_name=None,
+               e1_e2_addr=None, script_variable={})
+    我们用到的五个关键字全部对得上。
+
+    send_buffer=None 就**完全不传** script_variable,让 Throughput 脚本用它
+    自己的默认值。(旧版这里写死 send_buffer_size=1300 —— 它既不是脚本默认,
+    也不是任何一档的不分片值,是移植时照抄的一个来历不明的常量。)
+    """
+    n = pairs // 2 if half else pairs
+    kwargs = {"e1_addr": e1, "e2_addr": e2, "script_name": script,
+              "protocol": _protocol(proto), "pair_number": n}
+    if send_buffer is not None:
+        kwargs["script_variable"] = {"send_buffer_size": str(int(send_buffer))}
+    _call("add_pair", chr_obj.add_pair, **kwargs)
+
+
+def _tst_target(topo, mode, band, proto, direction):
+    """返回 (set_filename 用的路径, 要不要 save_test)。
+
+    Chariot 的 .tst 是原始测试记录 —— 出了争议要翻它,所以默认保留。但过去
+    只给了个裸文件名,于是它们全落在**当前工作目录**(仓库根),一轮 54 个;
+    而且名字里没有轮次信息,下一轮直接把上一轮覆盖掉,等于既乱又留不住。
+    现在跟报告放在一起:artifacts/wanperf_<型号>_<时间戳>_tst/。
+    """
+    name = "%s_%s_%s_%s.tst" % (mode, band, proto, direction)
+    tst_dir = topo.get("tst_dir")
+    if not tst_dir:                       # 配了 save_tests: false
+        return name, False
+    if not os.path.isdir(tst_dir):
+        try:
+            os.makedirs(tst_dir)          # Py2.6 没有 exist_ok
+        except OSError:
+            pass
+    return os.path.join(tst_dir, name), True
+
+
+def _judge(chr_obj, duration_s, ratio):
+    """稳定性判据(照搬 result_judge):看中段各 5s 采样是否 min >= ratio*max。
+    返回 (总吞吐 float, 采样 list, 是否稳定 bool)。"""
+    n = max(duration_s // 5, 3)
+    samples = []
+    for i in range(2, n):
+        samples.append(_call("get_throughput", chr_obj.get_throughput,
+                             time_1=5 * i, time_2=5 * (i + 1)))
+    total = _call("get_throughput", chr_obj.get_throughput)
+    stable = bool(samples) and (min(samples) >= ratio * max(samples))
+    return total, samples, stable
+
+
+def measure(topo):
+    """真正跑一次 Chariot 测量;只有这里才 import Chariot(台架才有)。"""
+    from PyChariot import Chariot          # noqa: E402  台架环境专属
+
+    mode = topo["mode"]
+    band = topo["band"]
+    direction = topo["direction"]          # up | down | bi
+    proto = topo["proto"].upper()          # TCP / UDP / TCP6 / UDP6
+
+    e1, e2 = _e1_ip(topo, band), _e2_ip(topo, mode)
+    pairs = _pairs_for(topo, proto)
+    sbuf = _send_buffer(topo, proto, mode)
+    up_scr = topo["scripts"]["up"]
+    down_scr = topo["scripts"]["down"]
+
+    chr_obj = _call("Chariot()", Chariot)
+    if direction == "up":
+        _add_pairs(chr_obj, e1, e2, proto, up_scr, pairs, sbuf)
+    elif direction == "down":
+        _add_pairs(chr_obj, e1, e2, proto, down_scr, pairs, sbuf)
+    else:  # bi:上下行各占一半对数
+        _add_pairs(chr_obj, e1, e2, proto, up_scr, pairs, sbuf, half=True)
+        _add_pairs(chr_obj, e1, e2, proto, down_scr, pairs, sbuf, half=True)
+
+    _call("set_run_option", chr_obj.set_run_option,
+          duration=int(topo["duration_s"]))
+    tst_path, do_save = _tst_target(topo, mode, band, proto, direction)
+    _call("set_filename", chr_obj.set_filename, tst_path)
+    _call("run", chr_obj.run)
+    if do_save:
+        _call("save_test", chr_obj.save_test)
+
+    total, samples, stable = _judge(chr_obj, topo["duration_s"],
+                                    float(topo["stability_ratio"]))
+    return {"mbps": round(float(total), 2), "stable": stable,
+            "samples": [round(float(s), 2) for s in samples]}
+
+
+def plan(topo):
+    """--dry-run:把拓扑解析出来给人看,**完全不碰 PyChariot**。
+
+    真跑一格之前先跑这个,能当场看出 e1/e2/脚本/对数有没有指错 —— 这类错
+    (注入机 IP 写错、隧道模式却打到直连口)靠看真实测量结果是看不出来的,
+    数字照样出得来,只是测的不是你以为的那条路。
+    """
+    mode, band = topo["mode"], topo["band"]
+    proto = topo["proto"].upper()
+    return {"dry_run": True,
+            "mode": mode, "band": band,
+            "direction": topo["direction"], "proto": proto,
+            "e1_client_side": _e1_ip(topo, band),
+            "e2_wan_side": _e2_ip(topo, mode),
+            "e2_source": _e2_source(topo, mode),
+            "scripts": topo["scripts"],
+            "pairs": _pairs_for(topo, proto),
+            "send_buffer_size": _send_buffer(topo, proto, mode) or "脚本默认(分片)",
+            "duration_s": topo["duration_s"]}
+
+
+def _payload_from_argv(args):
+    """取要解析的 JSON 文本。手写解析,不依赖 argparse。两种给法:
+
+      --json '<内联 JSON>'   ChariotBackend 用这个(程序拼的,引号不经人手);
+      --json-file <路径>     人在台架上用这个。PowerShell 传参给外部程序时会
+                             把字符串里的双引号吃掉,内联 JSON 会变成一堆
+                             {mode:dynamic} 这样的残骸 —— 那是个纯粹浪费时间
+                             的坑,放文件里编辑既没这问题,也方便反复改。
+    """
+    if "--json-file" in args:
+        i = args.index("--json-file")
+        if i + 1 >= len(args):
+            raise ValueError("--json-file needs a path after it")
+        with open(args[i + 1]) as fh:
+            return fh.read()
+    if "--json" not in args:
+        raise ValueError(USAGE)
+    i = args.index("--json")
+    if i + 1 >= len(args):
+        raise ValueError("--json needs a JSON string after it")
+    return args[i + 1]
+
+
+def main(argv=None):
+    args = list(sys.argv[1:] if argv is None else argv)
+    try:
+        topo = _to_native(json.loads(_payload_from_argv(args)))
+        result = plan(topo) if "--dry-run" in args else measure(topo)
+    except Exception as exc:                 # noqa: BLE001  收敛成 JSON 错误
+        # 完整 traceback 打到 stderr:stdout 要留给 JSON(ChariotBackend 解析
+        # 它),stderr 则被原样收进错误信息。这样出事时一次就能看全,不用再
+        # 来回问"能不能再跑一遍加个 -v" —— 现场只有一个人,往返很贵。
+        traceback.print_exc()
+        _emit({"error": "%s: %s" % (type(exc).__name__, exc)})
+        return 2
+    _emit(result)
+    return 0
+
+
+def _emit(obj):
+    """把结果写成 stdout 上**自己起一行**的 JSON。
+
+    前面加一个换行不是多余的:Chariot 的错误信息由它自己的原生库直接写
+    stdout,不走 Python 的缓冲、末尾也**没有换行**,于是这行 JSON 会被接在
+    `Error was detected at M` 后面,读侧就找不到它了(2026-08-10 台架实测:
+    PPTP 那格测到 283.63 Mbps 却被记成 err)。读侧现在也容忍前缀,但源头补一
+    个换行更便宜 —— 两边都改,不是二选一。
+    """
+    # 2.6:不用 print 函数、不用 f-string(这个文件要在 ActivePython 2.6.5 上跑)
+    sys.stdout.write("\n" + json.dumps(obj) + "\n")
+    try:
+        sys.stdout.flush()
+    except Exception:
+        pass
+
+
+if __name__ == "__main__":
+    sys.exit(main())

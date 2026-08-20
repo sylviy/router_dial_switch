@@ -7,7 +7,7 @@ description: 在测试台上跑一整轮 WAN 性能矩阵(逐档切拨号方式 
 
 ## 怎么起
 
-**双击 `start.bat`**(或 `python app/start.py`)→ 选型号 → 选操作。菜单按危险
+**双击 `Scene/router_dial_switch/start.bat`**(或在场景目录下 `python app/start.py`)→ 选型号 → 选操作。菜单按危险
 程度排:
 
 ```
@@ -18,11 +18,11 @@ description: 在测试台上跑一整轮 WAN 性能矩阵(逐档切拨号方式 
 5. 看看 config.yaml 还差什么   ← 带行号
 ```
 
-命令行等价物:`python models/<型号>.py <档>` / `--apply` / `--perf`。
+命令行等价物:`python Models/<型号>/<型号>.py <档>` / `--apply` / `--perf`。
 
 ## 配置只有一处
 
-`config.yaml`,现场用记事本改。**换被测机只改两处**:`router.ip`,和
+`Scene/router_dial_switch/config.yaml`,现场用记事本改。**换被测机只改两处**:`router.ip`,和
 `run.dial_modes`(这轮测哪几档)。`bench` 段是台架接线,按**拨号方式**走的
 —— pppoe 拨通后的对端就是那个隧道网段,换哪台路由器都一样,所以配一次七台
 机共用。每一项该填什么见 `docs/config.example.yaml` 的中文注释。
@@ -32,7 +32,7 @@ description: 在测试台上跑一整轮 WAN 性能矩阵(逐档切拨号方式 
 
 ## 排查
 
-**全部排查内容在 `skill/reference.md` 的 `§ 整轮跑不起来 / 报告里有 err`
+**全部排查内容在 `Scene/router_dial_switch/reference.md` 的 `§ 整轮跑不起来 / 报告里有 err`
 那一节。** 现在去读那一节,别整篇读,也别读 `docs/GOTCHAS.md`(那是给人看的)。
 
 一句话版本:开跑前的报错都会指出**改哪个文件的第几行**,照着改就行;

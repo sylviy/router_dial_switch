@@ -1,0 +1,124 @@
+@echo off
+REM ==========================================================================
+REM  setup.bat  --  one-time setup on a Windows machine.  Double-click it.
+REM
+REM  Works in ALL THREE situations:
+REM    A) the repo as downloaded from GitHub -> Vendor\python already carries
+REM       an embedded Python 3.8 with the dependencies pre-installed, so there
+REM       is NOTHING to install: this script only verifies it and stops.  That
+REM       is the offline-bench case (the bench's own Python 2 is never touched);
+REM    B) Vendor\wheels present but no pre-installed runtime -> build a .venv
+REM       and install the deps from those wheels, still without internet;
+REM    C) no Vendor\ at all (e.g. someone pruned it) -> use the Python already
+REM       installed on the machine and download the deps with pip.
+REM
+REM  Note: everything below runs from this folder (pushd), so the interpreter
+REM  is referenced by a RELATIVE path -- that keeps working even when the
+REM  folder lives under a path with spaces, e.g. C:\Users\Li Ming\Desktop\.
+REM ==========================================================================
+setlocal
+pushd "%~dp0..\..\.."   REM 回到仓库根(Vendor\ 和 Tools\ 在这一层)
+
+set "PY="
+set "MODE="
+
+REM --- A) ready-to-run runtime shipped with the repo: verify and stop --------
+if exist "Vendor\python\Lib\site-packages\playwright" (
+  echo === Ready-to-run runtime found in Vendor\python -- nothing to install ===
+  "Vendor\python\python.exe" -c "import sys, playwright.sync_api, yaml; print('imports OK on Python ' + sys.version.split()[0])"
+  if errorlevel 1 (
+    echo.
+    echo [ERROR] The bundled runtime is there but did not import.
+    echo         Usually that means the folder was copied without Vendor\
+    echo         intact -- re-copy the WHOLE folder and try again.
+    goto :fail
+  )
+  goto :done
+)
+
+if exist "Vendor\python\python.exe" (
+  set "PY=Vendor\python\python.exe"
+  set "MODE=bundled Python 3.8 in Vendor\python"
+  goto :havepy
+)
+
+REM --- no bundle: look for a system Python 3.8+ -------------------------------
+set "PY=py -3"
+%PY% -c "import sys; sys.exit(0 if sys.version_info[:2] >= (3,8) else 1)" >nul 2>&1
+if not errorlevel 1 (
+  set "MODE=system Python via the py launcher"
+  goto :havepy
+)
+
+set "PY=python"
+%PY% -c "import sys; sys.exit(0 if sys.version_info[:2] >= (3,8) else 1)" >nul 2>&1
+if not errorlevel 1 (
+  set "MODE=system Python on PATH"
+  goto :havepy
+)
+
+echo [ERROR] No usable Python found ^(need 3.8 or newer^).
+echo.
+echo   Fix it one of these ways:
+echo     * install Python from https://www.python.org/downloads/windows/
+echo       and TICK "Add python.exe to PATH" in the installer, then re-run me;
+echo     * or use the offline USB bundle, which carries its own Python:
+echo       copy the whole folder INCLUDING Vendor\ over and double-click me.
+goto :fail
+
+:havepy
+echo === Step 1/3: creating .venv using %MODE% ===
+%PY% -m venv .venv
+if errorlevel 1 (
+  echo [ERROR] Could not create .venv.
+  goto :fail
+)
+
+echo.
+if exist "Vendor\wheels" (
+  echo === Step 2/3: installing dependencies from Vendor\wheels ^(offline^) ===
+  ".venv\Scripts\python.exe" -m pip install --no-index --find-links "Vendor\wheels" -r "%~dp0requirements.txt"
+) else (
+  echo === Step 2/3: installing dependencies with pip ^(needs internet^) ===
+  ".venv\Scripts\python.exe" -m pip install --upgrade pip
+  ".venv\Scripts\python.exe" -m pip install -r "%~dp0requirements.txt"
+)
+if errorlevel 1 (
+  echo [ERROR] Dependency install failed.
+  echo         Online?  check the connection / company proxy.
+  echo         Offline? make sure the Vendor\wheels folder came along too.
+  goto :fail
+)
+
+echo.
+echo === Step 3/3: verifying the imports work ===
+".venv\Scripts\python.exe" -c "import playwright.sync_api, yaml; print('imports OK')"
+if errorlevel 1 goto :fail
+
+:done
+echo.
+echo ============================================================
+echo   SETUP COMPLETE.
+echo.
+echo   Easiest from here: double-click this scene's start.bat ^(pick a
+echo   model by number, Enter = the full round^).  Or, from the command line:
+echo.
+echo   1^) fill in router IP / passwords once:
+echo        notepad Scene\router_dial_switch\config.yaml
+echo   2^) switch the dial mode on an adapted model ^(no save^):
+echo        Vendor\python\python.exe Scene\router_dial_switch\Models\Cudy_AX1500\Cudy_AX1500.py dynamic
+echo   3^) offline self-test:
+echo        Scene\router_dial_switch\app\smoke.bat
+echo ============================================================
+popd
+endlocal
+exit /b 0
+
+:fail
+echo.
+echo *** SETUP FAILED -- read the messages above. ***
+echo     ^( Nothing was installed system-wide; fix it and just run me again. ^)
+popd
+endlocal
+pause
+exit /b 1
