@@ -5,17 +5,26 @@ description: 为一台设备的一个 Web 界面操作产出一个可重复执�
 
 # 做一个 Web 操作动作单元
 
-**正文在 `Scene/web_action/SKILL.md`,不是这里。现在去读它,照它那张任务表做。**
+**产出是一个动作,不是一套测试。** 它只负责"把设备切到某个状态,并且证明真的
+切到了"。
 
-这里只是一个壳:Claude Code 只会自动发现 `.claude/skills/` 下的技能,而正文跟着
-它所属的场景放。两处都有,内容只有一份。
+**做一个新的只有一步:找一份最像的 `SKILL.md` 拷过来,改第一部分。**
+拷来的那份是自足的 —— 任务表、规矩、工具介绍、推进顺序、按需询问、产出契约,
+全在里面。
 
-  * 任务表 + 规矩 → `Scene/web_action/Devices/<…>/<任务>/SKILL.md`
-    (**一个任务一份,自足**;做新任务就把最像的那个目录整个拷过来改)。
-    `Devices/` 还是空的时候,从模板 `Scene/web_action/SKILL.md` 拷
-  * 技术细则      → `Tools/probing.md`(探测循环 / 找不到怎么办 / 控件形态表 /
-    **产出契约**:`action.py` 的命令行、末行 JSON、退出码 0/2/3)
-  * 通用探针      → `Tools/`(`--help` 都可用;退出码 0=过 1=不过 2=用法错)
+从哪拷:
+
+  * `Scene/web_action/Devices/<品牌>_<型号>/<任务名>/SKILL.md` —— 已经做过的
+    任务,拷最像的那个(它是**填好的**,最省事);
+  * `Devices/` 还是空的(现在就是)→ 拷空白模版 `Tools/SKILL_TEMPLATE.md`;
+  * 要找一个填好的样子参考,`Scene/router_dial_switch/Models/*/SKILL.md`
+    是同一个骨架的另一批实例。
+
+## 别的东西在哪
+
+  * 技术细则 + **产出契约**(`action.py` 的命令行、末行 JSON、退出码 0/2/3)
+    → `Tools/probing.md`
+  * 通用探针 → `Tools/`(`--help` 都可用;退出码 0=过 1=不过 2=用法错)
   * 工具本身有没有坏 → `python Scene/web_action/tests/mock_test.py`(不需要设备)
 
 **这个场景不碰性能测试。** 逐档测吞吐、出报告那一套在

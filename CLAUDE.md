@@ -17,13 +17,13 @@ DUT 对比)。现在是**两个场景 + 一套共用工具**:
 | `Vendor/common/contract.py` | 判定与结果格式,**全仓库唯一**。`success` 只能由 `verify()` 算出来 | 整个文件(146 行) |
 | `Vendor/common/discover.py` | 按**文件路径**找/加载型号脚本(编排侧专用;型号脚本自己不 import 它) | 文件头 |
 | `Vendor/python/` | 故意提交的离线 Windows 运行时(97MB) | 别动,**别整个读** |
-| `Scene/<场景>/SKILL.md` | **只有一张对照表**:适配新的时候该拷哪一台/哪个任务 | 整个文件(很短) |
-| `Scene/router_dial_switch/Models/<型号>/SKILL.md` | 那台机的**全部**:填好的任务表 + 流程表 + 规矩 + 它的实际命令。**一台一份、各自自足** | 整个文件 |
+| `Tools/SKILL_TEMPLATE.md` | **每个交付单元 SKILL.md 的骨架**(六部分)。空白模版,拷一份填第一部分 | 整个文件 |
+| `Scene/router_dial_switch/Models/<型号>/SKILL.md` | 那台机的**全部**:填好的任务表(界面语言)+ 规矩 + 工具介绍 + 推进顺序。**一台一份、各自自足** | 整个文件 |
 | `Scene/router_dial_switch/Models/<型号>/<型号>.py` | **交付物**:一台机一个文件,**自足** —— FACTS + MODES + NEEDS + `switch(mode, cfg)`。彼此不 import,删掉任意一个其余照跑 | 文件头「这个文件怎么读」 |
 | `Scene/router_dial_switch/common/perf.py` | 整轮时序(切→等 WAN→稳定→测→记)+ 读/校验 `config.yaml`。时序参数**只有一份**,型号脚本覆盖不了 | 文件头 |
 | `Scene/router_dial_switch/config.yaml` | 这个场景的**唯一配置**。换被测机只改 `router.ip` 和 `run.dial_modes` | `docs/config.example.yaml` 的中文注释 |
 | `Scene/router_dial_switch/matrix/` | 读侧:测吞吐 / 出报告 / 等 WAN 拨通 | 别改,除非真要动测量 |
-| `Scene/router_dial_switch/tools/` | 这个场景专属的两个工具:`make_facts.py` / `check_model.py` | `SKILL.md` |
+| `Scene/router_dial_switch/tools/` | 这个场景专属的两个工具:`make_facts.py` / `check_model.py` | 型号 `SKILL.md` 第三部分 |
 | `Models/TPLink_RouterCtrl/routerctrl_bridge.py` | TPLink 那条路线的 py2.6 桥接 | **别用 py3 语法改它** |
 
 **别整个读** `Scene/router_dial_switch/docs/GOTCHAS.md`(39KB,给人看的历史)、
@@ -81,19 +81,26 @@ python tests/mock_test.py                       # 11 条,证明 act.py 各控件
 
 `.claude/skills/` 下只是指过去的壳。正文**跟着交付物走,一份一台机 / 一个任务**:
 
-- **适配新机型(拨号+性能)**:先看 `Scene/router_dial_switch/SKILL.md`(只有一张
-  "按 UI 形态挑哪一台"的对照表),再读 `Models/<那台>/SKILL.md` —— 流程、规矩、
-  按需询问、连那台机的实际命令都在里面。**适配 = 把那个目录整个拷成新型号,
-  只改第一部分**(`tools/make_facts.py --write` 干的就是这件事)。
+- **适配新机型(拨号+性能)**:`.claude/skills/adapt-router-model/SKILL.md` 里有
+  一张"按界面长相挑哪一台"的对照表;挑好之后**读那台的
+  `Models/<那台>/SKILL.md`** —— 任务表、规矩、工具介绍、推进顺序都在里面。
+  **适配 = 把那个目录整个拷成新型号,只改第一部分**
+  (`tools/make_facts.py --write` 干的就是这件事)。
 - **做一个 UI 动作单元** → `Scene/web_action/Devices/<…>/<任务>/SKILL.md`;
-  `Devices/` 还空着的时候,从模板 `Scene/web_action/SKILL.md` 拷。
+  `Devices/` 还空着的时候,从空白模版 `Tools/SKILL_TEMPLATE.md` 拷。
 - **卡住了按节查** → `Scene/router_dial_switch/reference.md`(**按节读,别整篇读**)
 
 **为什么不抽公共 SKILL**:和型号脚本之间的重复是同一个取舍 —— 拷一份改一份,
 换来的是"改第八台绝不可能弄坏前七台",而且拷过去的那份**自足**,不用跳到上一层
-读另一半。全场景唯一写在场景层的规矩是三个查找函数定死那一条。
+读另一半。
 
-每份 SKILL 都是**任务表驱动**:把流程和控件填进第一部分那张表,agent 照表推进,
-只在"再探测也解决不了"的三种情况下才停下来问人。
+每份 SKILL 骨架都一样(`Tools/SKILL_TEMPLATE.md` 的六部分),**只有第一部分因
+机器/任务而异**。第一部分那张任务表**用界面语言写**(按钮上写什么字、点完出现
+什么),**不写选择器** —— 选择器是 agent 探出来的产出,落在 `FACTS` /
+`facts.yaml` 里,那才是唯一真相。写不出来的界面原文标 `待真机确认`,别猜。
+
+**场景层没有 SKILL.md。** 一份 SKILL 对一个交付单元,不设中间层;
+"该拷哪一台"那张对照表在 `.claude/skills/adapt-router-model/SKILL.md`
+和 `docs/README.md` 里。
 
 从旧版本升上来 → `Scene/router_dial_switch/docs/MIGRATION.md`。

@@ -22,7 +22,7 @@
 | `common/contract.py` | `Vendor/common/contract.py`(两个场景共用) |
 | `common/perf.py` | `Scene/router_dial_switch/common/perf.py`(场景专有) |
 | `matrix/` `app/` `tests/` `docs/` `artifacts/` | `Scene/router_dial_switch/` 下同名目录 |
-| `skill/SKILL.md` | `Scene/router_dial_switch/SKILL.md` |
+| `skill/SKILL.md` | 没有了 —— 拆成每台机自己的 `Models/<型号>/SKILL.md`(骨架见 `Tools/SKILL_TEMPLATE.md`);「该拷哪一台」的对照表在 `.claude/skills/adapt-router-model/SKILL.md` 和 `docs/README.md` |
 | `skill/reference.md` | `Scene/router_dial_switch/reference.md` |
 | `skill/tools/_probe.py` 等五个通用探针 | `Tools/` |
 | `skill/tools/try_switch.py` | `Tools/act.py`(**泛化了**,见下) |
@@ -132,7 +132,7 @@ TPLink 那台的复合档名改成和别的机型一样了:
 | `python tests/smoke_test.py` | `python tests/mock_test.py`,或 `start.bat` 菜单 4 |
 | `python tools/check_model.py --all` | `python tools/check_model.py --all` |
 | `python tools/probe_router.py --dump …` | `python Tools/probe_dump.py …`(拆成了探/列/验/试切四个工具) |
-| `python adapt.py` | 照 `SKILL.md` 那张表跑 `Tools/` 里的工具 |
+| `python adapt.py` | 照型号 `SKILL.md` 第三部分说的顺序跑 `Tools/` 里的工具 |
 
 ## 还留着的旧概念
 

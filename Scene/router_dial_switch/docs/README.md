@@ -96,7 +96,6 @@ python tools/check_model.py --all # 型号脚本离线体检
     router_dial_switch/    ← 就是本文档说的这个
       start.bat              入口 —— 双击它
       config.yaml            唯一要填的文件 —— 用记事本改
-      SKILL.md               适配新机型:任务表 + 流程表
       reference.md           卡住了按现象查(按节读)
       app/                   程序入口和环境脚本
         start.py               向导本体
@@ -107,7 +106,7 @@ python tools/check_model.py --all # 型号脚本离线体检
                              config.example.yaml
       Models/<品牌>_<型号>/  交付物:一台机一个目录
         <品牌>_<型号>.py       脚本本体,**一个文件自足**
-        SKILL.md               这台机填好的任务表
+        SKILL.md               这台机的适配指南(任务表 + 规矩 + 工具介绍)
         tools/                 可选:按这台机改过的探针
       common/perf.py         整轮时序 + 读/校验 config.yaml
       matrix/                读侧:测吞吐 / 出报告 / 等 WAN 拨通
@@ -141,9 +140,22 @@ python tools/check_model.py --all # 型号脚本离线体检
 那么**测吞吐**时要在 `config.yaml` 的 `bench.endpoints` / `bench.wan_up_hosts`
 里给那几档补上对端和 ping 目标。那是接线,不是代码;只切档不需要。)
 
-流程在**每台机自己的** `Models/<型号>/SKILL.md` 里(一台一份、各自自足)。
-`SKILL.md` 只有一张"按 UI 形态挑哪一台来拷"的对照表 —— 挑好之后,把那台的整个
-目录拷成新型号,照拷来的那份改第一部分。里面那张流程表跑的是 `Tools/` 里的探针:
+**适配只有一步:从下表挑界面长得最像的那一台,把它整个目录拷成新型号,
+照拷来的那份 `SKILL.md` 改第一部分。**
+
+| 这台新机长什么样 | 拷这一台 |
+|---|---|
+| 原生下拉,老式 frameset / 普通单文档 | `Cudy_AX1500` |
+| LuCI(OpenWrt) | `Cudy_AX3000` |
+| LuCI,而且同一页有好几个长得一样的控件 | `Cudy_BE6500` |
+| 自绘的下拉,另外 IPv6 那几档在单独一页 | `Tenda_AX3000` |
+| 自绘的下拉,账密框只能靠旁边的标签文字认 | `Mercusys_BE3600` |
+| 一组单选按钮,设置页套在框架里打开 | `BUFFALO_WSR6000AX8` |
+| 不走浏览器(内部库 / 命令行) | `TPLink_RouterCtrl` |
+
+拷来的那份 `SKILL.md` 是**填好的、自足的**:任务表(用界面上的话写的,不是
+选择器)、七条规矩、每个工具是干什么的、照表推进的顺序,全在里面。
+它跑的是 `Tools/` 里的探针:
 
 ```
 env_check → probe_dump → list_modes → probe_count → act.py(只选中)
@@ -164,11 +176,11 @@ env_check → probe_dump → list_modes → probe_count → act.py(只选中)
 管理密码我已经填在 Scene/router_dial_switch/config.yaml 的 router.pass 里,
 你直接用,别问我要。
 
-先读 Scene/router_dial_switch/SKILL.md,按 UI 形态挑一台最像的已交付机型,
-把 Models/<那台>/ 整个拷成 Models/<品牌>_<型号>/ 并改名(tools/make_facts.py
---write 也能替你做这一步)。然后 cd 到 Scene/router_dial_switch 下,照**拷来的
-那份 SKILL.md** 做 —— 流程表、规矩、按需询问都在里面,技术细则看
-Tools/probing.md:
+先看 .claude/skills/adapt-router-model/SKILL.md 那张对照表,按界面长相挑一台
+最像的已交付机型,把 Models/<那台>/ 整个拷成 Models/<品牌>_<型号>/ 并改名
+(tools/make_facts.py --write 也能替你做这一步)。然后 cd 到
+Scene/router_dial_switch 下,照**拷来的那份 SKILL.md** 做 —— 任务表、规矩、
+工具介绍、推进顺序都在里面,技术细则看 Tools/probing.md:
 - 每一步都用 Tools/ 里的现成工具,不要自己另写探测脚本;覆盖不到的控件形态
   就加进 Tools/act.py,别复制一份工具出来;
 - 每一步把工具的 stdout 原样给我看,退出码不是 0 就先按那一列去
@@ -178,8 +190,10 @@ Tools/probing.md:
 - 只有这三种情况停下来问我:同名控件好几个且都可见、真机和任务表对不上、
   一个动作可能改到别的设置。
 
-产出只要一个目录 Models/<品牌>_<型号>/,里面的 SKILL.md 第一部分要逐项
-换成这台机验过的值(拷来时那一段还是原型机的,有 TODO 标着)。
+产出只要一个目录 Models/<品牌>_<型号>/。里面的 SKILL.md 第一部分要逐项换成
+这台机的(拷来时那一段还是原型机的,有 TODO 标着),**用界面上的话写** ——
+按钮上写什么字、点完出现什么;选择器写进 FACTS,不要抄进 SKILL.md。
+界面原文没看清的标"待真机确认",别猜。
 不要改 Vendor/、不要改别的型号脚本、不要改 config.yaml 里我填好的值。
 最后跑 python tools/check_model.py <品牌>_<型号> 把结果给我。
 ```
@@ -189,7 +203,7 @@ Tools/probing.md:
 * **"回读通过"本身不算数。** 不刷新就回读,读到的是它自己刚填进去的值 ——
   等于自己给自己打分。真机上出过回读通过、实际提交的是旧值。所以每一档都要
   `--reload-verify`;这一步它自己做,不用你盯。
-* **上下文断了不要紧。** 让它重新读 `SKILL.md`,从"上一步跑到哪个工具"
+* **上下文断了不要紧。** 让它重新读那台机的 `SKILL.md`,从"上一步跑到哪个工具"
   接着做;探测那几步都是只读的,重跑一遍不会有副作用。
 
 ## 已知限制

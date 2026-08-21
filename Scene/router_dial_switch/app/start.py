@@ -276,7 +276,7 @@ def main(argv=None) -> int:
     print("==== 路由器拨号切换 / WAN 性能测试 ====")
     names = list_models()
     if not names:
-        print("Models/ 里没有型号脚本 —— 照 SKILL.md 适配一台。")
+        print("Models/ 里没有型号脚本 —— 照 docs/README.md「适配一台新型号」那节做。")
         return 1
 
     print("支持的型号(括号里 = 该型号声明的拨号方式,按轮次顺序):")

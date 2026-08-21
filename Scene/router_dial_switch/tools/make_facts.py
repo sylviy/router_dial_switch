@@ -283,11 +283,11 @@ def main(argv=None):
             skill_text = skill_text.replace("  型号: %s\n" % src_model,
                                             "  型号: %s\n" % args.model)
             skill_text = skill_text.replace(
-                "## 第一部分 · 这台机的任务表(拷过去只改这一部分)",
-                "## 第一部分 · 这台机的任务表(拷过去只改这一部分)\n\n"
+                "## 第一部分 · 任务表(适配人员填这里)",
+                "## 第一部分 · 任务表(适配人员填这里)\n\n"
                 "> **TODO:下面整段还是 %s 的值,一行都还没验过。**\n"
-                "> 照第三部分那张流程表逐步探测,把每个值换成这台机的;\n"
-                "> 每个选择器都要 probe_count.py 数过恰好 1、act.py 试过回读对上。"
+                "> 照第三部分说的顺序逐步探测,把每一项换成这台机的;\n"
+                "> 每个控件都要 probe_count.py 数过恰好 1、act.py 试过回读对上。"
                 % src_name, 1)
             with open(skill_dest, "w", encoding="utf-8") as fh:
                 fh.write(skill_text)
