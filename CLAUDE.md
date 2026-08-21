@@ -17,7 +17,8 @@ DUT 对比)。现在是**两个场景 + 一套共用工具**:
 | `Vendor/common/contract.py` | 判定与结果格式,**全仓库唯一**。`success` 只能由 `verify()` 算出来 | 整个文件(146 行) |
 | `Vendor/common/discover.py` | 按**文件路径**找/加载型号脚本(编排侧专用;型号脚本自己不 import 它) | 文件头 |
 | `Vendor/python/` | 故意提交的离线 Windows 运行时(97MB) | 别动,**别整个读** |
-| `Scene/<场景>/SKILL.md` | 那个场景的任务表 + 规矩 + 流程表 | 整个文件 |
+| `Scene/<场景>/SKILL.md` | **只有一张对照表**:适配新的时候该拷哪一台/哪个任务 | 整个文件(很短) |
+| `Scene/router_dial_switch/Models/<型号>/SKILL.md` | 那台机的**全部**:填好的任务表 + 流程表 + 规矩 + 它的实际命令。**一台一份、各自自足** | 整个文件 |
 | `Scene/router_dial_switch/Models/<型号>/<型号>.py` | **交付物**:一台机一个文件,**自足** —— FACTS + MODES + NEEDS + `switch(mode, cfg)`。彼此不 import,删掉任意一个其余照跑 | 文件头「这个文件怎么读」 |
 | `Scene/router_dial_switch/common/perf.py` | 整轮时序(切→等 WAN→稳定→测→记)+ 读/校验 `config.yaml`。时序参数**只有一份**,型号脚本覆盖不了 | 文件头 |
 | `Scene/router_dial_switch/config.yaml` | 这个场景的**唯一配置**。换被测机只改 `router.ip` 和 `run.dial_modes` | `docs/config.example.yaml` 的中文注释 |
@@ -76,15 +77,23 @@ python tests/mock_test.py                       # 11 条,证明 act.py 各控件
   `matrix/chariot_perf.py` 要在台架 **Python 2.6** 下跑(别用 f-string/argparse);
   台架控制台是 GBK;仓库路径可能含 `[Tool]` → 用 `os.listdir`,别用 `glob`。
 
-## 三个 skill
+## SKILL 怎么组织(和型号脚本同一个取舍)
 
-正文跟着场景走(`.claude/skills/` 下只是指过去的壳):
+`.claude/skills/` 下只是指过去的壳。正文**跟着交付物走,一份一台机 / 一个任务**:
 
-- **适配新机型(拨号+性能)** → `Scene/router_dial_switch/SKILL.md`
-- **做一个 UI 动作单元** → `Scene/web_action/SKILL.md`
+- **适配新机型(拨号+性能)**:先看 `Scene/router_dial_switch/SKILL.md`(只有一张
+  "按 UI 形态挑哪一台"的对照表),再读 `Models/<那台>/SKILL.md` —— 流程、规矩、
+  按需询问、连那台机的实际命令都在里面。**适配 = 把那个目录整个拷成新型号,
+  只改第一部分**(`tools/make_facts.py --write` 干的就是这件事)。
+- **做一个 UI 动作单元** → `Scene/web_action/Devices/<…>/<任务>/SKILL.md`;
+  `Devices/` 还空着的时候,从模板 `Scene/web_action/SKILL.md` 拷。
 - **卡住了按节查** → `Scene/router_dial_switch/reference.md`(**按节读,别整篇读**)
 
-两个 SKILL 都是**任务表驱动**:把流程和控件填进第一部分那张表,agent 照表推进,
+**为什么不抽公共 SKILL**:和型号脚本之间的重复是同一个取舍 —— 拷一份改一份,
+换来的是"改第八台绝不可能弄坏前七台",而且拷过去的那份**自足**,不用跳到上一层
+读另一半。全场景唯一写在场景层的规矩是三个查找函数定死那一条。
+
+每份 SKILL 都是**任务表驱动**:把流程和控件填进第一部分那张表,agent 照表推进,
 只在"再探测也解决不了"的三种情况下才停下来问人。
 
 从旧版本升上来 → `Scene/router_dial_switch/docs/MIGRATION.md`。

@@ -45,7 +45,7 @@ for _p in (os.path.join(ROOT, "Tools"), os.path.join(ROOT, "Vendor"), SCENE):
         sys.path.insert(0, _p)
 
 import _probe                                              # noqa: E402
-from common import discover                                # noqa: E402
+from common import discover, perf                          # noqa: E402
 
 # 四种 UI 原型各有一台已经交付、真机验过的脚本。新机型照最像的那台抄。
 LIKE = {
@@ -104,7 +104,7 @@ def build_facts(args, modes, fields):
     lines = ["FACTS = {"]
     lines.append('    "brand": %s,' % val(args.brand, "brand"))
     lines.append('    "model": %s,' % val(args.model, "model"))
-    lines.append('    "url": %s,' % val(args.url or _probe.url_of(_probe.perf.load()),
+    lines.append('    "url": %s,' % val(args.url or _probe.url_of(perf.load()),
                                         "url"))
     lines.append("")
     lines.append("    # 登录页:密码框 + 登录键(不给 button 就填完按回车)")
@@ -209,6 +209,8 @@ def main(argv=None):
             _probe.say("照抄的样板不在:%s" % src)
             return _probe.FAIL
         text = open(src, encoding="utf-8").read()
+        src_facts = discover.load_model(SCENE, src_name).FACTS
+        src_brand, src_model = src_facts.get("brand", ""), src_facts.get("model", "")
         # 型号名 = 目录名 = 文件名。只有一个来源,不会出现"目录叫这个、文件叫那个"。
         stem = ("%s_%s" % (args.brand, args.model)).strip("_")
         title = ("%s %s" % (args.brand, args.model)).strip()
@@ -264,16 +266,34 @@ def main(argv=None):
         os.makedirs(os.path.dirname(dest), exist_ok=True)
         with open(dest, "w", encoding="utf-8") as fh:
             fh.write(text)
-        # 这台机的任务表:照场景那份 SKILL.md 拷一份过去,让人往里填。
-        skill_src = os.path.join(SCENE, "SKILL.md")
+        # SKILL.md 和脚本一样,**照同一台原型机拷**:拷来的那份里已经有通用流程、
+        # 规矩、按需询问,还有那台机的实际命令 —— 新机只要改第一部分。
+        # 一台机一份、各自自足,和型号脚本是同一个取舍。
+        skill_src = os.path.join(os.path.dirname(src), "SKILL.md")
         skill_dest = os.path.join(os.path.dirname(dest), "SKILL.md")
         if os.path.exists(skill_src) and not os.path.exists(skill_dest):
             with open(skill_src, encoding="utf-8") as fh:
                 skill_text = fh.read()
+            skill_text = skill_text.replace(src_name, stem)
+            skill_text = skill_text.replace(
+                "%s %s" % (src_brand, src_model), title)
+            # 任务表里的品牌/型号两行已经知道了,顺手换掉;剩下的值靠探测
+            skill_text = skill_text.replace("  品牌: %s\n" % src_brand,
+                                            "  品牌: %s\n" % args.brand)
+            skill_text = skill_text.replace("  型号: %s\n" % src_model,
+                                            "  型号: %s\n" % args.model)
+            skill_text = skill_text.replace(
+                "## 第一部分 · 这台机的任务表(拷过去只改这一部分)",
+                "## 第一部分 · 这台机的任务表(拷过去只改这一部分)\n\n"
+                "> **TODO:下面整段还是 %s 的值,一行都还没验过。**\n"
+                "> 照第三部分那张流程表逐步探测,把每个值换成这台机的;\n"
+                "> 每个选择器都要 probe_count.py 数过恰好 1、act.py 试过回读对上。"
+                % src_name, 1)
             with open(skill_dest, "w", encoding="utf-8") as fh:
                 fh.write(skill_text)
-            _probe.say("顺带拷了一份任务表:%s —— 把第一部分填成这台机的。"
-                       % os.path.relpath(skill_dest, SCENE))
+            _probe.say("顺带照 %s 拷了一份 %s —— **第一部分还是那台机的值,"
+                       "要逐项换成这台的。**"
+                       % (src_name, os.path.relpath(skill_dest, SCENE)))
         _probe.say("\n照 %s(%s)生成了 %s" % (src_name, why, dest))
         _probe.say("**文件头那段说明还是照抄来的,记得改成这台机的事实。**")
         _probe.say("然后:python tools/check_model.py %s" % stem)

@@ -5,13 +5,17 @@ description: 为一台新路由器型号产出专属拨号切换脚本 Models/<�
 
 # 适配一台新路由器型号
 
-**正文在 `Scene/router_dial_switch/SKILL.md`,不是这里。现在去读它,
-照它那张任务表和流程表做。**
+**正文在 `Scene/router_dial_switch/Models/<型号>/SKILL.md` —— 一台机一份,自足。
+先读 `Scene/router_dial_switch/SKILL.md` 挑一台最像的,再读那台的那份。**
 
-这里只是一个壳:Claude Code 只会自动发现 `.claude/skills/` 下的技能,而正文跟着
-它所属的场景放。两处都有,内容只有一份。
+这里只是一个壳(Claude Code 只会自动发现 `.claude/skills/` 下的技能),
+正文跟着它所属的机型放:
 
-  * 任务表 + 流程表 → `Scene/router_dial_switch/SKILL.md`(先完整读完)
+  * **先读** `Scene/router_dial_switch/SKILL.md` —— 它只有一张对照表:
+    按 UI 形态挑一台最像的已交付机型
+  * **再读那台机的** `Scene/router_dial_switch/Models/<那台>/SKILL.md` ——
+    流程、规矩、按需询问、连它的实际命令都在里面,**一台一份、各自自足**。
+    适配 = 把那个目录整个拷成新型号,改第一部分
   * 技术细则        → `Tools/probing.md`(探测循环 / 找不到怎么办 / 控件形态表)
   * 卡住了按节查    → `Scene/router_dial_switch/reference.md`(**按节读,别整篇读**)
   * 通用探针        → `Tools/`(`--help` 都可用;退出码 0=过 1=不过 2=用法错)

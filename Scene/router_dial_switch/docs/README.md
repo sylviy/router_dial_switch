@@ -141,7 +141,9 @@ python tools/check_model.py --all # 型号脚本离线体检
 那么**测吞吐**时要在 `config.yaml` 的 `bench.endpoints` / `bench.wan_up_hosts`
 里给那几档补上对端和 ping 目标。那是接线,不是代码;只切档不需要。)
 
-流程照 `SKILL.md` 那张表跑 `Tools/` 里的探针:
+流程在**每台机自己的** `Models/<型号>/SKILL.md` 里(一台一份、各自自足)。
+`SKILL.md` 只有一张"按 UI 形态挑哪一台来拷"的对照表 —— 挑好之后,把那台的整个
+目录拷成新型号,照拷来的那份改第一部分。里面那张流程表跑的是 `Tools/` 里的探针:
 
 ```
 env_check → probe_dump → list_modes → probe_count → act.py(只选中)
@@ -162,8 +164,11 @@ env_check → probe_dump → list_modes → probe_count → act.py(只选中)
 管理密码我已经填在 Scene/router_dial_switch/config.yaml 的 router.pass 里,
 你直接用,别问我要。
 
-先读 Scene/router_dial_switch/SKILL.md 和 Tools/probing.md,
-然后 cd 到 Scene/router_dial_switch 下,照 SKILL.md 那张流程表一步步做:
+先读 Scene/router_dial_switch/SKILL.md,按 UI 形态挑一台最像的已交付机型,
+把 Models/<那台>/ 整个拷成 Models/<品牌>_<型号>/ 并改名(tools/make_facts.py
+--write 也能替你做这一步)。然后 cd 到 Scene/router_dial_switch 下,照**拷来的
+那份 SKILL.md** 做 —— 流程表、规矩、按需询问都在里面,技术细则看
+Tools/probing.md:
 - 每一步都用 Tools/ 里的现成工具,不要自己另写探测脚本;覆盖不到的控件形态
   就加进 Tools/act.py,别复制一份工具出来;
 - 每一步把工具的 stdout 原样给我看,退出码不是 0 就先按那一列去
@@ -173,7 +178,8 @@ env_check → probe_dump → list_modes → probe_count → act.py(只选中)
 - 只有这三种情况停下来问我:同名控件好几个且都可见、真机和任务表对不上、
   一个动作可能改到别的设置。
 
-产出只要一个目录 Models/<品牌>_<型号>/。
+产出只要一个目录 Models/<品牌>_<型号>/,里面的 SKILL.md 第一部分要逐项
+换成这台机验过的值(拷来时那一段还是原型机的,有 TODO 标着)。
 不要改 Vendor/、不要改别的型号脚本、不要改 config.yaml 里我填好的值。
 最后跑 python tools/check_model.py <品牌>_<型号> 把结果给我。
 ```

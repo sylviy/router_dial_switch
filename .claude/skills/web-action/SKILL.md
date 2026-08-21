@@ -10,7 +10,9 @@ description: 为一台设备的一个 Web 界面操作产出一个可重复执�
 这里只是一个壳:Claude Code 只会自动发现 `.claude/skills/` 下的技能,而正文跟着
 它所属的场景放。两处都有,内容只有一份。
 
-  * 任务表 + 规矩 → `Scene/web_action/SKILL.md`(先完整读完)
+  * 任务表 + 规矩 → `Scene/web_action/Devices/<…>/<任务>/SKILL.md`
+    (**一个任务一份,自足**;做新任务就把最像的那个目录整个拷过来改)。
+    `Devices/` 还是空的时候,从模板 `Scene/web_action/SKILL.md` 拷
   * 技术细则      → `Tools/probing.md`(探测循环 / 找不到怎么办 / 控件形态表 /
     **产出契约**:`action.py` 的命令行、末行 JSON、退出码 0/2/3)
   * 通用探针      → `Tools/`(`--help` 都可用;退出码 0=过 1=不过 2=用法错)
